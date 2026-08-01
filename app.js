@@ -1373,7 +1373,7 @@
           '</div>'
         : '<div style="font-size:12.5px;color:#6b7c93">Sem registros ainda.</div>') +
       '<div style="margin-top:14px;display:flex;gap:8px">' +
-      '<input type="text" value="' + escHtml(sel.novaNota) + '" ' + cb(sel.onNota, 'input') + ' placeholder="Adicionar nota…" style="flex:1;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;font-size:13px">' +
+      '<input type="text" id="nota-input" value="' + escHtml(sel.novaNota) + '" ' + cb(sel.onNota, 'input') + ' placeholder="Adicionar nota…" style="flex:1;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;font-size:13px">' +
       '<button ' + cb(sel.registrarNota) + ' style="padding:9px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">Adicionar</button>' +
       '</div>' +
       '</div></div>';
@@ -1672,7 +1672,7 @@
     var html = '<div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<input type="date" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'input') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
+      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'input') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
       '<button ' + cb(vals.criarCulto) + ' style="padding:10px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Selecionar / criar culto</button>' +
       '</div>';
 
@@ -1686,7 +1686,7 @@
         '</div>';
 
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
-        '<input type="text" value="' + escHtml(vals.cultoFilters.q) + '" ' + cb(vals.onCFQ, 'input') + ' placeholder="Buscar por nome…" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px">' +
+        '<input type="text" id="culto-busca-input" value="' + escHtml(vals.cultoFilters.q) + '" ' + cb(vals.onCFQ, 'input') + ' placeholder="Buscar por nome…" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px">' +
         '<select ' + cb(vals.onCFCelula, 'change') + ' style="padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
         opt('', 'Todas as células', vals.cultoFilters.celula === '') +
         vals.cultoCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.cultoFilters.celula === o.v); }).join('') +
@@ -1777,9 +1777,9 @@
       (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
       '<div style="display:flex;flex-direction:column;gap:12px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
-      '<input type="email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="email" id="login-email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha</label>' +
-      '<input type="password" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<button ' + cb(vals.doLogin) + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
       '</div></div></div>';
   }
