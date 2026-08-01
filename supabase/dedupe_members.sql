@@ -11,7 +11,7 @@ using members b
 where a.id > b.id
   and a.nome = b.nome
   and a.celula = b.celula
-  and coalesce(a.nasc::text, '') = coalesce(b.nasc::text, '')
+  and coalesce(a.nasc, '0001-01-01'::date) = coalesce(b.nasc, '0001-01-01'::date)
   and coalesce(a.tel, '') = coalesce(b.tel, '');
 
 -- Confira o resultado (deve voltar a mostrar 67, ou o total esperado):
@@ -22,4 +22,4 @@ select count(*) as total_membros from members;
 -- uma nova tentativa de inserir a mesma pessoa dá erro em vez de duplicar
 -- silenciosamente.
 create unique index if not exists members_dedupe_idx
-  on members (nome, celula, (coalesce(nasc::text, '')), (coalesce(tel, '')));
+  on members (nome, celula, (coalesce(nasc, '0001-01-01'::date)), (coalesce(tel, '')));
