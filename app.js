@@ -37,7 +37,7 @@
     trilhoFilters: { celula: '', curso: '' },
 
     // autenticação (Supabase Auth)
-    session: null,          // null = ainda verificando; false = deslogado; objeto = logado
+    session: false,         // false = deslogado; objeto = logado
     loginForm: { email: '', senha: '' },
     loginError: null,
     loginLoading: false,
@@ -150,15 +150,24 @@
   // ---------------------------------------------------------------------
   // Autenticação (Supabase Auth)
   // ---------------------------------------------------------------------
+  function applySession(newSession) {
+    // Evita re-render (e perda de foco/digitação em andamento) quando a
+    // verificação de sessão não muda nada do que já está na tela: o estado
+    // inicial já é "deslogado", então o caso comum (ninguém logado ainda)
+    // não deve disparar setState nenhum.
+    if (newSession === state.session) return;
+    if (!newSession && !state.session) return;
+    setState({ session: newSession });
+    if (newSession) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+  }
+
   function checkSession() {
-    if (!sb) { setState({ session: false }); return; }
+    if (!sb) return;
     sb.auth.getSession().then(function (res) {
-      setState({ session: (res.data && res.data.session) || false });
-      if (res.data && res.data.session) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+      applySession((res.data && res.data.session) || false);
     });
     sb.auth.onAuthStateChange(function (_event, session) {
-      setState({ session: session || false });
-      if (session) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+      applySession(session || false);
     });
   }
 
@@ -1777,9 +1786,9 @@
       (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
       '<div style="display:flex;flex-direction:column;gap:12px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
-      '<input type="email" id="login-email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="email" id="login-email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha</label>' +
-      '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<button ' + cb(vals.doLogin) + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
       '</div></div></div>';
   }
