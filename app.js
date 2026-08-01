@@ -5,10 +5,6 @@
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   var celOrder = ['Otavio e Jô', 'Claudio e Renata', 'Pr.Paulo', 'Josivan e Celia', 'Janaina', 'Discipulador'];
 
-  var SHEET_ID = '1_HG8uU5VIy4xfEsPvqPVKngv5bqW8yKzZt48uz9N18w';
-  var SHEET_TAB = 'Respostas ao formulário 1';
-  var CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(SHEET_TAB);
-
   var ATT_SHEET_ID = '1QgKeRKFm_jymG5WN6C_Kx904plvd0ss6YZCcw-4QTnU';
   var ATT_GID = '792733803';
   var ATT_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + ATT_SHEET_ID + '/gviz/tq?tqx=out:csv&gid=' + ATT_GID;
@@ -20,8 +16,14 @@
     try { localStorage.setItem(key, val); } catch (e) {}
   }
 
-  function loadLocalMembers() {
-    try { return JSON.parse(safeGet('membros_local') || '[]'); } catch (e) { return []; }
+  // ---------------------------------------------------------------------
+  // Supabase
+  // ---------------------------------------------------------------------
+  var sb = null;
+
+  function supabaseConfigured() {
+    var url = window.SUPABASE_URL, key = window.SUPABASE_ANON_KEY;
+    return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Membro', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não' };
@@ -31,19 +33,49 @@
     filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' },
     sort: { key: 'idade', dir: 1 },
     selected: null,
-    remote: null,
-    syncStatus: 'idle',
-    lastSync: safeGet('membros_lastSync'),
     tab: 'cadastro',
     trilhoFilters: { celula: '', curso: '' },
-    localMembers: loadLocalMembers(),
+
+    // autenticação (Supabase Auth)
+    session: null,          // null = ainda verificando; false = deslogado; objeto = logado
+    loginForm: { email: '', senha: '' },
+    loginError: null,
+    loginLoading: false,
+
+    // membros (Supabase)
+    members: [],
+    membersStatus: 'idle',  // idle | loading | ok | error
+    lastMembersSync: null,
+
+    // novo cadastro / edição de membro
     novoForm: Object.assign({}, novoFormDefaults),
     novoSalvo: false,
+    novoSaving: false,
+    novoError: null,
+    novoEditId: null,
+    novoEditOriginal: null,
+
+    // presença por célula (planilha Google — inalterado)
     presAtt: [],
     pFilters: { celula: '', ano: '', mes: '', mesTop: '' },
     syncStatusP: 'idle',
     lastSyncP: safeGet('presenca_lastSync'),
     sortP: { key: 'data', dir: -1 },
+
+    // presença no culto (Supabase)
+    cultos: [],
+    cultosStatus: 'idle',
+    presencasByCulto: {},     // culto_id -> { member_id: presente }
+    presencasStatus: 'idle',
+    cultoAtual: null,
+    novoCultoData: new Date().toISOString().slice(0, 10),
+    cultoFilters: { celula: '', q: '' },
+
+    // movimentações (Supabase)
+    movimentacoes: [],
+    movStatus: 'idle',
+    movFilters: { celula: '', campo: '' },
+    novaNota: '',
   };
 
   function setState(patch) {
@@ -53,8 +85,7 @@
   }
 
   function data() {
-    var base = (state.remote && state.remote.length) ? state.remote : (window.MEMBERS || []);
-    return base.concat(state.localMembers || []);
+    return state.members || [];
   }
 
   // ---------------------------------------------------------------------
@@ -91,44 +122,14 @@
     return rows.filter(function (r) { return r.length && r.some(function (v) { return v !== ''; }); });
   }
 
-  function normPos(p) {
-    var map = { 'Lider de Célula': 'Líder de Célula', 'Frequentador Assiduo (FA)': 'Frequentador Assíduo', 'Discipuladores': 'Discipulador', 'Anfitrião': 'Anfitrião', 'Membro': 'Membro', 'Visitante': 'Visitante' };
-    return map[(p || '').trim()] || (p || '').trim() || '—';
-  }
-
-  function normSN(v) {
-    var t = (v || '').trim().toLowerCase();
-    if (t === 'sim') return 'Sim';
-    if (t === 'nao' || t === 'não') return 'Não';
-    return '—';
-  }
-
-  function formatTel(t) {
-    var d = (t || '').replace(/\D/g, '');
-    if (d.length === 11) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
-    if (d.length === 10) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
-    return (t || '').trim();
-  }
-
-  function ageFrom(nascStr, idadeStr) {
-    if (nascStr) {
-      var m = nascStr.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (m) {
-        var b = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
-        var now = new Date();
-        var a = now.getUTCFullYear() - b.getUTCFullYear();
-        var md = now.getUTCMonth() - b.getUTCMonth();
-        if (md < 0 || (md === 0 && now.getUTCDate() < b.getUTCDate())) a--;
-        if (a >= 0 && a < 120) return { age: a, iso: b.toISOString().slice(0, 10) };
-      }
-    }
-    var n = parseInt(idadeStr, 10);
-    return { age: !isNaN(n) ? n : null, iso: null };
-  }
-
   function celulaLabel(c) {
     var m = { 'Otavio e Jô': 'Otávio e Jô', 'Claudio e Renata': 'Claudio e Renata', 'Pr.Paulo': 'Pr. Paulo', 'Josivan e Celia': 'Josivan e Célia', 'Janaina': 'Janaína', 'Discipulador': 'Discipulado' };
     return m[c] || c;
+  }
+
+  function celulaLabelOrRaw(campo, v) {
+    if (v == null) return '—';
+    return campo === 'celula' ? celulaLabel(v) : v;
   }
 
   function setF(key, val) { setState(function (s) { var f = Object.assign({}, s.filters); f[key] = val; return { filters: f }; }); }
@@ -146,70 +147,119 @@
     return (a >= 0 && a < 120) ? a : null;
   }
 
-  function submitNovoMembro() {
-    var f = state.novoForm;
-    if (!f.nome.trim()) return;
-    var novo = {
+  // ---------------------------------------------------------------------
+  // Autenticação (Supabase Auth)
+  // ---------------------------------------------------------------------
+  function checkSession() {
+    if (!sb) { setState({ session: false }); return; }
+    sb.auth.getSession().then(function (res) {
+      setState({ session: (res.data && res.data.session) || false });
+      if (res.data && res.data.session) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+    });
+    sb.auth.onAuthStateChange(function (_event, session) {
+      setState({ session: session || false });
+      if (session) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+    });
+  }
+
+  function setLF(key, val) { setState(function (s) { var f = Object.assign({}, s.loginForm); f[key] = val; return { loginForm: f, loginError: null }; }); }
+
+  function doLogin() {
+    var f = state.loginForm;
+    if (!f.email.trim() || !f.senha) return;
+    setState({ loginLoading: true, loginError: null });
+    sb.auth.signInWithPassword({ email: f.email.trim(), password: f.senha }).then(function (res) {
+      if (res.error) { setState({ loginLoading: false, loginError: res.error.message }); return; }
+      setState({ loginLoading: false, loginForm: { email: '', senha: '' }, session: res.data.session });
+      loadMembers(); loadCultos(); loadMovimentacoes();
+    });
+  }
+
+  function doLogout() {
+    sb.auth.signOut().then(function () { setState({ session: false, members: [], cultos: [], movimentacoes: [] }); });
+  }
+
+  // ---------------------------------------------------------------------
+  // Membros (Supabase)
+  // ---------------------------------------------------------------------
+  function mapMemberRow(row) {
+    return Object.assign({}, row, { idade: ageFromIso(row.nasc) });
+  }
+
+  function loadMembers() {
+    if (!sb) return;
+    setState({ membersStatus: 'loading' });
+    sb.from('members').select('*').eq('active', true).order('nome').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar membros:', res.error.message); setState({ membersStatus: 'error' }); return; }
+      setState({ members: res.data.map(mapMemberRow), membersStatus: 'ok', lastMembersSync: new Date().toISOString() });
+    });
+  }
+
+  function novoFormToRow(f) {
+    return {
       nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, posicao: f.posicao,
       batizado: f.batizado, encontro: f.encontro, civil: f.civil,
-      idade: ageFromIso(f.nasc), nasc: f.nasc || null, tel: f.tel.trim(),
+      nasc: f.nasc || null, tel: f.tel.trim(),
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
     };
-    var updated = (state.localMembers || []).concat([novo]);
-    safeSet('membros_local', JSON.stringify(updated));
-    setState({ localMembers: updated, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
   }
 
-  // ---------------------------------------------------------------------
-  // Remote sync
-  // ---------------------------------------------------------------------
-  function syncFromSheet() {
-    setState({ syncStatus: 'loading' });
-    fetch(CSV_URL + '&_t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (text) {
-        var rows = parseCSV(text);
-        if (!rows.length) throw new Error('Planilha vazia');
-        var header = rows[0].map(function (h) { return h.trim(); });
-        var idx = function (name) { return header.indexOf(name); };
-        var cTipo = idx('Tipo do Cadastro'), cNome = idx('Nome completo'), cNasc = idx('Data de Nascimento'),
-          cTel = idx('Telefone de Contato'), cCivil = idx('Estado Civil'), cCelula = idx('Célula atual'),
-          cBat = idx('Foi Batizado?'), cEnc = idx('Ja participou do Encontro com Deus?'),
-          cPos = idx('Posição'), cIdade = idx('Idade'),
-          cMaturidade = idx('Maturidade'), cCTL = idx('CTL'), cSeminario = idx('Seminario Pastoral'),
-          cCeifeiros = idx('CEIFEIROS');
-        var members = rows.slice(1).map(function (r) {
-          var nome = (r[cNome] || '').trim();
-          if (!nome) return null;
-          var ag = ageFrom(r[cNasc], r[cIdade]);
-          return {
-            nome: nome,
-            tipo: (r[cTipo] || '—').trim(),
-            celula: (r[cCelula] || '—').trim(),
-            posicao: normPos(r[cPos]),
-            batizado: normSN(r[cBat]),
-            encontro: normSN(r[cEnc]),
-            civil: (r[cCivil] || '—').trim(),
-            idade: ag.age,
-            nasc: ag.iso,
-            tel: formatTel(r[cTel]),
-            maturidade: normSN(r[cMaturidade]),
-            ctl: normSN(r[cCTL]),
-            seminario: normSN(r[cSeminario]),
-            ceifeiros: normSN(r[cCeifeiros]),
-          };
-        }).filter(Boolean);
-        if (!members.length) throw new Error('Nenhum registro encontrado');
-        var now = new Date().toISOString();
-        safeSet('membros_lastSync', now);
-        setState({ remote: members, syncStatus: 'ok', lastSync: now });
-      })
-      .catch(function (err) {
-        console.warn('Sync com Google Sheets falhou, usando dados salvos:', err.message);
-        setState({ syncStatus: 'error' });
+  var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'batizado', 'encontro'];
+
+  function startEditMembro(p) {
+    setState({
+      tab: 'novo', selected: null,
+      novoForm: {
+        nome: p.nome, tipo: p.tipo, celula: p.celula, posicao: p.posicao,
+        batizado: p.batizado, encontro: p.encontro, civil: p.civil,
+        nasc: p.nasc || '', tel: p.tel || '',
+        maturidade: p.maturidade, ctl: p.ctl, seminario: p.seminario, ceifeiros: p.ceifeiros,
+      },
+      novoEditId: p.id,
+      novoEditOriginal: p,
+      novoSalvo: false, novoError: null,
+    });
+  }
+
+  function cancelEditMembro() {
+    setState({ novoEditId: null, novoEditOriginal: null, novoForm: Object.assign({}, novoFormDefaults), novoSalvo: false, novoError: null });
+  }
+
+  function submitNovoMembro() {
+    var f = state.novoForm;
+    if (!f.nome.trim() || !sb) return;
+    setState({ novoSaving: true, novoError: null });
+    var row = novoFormToRow(f);
+
+    if (state.novoEditId) {
+      var original = state.novoEditOriginal;
+      sb.from('members').update(row).eq('id', state.novoEditId).select().single().then(function (res) {
+        if (res.error) { setState({ novoSaving: false, novoError: res.error.message }); return; }
+        var movs = MOVIMENTACAO_CAMPOS.filter(function (campo) { return original[campo] !== row[campo]; })
+          .map(function (campo) { return { member_id: state.novoEditId, campo: campo, valor_anterior: original[campo], valor_novo: row[campo] }; });
+        var afterSave = function () {
+          setState({
+            novoSaving: false, novoSalvo: true, tab: 'cadastro',
+            novoEditId: null, novoEditOriginal: null, novoForm: Object.assign({}, novoFormDefaults),
+            selected: mapMemberRow(res.data),
+          });
+          loadMembers();
+        };
+        if (movs.length) sb.from('movimentacoes').insert(movs).then(function () { loadMovimentacoes(); afterSave(); });
+        else afterSave();
       });
+    } else {
+      sb.from('members').insert(row).then(function (res) {
+        if (res.error) { setState({ novoSaving: false, novoError: res.error.message }); return; }
+        setState({ novoSaving: false, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
+        loadMembers();
+      });
+    }
   }
 
+  // ---------------------------------------------------------------------
+  // Presença por célula (planilha Google — inalterado)
+  // ---------------------------------------------------------------------
   function syncAttendance() {
     setState({ syncStatusP: 'loading' });
     fetch(ATT_CSV_URL + '&_t=' + Date.now(), { cache: 'no-store' })
@@ -258,6 +308,88 @@
         console.warn('Sync de presença falhou:', err.message);
         setState({ syncStatusP: 'error' });
       });
+  }
+
+  // ---------------------------------------------------------------------
+  // Presença no culto (Supabase, check-in por pessoa)
+  // ---------------------------------------------------------------------
+  function loadCultos() {
+    if (!sb) return;
+    setState({ cultosStatus: 'loading' });
+    sb.from('cultos').select('*').order('data', { ascending: false }).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar cultos:', res.error.message); setState({ cultosStatus: 'error' }); return; }
+      setState({ cultos: res.data, cultosStatus: 'ok' });
+      loadTodasPresencas();
+    });
+  }
+
+  function loadTodasPresencas() {
+    if (!sb) return;
+    setState({ presencasStatus: 'loading' });
+    sb.from('presencas_culto').select('culto_id, member_id, presente').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar presenças:', res.error.message); setState({ presencasStatus: 'error' }); return; }
+      var byCulto = {};
+      res.data.forEach(function (r) {
+        var m = byCulto[r.culto_id] || (byCulto[r.culto_id] = {});
+        m[r.member_id] = r.presente;
+      });
+      setState({ presencasByCulto: byCulto, presencasStatus: 'ok' });
+    });
+  }
+
+  function setCultoData(val) { setState({ novoCultoData: val }); }
+
+  function abrirCulto(cultoId) { setState({ cultoAtual: cultoId }); }
+
+  function criarCulto() {
+    if (!sb || !state.novoCultoData) return;
+    var existente = state.cultos.filter(function (c) { return c.data === state.novoCultoData && c.tipo === 'Culto'; })[0];
+    if (existente) { setState({ cultoAtual: existente.id }); return; }
+    sb.from('cultos').insert({ data: state.novoCultoData }).select().single().then(function (res) {
+      if (res.error) { console.warn('Erro ao criar culto:', res.error.message); return; }
+      setState(function (s) { return { cultos: [res.data].concat(s.cultos), cultoAtual: res.data.id }; });
+    });
+  }
+
+  function togglePresenca(cultoId, memberId, presente) {
+    setState(function (s) {
+      var byCulto = Object.assign({}, s.presencasByCulto);
+      var m = Object.assign({}, byCulto[cultoId]);
+      m[memberId] = presente;
+      byCulto[cultoId] = m;
+      return { presencasByCulto: byCulto };
+    });
+    sb.from('presencas_culto').upsert({ culto_id: cultoId, member_id: memberId, presente: presente }, { onConflict: 'culto_id,member_id' }).then(function (res) {
+      if (res.error) console.warn('Erro ao salvar presença:', res.error.message);
+    });
+  }
+
+  function setCF(key, val) { setState(function (s) { var f = Object.assign({}, s.cultoFilters); f[key] = val; return { cultoFilters: f }; }); }
+
+  // ---------------------------------------------------------------------
+  // Movimentações (Supabase)
+  // ---------------------------------------------------------------------
+  function loadMovimentacoes() {
+    if (!sb) return;
+    setState({ movStatus: 'loading' });
+    sb.from('movimentacoes').select('*, members(nome, celula)').order('data', { ascending: false }).limit(300).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar movimentações:', res.error.message); setState({ movStatus: 'error' }); return; }
+      setState({ movimentacoes: res.data, movStatus: 'ok' });
+    });
+  }
+
+  function setMF(key, val) { setState(function (s) { var f = Object.assign({}, s.movFilters); f[key] = val; return { movFilters: f }; }); }
+
+  function setNota(val) { setState({ novaNota: val }); }
+
+  function registrarNota(memberId) {
+    var texto = (state.novaNota || '').trim();
+    if (!texto || !sb) return;
+    sb.from('movimentacoes').insert({ member_id: memberId, campo: 'nota', observacao: texto }).then(function (res) {
+      if (res.error) { console.warn('Erro ao registrar nota:', res.error.message); return; }
+      setState({ novaNota: '' });
+      loadMovimentacoes();
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -553,8 +685,13 @@
       var initials = s.nome.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
       var nascLabelSel = '—';
       if (s.nasc) { var d2 = new Date(s.nasc); nascLabelSel = d2.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }); }
+      var historico = (state.movimentacoes || []).filter(function (m) { return m.member_id === s.id; }).map(function (m) {
+        var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', active: 'Status', nota: 'Nota' }[m.campo] || m.campo;
+        var desc = m.campo === 'nota' ? m.observacao : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
+        return { data: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }), campoLabel: campoLabel, desc: desc };
+      });
       sel = {
-        nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, fields: [
+        id: s.id, nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, fields: [
           { label: 'Célula', value: celulaLabel(s.celula) },
           { label: 'Idade', value: s.idade != null ? s.idade + ' anos' : '—' },
           { label: 'Nascimento', value: nascLabelSel },
@@ -562,17 +699,22 @@
           { label: 'Batizado', value: s.batizado },
           { label: 'Encontro com Deus', value: s.encontro },
           { label: 'Telefone', value: s.tel || '—' },
-        ]
+        ],
+        onEdit: function () { startEditMembro(s); },
+        historico: historico,
+        novaNota: state.novaNota,
+        onNota: function (e) { setNota(e.target.value); },
+        registrarNota: function () { registrarNota(s.id); },
       };
     }
 
     var syncLabelMap = {
-      idle: { text: 'Sincronizando…', color: '#6b7c93', dot: '#c3cfde' },
-      loading: { text: 'Sincronizando…', color: '#6b7c93', dot: '#5B8FE0' },
-      ok: { text: state.lastSync ? 'Atualizado ' + new Date(state.lastSync).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Atualizado', color: '#0E7A68', dot: '#149C88' },
-      error: { text: state.lastSync ? 'Offline · última sinc. ' + new Date(state.lastSync).toLocaleDateString('pt-BR') : 'Não foi possível sincronizar', color: '#6B3FA0', dot: '#6B3FA0' },
+      idle: { text: 'Carregando…', color: '#6b7c93', dot: '#c3cfde' },
+      loading: { text: 'Carregando…', color: '#6b7c93', dot: '#5B8FE0' },
+      ok: { text: state.lastMembersSync ? 'Atualizado ' + new Date(state.lastMembersSync).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Atualizado', color: '#0E7A68', dot: '#149C88' },
+      error: { text: 'Erro ao carregar membros', color: '#6B3FA0', dot: '#6B3FA0' },
     };
-    var sync = syncLabelMap[state.syncStatus] || syncLabelMap.idle;
+    var sync = syncLabelMap[state.membersStatus] || syncLabelMap.idle;
 
     // ---- Presença por célula ----
     var att = state.presAtt || [];
@@ -715,6 +857,57 @@
     var isPresenca = state.tab === 'presenca';
     var isTrilho = state.tab === 'trilho';
     var isNovo = state.tab === 'novo';
+    var isCulto = state.tab === 'culto';
+    var isMov = state.tab === 'mov';
+
+    // ---- Presença no culto ----
+    var todosAtivos = all.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
+    var cf = state.cultoFilters;
+    var cultoQ = (cf.q || '').trim().toLowerCase();
+    var membrosCulto = todosAtivos.filter(function (p) {
+      if (cf.celula && p.celula !== cf.celula) return false;
+      if (cultoQ && !p.nome.toLowerCase().includes(cultoQ)) return false;
+      return true;
+    });
+    var cultoAtualId = state.cultoAtual;
+    var presencasAtual = (cultoAtualId && state.presencasByCulto[cultoAtualId]) || {};
+    var presentesCount = Object.keys(presencasAtual).filter(function (id) { return presencasAtual[id]; }).length;
+    var cultoRows = membrosCulto.map(function (p) {
+      var presente = !!presencasAtual[p.id];
+      return {
+        id: p.id, nome: p.nome, celulaLabel: celulaLabel(p.celula), presente: presente,
+        onToggle: function () { togglePresenca(cultoAtualId, p.id, !presente); },
+      };
+    });
+    var cultoAtualObj = state.cultos.filter(function (c) { return c.id === cultoAtualId; })[0] || null;
+    var historicoCultos = state.cultos.map(function (c) {
+      var pres = state.presencasByCulto[c.id] || {};
+      var n = Object.keys(pres).filter(function (id) { return pres[id]; }).length;
+      return {
+        id: c.id, dataLabel: new Date(c.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        presentes: n, active: c.id === cultoAtualId,
+        onClick: function () { abrirCulto(c.id); },
+      };
+    });
+    var cultoCelulaOptions = celOrder.filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+
+    // ---- Movimentações ----
+    var mf = state.movFilters;
+    var movRows = (state.movimentacoes || []).filter(function (m) {
+      if (mf.celula && (!m.members || m.members.celula !== mf.celula)) return false;
+      if (mf.campo && m.campo !== mf.campo) return false;
+      return true;
+    }).map(function (m) {
+      var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', active: 'Status', nota: 'Nota' }[m.campo] || m.campo;
+      var desc = m.campo === 'nota' ? (m.observacao || '') : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
+      return {
+        dataLabel: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        nome: (m.members && m.members.nome) || '—',
+        celulaLabel: (m.members && m.members.celula) ? celulaLabel(m.members.celula) : '—',
+        campoLabel: campoLabel, desc: desc,
+      };
+    });
+    var movCelulaOptions = celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; });
 
     // ---- Trilho (Maturidade / CTL / Seminário Pastoral) ----
     var tf = state.trilhoFilters;
@@ -766,9 +959,12 @@
     });
 
     return {
+      session: state.session,
+      logout: function () { doLogout(); },
+      userEmail: (state.session && state.session.user && state.session.user.email) || '',
       totalAll: all.length,
       sync: sync,
-      onRefresh: function () { syncFromSheet(); },
+      onRefresh: function () { loadMembers(); },
       isCadastro: isCadastro, isPresenca: isPresenca,
       tabCadastroColor: isCadastro ? '#1B2344' : '#8a99ab',
       tabCadastroBorder: isCadastro ? '#1B2344' : 'transparent',
@@ -778,15 +974,36 @@
       goPresenca: function () { setState({ tab: 'presenca' }); },
       goTrilho: function () { setState({ tab: 'trilho' }); },
       goNovo: function () { setState({ tab: 'novo' }); },
-      isTrilho: isTrilho, isNovo: isNovo,
+      goCulto: function () { setState({ tab: 'culto' }); },
+      goMov: function () { setState({ tab: 'mov' }); },
+      isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
       tabTrilhoBorder: isTrilho ? '#1B2344' : 'transparent',
       tabNovoColor: isNovo ? '#1B2344' : '#8a99ab',
       tabNovoBorder: isNovo ? '#1B2344' : 'transparent',
-      novoForm: state.novoForm, novoSalvo: state.novoSalvo,
+      tabCultoColor: isCulto ? '#1B2344' : '#8a99ab',
+      tabCultoBorder: isCulto ? '#1B2344' : 'transparent',
+      tabMovColor: isMov ? '#1B2344' : '#8a99ab',
+      tabMovBorder: isMov ? '#1B2344' : 'transparent',
+      novoForm: state.novoForm, novoSalvo: state.novoSalvo, novoSaving: state.novoSaving, novoError: state.novoError,
+      isEditingMembro: !!state.novoEditId,
+      cancelEditMembro: function () { cancelEditMembro(); },
       onNF: function (key) { return function (e) { setNF(key, e.target.value); }; },
       submitNovoMembro: function () { submitNovoMembro(); },
       celulaOptionsForm: celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
+      cultos: historicoCultos, cultosStatus: state.cultosStatus,
+      novoCultoData: state.novoCultoData,
+      onCultoData: function (e) { setCultoData(e.target.value); },
+      criarCulto: function () { criarCulto(); },
+      cultoAtual: cultoAtualObj ? Object.assign({}, cultoAtualObj, { dataLabel: new Date(cultoAtualObj.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) }) : null,
+      cultoRows: cultoRows, cultoTotal: membrosCulto.length, cultoPresentes: presentesCount,
+      cultoPct: membrosCulto.length ? Math.round(presentesCount / membrosCulto.length * 100) : 0,
+      cultoFilters: cf, cultoCelulaOptions: cultoCelulaOptions,
+      onCFCelula: function (e) { setCF('celula', e.target.value); },
+      onCFQ: function (e) { setCF('q', e.target.value); },
+      movRows: movRows, movStatus: state.movStatus, movFilters: mf, movCelulaOptions: movCelulaOptions,
+      onMFCelula: function (e) { setMF('celula', e.target.value); },
+      onMFCampo: function (e) { setMF('campo', e.target.value); },
       trilhoKpis: trilhoKpis, trilhoStackedBars: trilhoStackedBars, trilhoCourses: trilhoCourses,
       trilhoFilters: tf,
       trilhoCelulaOptions: trilhoCelulaOptions,
@@ -873,15 +1090,21 @@
       '<div style="text-align:right">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:30px;line-height:1;color:#1B2344">' + vals.totalAll + '</div>' +
       '<div style="font-size:11px;color:#6b7c93;font-weight:500;letter-spacing:.02em">pessoas cadastradas</div>' +
+      '</div>' +
+      '<div style="text-align:right;border-left:1px solid #d8dce8;padding-left:16px">' +
+      '<div style="font-size:12px;color:#4a5b70;font-weight:600">' + escHtml(vals.userEmail) + '</div>' +
+      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6B3FA0;font-size:11.5px;font-weight:600;cursor:pointer">Sair</button>' +
       '</div></div></header>';
   }
 
   function tabsHtml(vals) {
     return '' +
-      '<div style="display:flex;gap:6px;margin:18px 0 4px;border-bottom:1px solid #dde5f0">' +
+      '<div style="display:flex;gap:6px;margin:18px 0 4px;border-bottom:1px solid #dde5f0;flex-wrap:wrap">' +
       '<button ' + cb(vals.goCadastro) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCadastroColor + ';border-bottom:2.5px solid ' + vals.tabCadastroBorder + ';margin-bottom:-1px">Cadastro de Membros</button>' +
       '<button ' + cb(vals.goPresenca) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabPresencaColor + ';border-bottom:2.5px solid ' + vals.tabPresencaBorder + ';margin-bottom:-1px">Presença por Célula</button>' +
+      '<button ' + cb(vals.goCulto) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCultoColor + ';border-bottom:2.5px solid ' + vals.tabCultoBorder + ';margin-bottom:-1px">Presença no Culto</button>' +
       '<button ' + cb(vals.goTrilho) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabTrilhoColor + ';border-bottom:2.5px solid ' + vals.tabTrilhoBorder + ';margin-bottom:-1px">Trilho do Vencedor</button>' +
+      '<button ' + cb(vals.goMov) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabMovColor + ';border-bottom:2.5px solid ' + vals.tabMovBorder + ';margin-bottom:-1px">Movimentações</button>' +
       '<button ' + cb(vals.goNovo) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabNovoColor + ';border-bottom:2.5px solid ' + vals.tabNovoBorder + ';margin-bottom:-1px">+ Novo Cadastro</button>' +
       '</div>';
   }
@@ -1130,14 +1353,30 @@
       '<button ' + cb(vals.closeDetail) + ' style="border:none;background:#eef2f7;width:32px;height:32px;border-radius:8px;cursor:pointer;color:#6b7c93;font-size:16px">✕</button>' +
       '</div>' +
       '<h2 style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;margin:16px 0 3px;line-height:1.2">' + escHtml(sel.nome) + '</h2>' +
-      '<div style="font-size:13px;color:#6b7c93;margin-bottom:20px">' + escHtml(sel.posicao) + ' · ' + escHtml(sel.tipo) + '</div>' +
+      '<div style="font-size:13px;color:#6b7c93;margin-bottom:14px">' + escHtml(sel.posicao) + ' · ' + escHtml(sel.tipo) + '</div>' +
+      '<button ' + cb(sel.onEdit) + ' style="margin-bottom:16px;padding:9px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">Editar cadastro</button>' +
       '<div style="display:flex;flex-direction:column;gap:1px;background:#eef2f7;border-radius:12px;overflow:hidden">' +
       sel.fields.map(function (f) {
         return '<div style="display:flex;justify-content:space-between;gap:12px;padding:12px 15px;background:#fff">' +
           '<div style="font-size:12.5px;color:#6b7c93">' + escHtml(f.label) + '</div>' +
           '<div style="font-size:13px;color:#14243a;font-weight:600;text-align:right">' + escHtml(f.value) + '</div></div>';
       }).join('') +
-      '</div></div></div>';
+      '</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:14px;margin:22px 0 10px">Histórico</div>' +
+      (sel.historico.length
+        ? '<div style="display:flex;flex-direction:column;gap:10px">' +
+          sel.historico.map(function (h) {
+            return '<div style="padding:10px 12px;background:#f5f8fc;border-radius:9px">' +
+              '<div style="font-size:11px;color:#6b7c93;font-weight:600">' + escHtml(h.data) + ' · ' + escHtml(h.campoLabel) + '</div>' +
+              '<div style="font-size:12.5px;color:#14243a;margin-top:2px">' + escHtml(h.desc) + '</div></div>';
+          }).join('') +
+          '</div>'
+        : '<div style="font-size:12.5px;color:#6b7c93">Sem registros ainda.</div>') +
+      '<div style="margin-top:14px;display:flex;gap:8px">' +
+      '<input type="text" value="' + escHtml(sel.novaNota) + '" ' + cb(sel.onNota, 'input') + ' placeholder="Adicionar nota…" style="flex:1;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;font-size:13px">' +
+      '<button ' + cb(sel.registrarNota) + ' style="padding:9px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">Adicionar</button>' +
+      '</div>' +
+      '</div></div>';
   }
 
   function presencaHtml(vals) {
@@ -1299,12 +1538,16 @@
 
   function novoHtml(vals) {
     var f = vals.novoForm;
+    var editing = vals.isEditingMembro;
     var html = '<div style="max-width:640px;margin:24px auto 60px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:19px;margin-bottom:4px">Novo Cadastro</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Preencha os dados da pessoa para incluí-la neste dashboard. Fica salvo neste navegador e soma aos totais e gráficos.</div>';
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:19px;margin-bottom:4px">' + (editing ? 'Editar Cadastro' : 'Novo Cadastro') + '</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">' + (editing ? 'Altere os dados da pessoa. Mudanças de célula, posição, batismo ou encontro ficam registradas em Movimentações.' : 'Preencha os dados da pessoa para incluí-la neste dashboard. Fica salvo no banco de dados e soma aos totais e gráficos.') + '</div>';
 
-    if (vals.novoSalvo) {
+    if (vals.novoSalvo && !editing) {
       html += '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:16px">Pessoa cadastrada com sucesso.</div>';
+    }
+    if (vals.novoError) {
+      html += '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:16px">Erro: ' + escHtml(vals.novoError) + '</div>';
     }
 
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:24px;box-shadow:0 1px 2px rgba(20,36,58,.04);display:flex;flex-direction:column;gap:16px">' +
@@ -1347,7 +1590,10 @@
       simNaoField('Seminário Pastoral', cb(vals.onNF('seminario'), 'change'), f.seminario) +
       '</div>' +
 
-      '<button ' + cb(vals.submitNovoMembro) + ' style="margin-top:8px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Cadastrar pessoa</button>' +
+      '<div style="display:flex;gap:10px;margin-top:8px">' +
+      '<button ' + cb(vals.submitNovoMembro) + (vals.novoSaving ? ' disabled' : '') + ' style="flex:1;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.novoSaving ? 'Salvando…' : (editing ? 'Salvar alterações' : 'Cadastrar pessoa')) + '</button>' +
+      (editing ? '<button ' + cb(vals.cancelEditMembro) + ' style="padding:12px 18px;border:1px solid #d4deea;border-radius:9px;background:#fff;color:#6b7c93;font-size:14px;font-weight:600;cursor:pointer">Cancelar</button>' : '') +
+      '</div>' +
       '</div></div>';
 
     return html;
@@ -1422,8 +1668,131 @@
     return html;
   }
 
+  function presencaCultoHtml(vals) {
+    var html = '<div>';
+
+    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
+      '<input type="date" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'input') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
+      '<button ' + cb(vals.criarCulto) + ' style="padding:10px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Selecionar / criar culto</button>' +
+      '</div>';
+
+    if (!vals.cultoAtual) {
+      html += '<div style="font-size:13px;color:#6b7c93;margin-bottom:16px">Escolha uma data acima para abrir o check-in, ou clique num culto já registrado na lista abaixo.</div>';
+    } else {
+      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">' +
+        kpiCard('Culto selecionado', vals.cultoAtual.dataLabel, 'check-in em andamento') +
+        kpiCard('Presentes', vals.cultoPresentes, 'de ' + vals.cultoTotal + ' na seleção', { gradient: true }) +
+        kpiCard('Presença', vals.cultoPct, '% da seleção', { pct: true, valueColor: '#149C88' }) +
+        '</div>';
+
+      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
+        '<input type="text" value="' + escHtml(vals.cultoFilters.q) + '" ' + cb(vals.onCFQ, 'input') + ' placeholder="Buscar por nome…" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px">' +
+        '<select ' + cb(vals.onCFCelula, 'change') + ' style="padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
+        opt('', 'Todas as células', vals.cultoFilters.celula === '') +
+        vals.cultoCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.cultoFilters.celula === o.v); }).join('') +
+        '</select>' +
+        '</div>';
+
+      html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
+        '<div style="max-height:520px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+        '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+        '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
+        '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
+        '<th style="text-align:right;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Presente</th>' +
+        '</tr></thead><tbody>' +
+        vals.cultoRows.map(function (r) {
+          return '<tr ' + cb(r.onToggle) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
+            '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(r.nome) + '</td>' +
+            '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
+            '<td style="padding:11px 22px;text-align:right">' +
+            '<span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:11.5px;font-weight:600;background:' + (r.presente ? '#dcf3ef' : '#eef2f7') + ';color:' + (r.presente ? '#0E7A68' : '#8a99ab') + '">' + (r.presente ? 'Presente' : 'Ausente') + '</span>' +
+            '</td></tr>';
+        }).join('') +
+        '</tbody></table></div></div>';
+    }
+
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Cultos registrados</div></div>' +
+      '<div style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
+      '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Presentes</th>' +
+      '</tr></thead><tbody>' +
+      vals.cultos.map(function (c) {
+        return '<tr ' + cb(c.onClick) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9;background:' + (c.active ? '#eaf1fa' : 'transparent') + '">' +
+          '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(c.dataLabel) + '</td>' +
+          '<td style="padding:9px 22px;text-align:right;color:#4a5b70">' + c.presentes + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function movimentacoesHtml(vals) {
+    var campoOptions = [{ v: 'celula', label: 'Célula' }, { v: 'posicao', label: 'Posição' }, { v: 'batizado', label: 'Batismo' }, { v: 'encontro', label: 'Encontro com Deus' }, { v: 'nota', label: 'Nota' }];
+    var html = '<div>';
+
+    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
+      '<select ' + cb(vals.onMFCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
+      opt('', 'Todas as células', vals.movFilters.celula === '') +
+      vals.movCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.movFilters.celula === o.v); }).join('') +
+      '</select>' +
+      '<select ' + cb(vals.onMFCampo, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
+      opt('', 'Todos os tipos', vals.movFilters.campo === '') +
+      campoOptions.map(function (o) { return opt(o.v, o.label, vals.movFilters.campo === o.v); }).join('') +
+      '</select>' +
+      '</div>';
+
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Movimentações <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.movRows.length + ' registros</span></div></div>' +
+      '<div style="max-height:600px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
+      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
+      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
+      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Tipo</th>' +
+      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Mudança</th>' +
+      '</tr></thead><tbody>' +
+      vals.movRows.map(function (r) {
+        return '<tr style="border-bottom:1px solid #f0f4f9">' +
+          '<td style="padding:10px 22px;color:#4a5b70;font-variant-numeric:tabular-nums">' + escHtml(r.dataLabel) + '</td>' +
+          '<td style="padding:10px 12px;font-weight:600;color:#14243a">' + escHtml(r.nome) + '</td>' +
+          '<td style="padding:10px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
+          '<td style="padding:10px 12px;color:#4a5b70">' + escHtml(r.campoLabel) + '</td>' +
+          '<td style="padding:10px 22px;color:#4a5b70">' + escHtml(r.desc) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function loginHtml(vals) {
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:360px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Entrar</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Acesso restrito aos líderes da Rede Oikos.</div>' +
+      (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
+      '<div style="display:flex;flex-direction:column;gap:12px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
+      '<input type="email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha</label>' +
+      '<input type="password" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<button ' + cb(vals.doLogin) + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
+      '</div></div></div>';
+  }
+
+  function naoConfiguradoHtml() {
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center">' +
+      '<div style="max-width:420px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:19px;margin-bottom:8px">Supabase não configurado</div>' +
+      '<div style="font-size:13px;color:#6b7c93">Preencha <code>config.js</code> com a URL e a anon key do seu projeto Supabase (veja <code>supabase/schema.sql</code> e <code>supabase/seed.sql</code>) para ativar o login e o cadastro.</div>' +
+      '</div></div>';
+  }
+
   function render() {
-    var vals = computeVals();
     var root = document.getElementById('app');
     var active = document.activeElement;
     var focusInfo = null;
@@ -1432,13 +1801,29 @@
     }
     callbacks = {};
     cbSeq = 0;
-    var html = '<div style="min-height:100vh;padding:26px 30px 56px;max-width:1420px;margin:0 auto">' +
-      headerHtml(vals) + tabsHtml(vals) +
-      (vals.isCadastro ? cadastroHtml(vals) : '') +
-      (vals.isPresenca ? presencaHtml(vals) : '') +
-      (vals.isTrilho ? trilhoHtml(vals) : '') +
-      (vals.isNovo ? novoHtml(vals) : '') +
-      '</div>';
+
+    var html;
+    if (!supabaseConfigured()) {
+      html = naoConfiguradoHtml();
+    } else if (!state.session) {
+      html = loginHtml({
+        loginForm: state.loginForm, loginError: state.loginError, loginLoading: state.loginLoading,
+        onLoginEmail: function (e) { setLF('email', e.target.value); },
+        onLoginSenha: function (e) { setLF('senha', e.target.value); },
+        doLogin: function () { doLogin(); },
+      });
+    } else {
+      var vals = computeVals();
+      html = '<div style="min-height:100vh;padding:26px 30px 56px;max-width:1420px;margin:0 auto">' +
+        headerHtml(vals) + tabsHtml(vals) +
+        (vals.isCadastro ? cadastroHtml(vals) : '') +
+        (vals.isPresenca ? presencaHtml(vals) : '') +
+        (vals.isCulto ? presencaCultoHtml(vals) : '') +
+        (vals.isTrilho ? trilhoHtml(vals) : '') +
+        (vals.isMov ? movimentacoesHtml(vals) : '') +
+        (vals.isNovo ? novoHtml(vals) : '') +
+        '</div>';
+    }
     root.innerHTML = html;
     if (focusInfo) {
       var el = document.getElementById(focusInfo.id);
@@ -1465,8 +1850,11 @@
     root.addEventListener('click', handleEvt);
     root.addEventListener('change', handleEvt);
     root.addEventListener('input', handleEvt);
+    if (supabaseConfigured()) {
+      sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+      checkSession();
+    }
     render();
-    syncFromSheet();
     syncAttendance();
   });
 })();
