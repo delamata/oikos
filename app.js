@@ -20,6 +20,12 @@
     try { localStorage.setItem(key, val); } catch (e) {}
   }
 
+  function loadLocalMembers() {
+    try { return JSON.parse(safeGet('membros_local') || '[]'); } catch (e) { return []; }
+  }
+
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Membro', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não' };
+
   var state = {
     q: '',
     filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' },
@@ -30,6 +36,9 @@
     lastSync: safeGet('membros_lastSync'),
     tab: 'cadastro',
     trilhoFilters: { celula: '', curso: '' },
+    localMembers: loadLocalMembers(),
+    novoForm: Object.assign({}, novoFormDefaults),
+    novoSalvo: false,
     presAtt: [],
     pFilters: { celula: '', ano: '', mes: '', mesTop: '' },
     syncStatusP: 'idle',
@@ -44,7 +53,8 @@
   }
 
   function data() {
-    return (state.remote && state.remote.length) ? state.remote : (window.MEMBERS || []);
+    var base = (state.remote && state.remote.length) ? state.remote : (window.MEMBERS || []);
+    return base.concat(state.localMembers || []);
   }
 
   // ---------------------------------------------------------------------
@@ -124,6 +134,31 @@
   function setF(key, val) { setState(function (s) { var f = Object.assign({}, s.filters); f[key] = val; return { filters: f }; }); }
   function setPF(key, val) { setState(function (s) { var f = Object.assign({}, s.pFilters); f[key] = val; return { pFilters: f }; }); }
   function setTF(key, val) { setState(function (s) { var f = Object.assign({}, s.trilhoFilters); f[key] = val; return { trilhoFilters: f }; }); }
+  function setNF(key, val) { setState(function (s) { var f = Object.assign({}, s.novoForm); f[key] = val; return { novoForm: f, novoSalvo: false }; }); }
+
+  function ageFromIso(iso) {
+    if (!iso) return null;
+    var b = new Date(iso + 'T00:00:00');
+    var now = new Date();
+    var a = now.getFullYear() - b.getFullYear();
+    var md = now.getMonth() - b.getMonth();
+    if (md < 0 || (md === 0 && now.getDate() < b.getDate())) a--;
+    return (a >= 0 && a < 120) ? a : null;
+  }
+
+  function submitNovoMembro() {
+    var f = state.novoForm;
+    if (!f.nome.trim()) return;
+    var novo = {
+      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, posicao: f.posicao,
+      batizado: f.batizado, encontro: f.encontro, civil: f.civil,
+      idade: ageFromIso(f.nasc), nasc: f.nasc || null, tel: f.tel.trim(),
+      maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
+    };
+    var updated = (state.localMembers || []).concat([novo]);
+    safeSet('membros_local', JSON.stringify(updated));
+    setState({ localMembers: updated, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
+  }
 
   // ---------------------------------------------------------------------
   // Remote sync
@@ -268,6 +303,33 @@
     var filterLabel = bits.length ? bits.join(' · ') : 'Todas as células, anos e meses';
     var lines = ['*Presença por Célula*', filterLabel, '', 'Encontros: ' + vals.pk.registros, 'Presença média: ' + vals.pk.media, 'FAs: ' + vals.pk.totalFA, 'Visitantes: ' + vals.pk.totalVisit, ''];
     (vals.freqPorLiderRows || []).forEach(function (r) { lines.push('• ' + r.celula + ' — Membros: ' + r.membros + ' · FAs: ' + r.fa + ' · Visitantes: ' + r.visit); });
+    window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
+  }
+
+  function shareListWhatsapp(title, rows, nomeKey, nascKey) {
+    var lines = ['*' + title + '*', ''];
+    rows.forEach(function (r) { lines.push('• ' + r[nomeKey] + ' — ' + (r[nascKey] || '—')); });
+    window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
+  }
+
+  function shareMembrosWhatsapp() {
+    var all = data();
+    var grupos = { 'Membro': 'Membros', 'Visitante': 'Visitantes', 'Frequentador Assíduo': 'Frequentadores' };
+    var byCelula = {};
+    all.forEach(function (p) {
+      if (!grupos[p.posicao]) return;
+      var c = byCelula[p.celula] || (byCelula[p.celula] = { Membros: [], Visitantes: [], Frequentadores: [] });
+      c[grupos[p.posicao]].push(p.nome);
+    });
+    var lines = ['*Membros, Visitantes e Frequentadores por Célula*', ''];
+    celOrder.filter(function (c) { return byCelula[c]; }).forEach(function (cel) {
+      var g = byCelula[cel];
+      lines.push('*' + celulaLabel(cel) + '*');
+      lines.push('Membros (' + g.Membros.length + '): ' + (g.Membros.join(', ') || '—'));
+      lines.push('Frequentadores (' + g.Frequentadores.length + '): ' + (g.Frequentadores.join(', ') || '—'));
+      lines.push('Visitantes (' + g.Visitantes.length + '): ' + (g.Visitantes.join(', ') || '—'));
+      lines.push('');
+    });
     window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
   }
 
@@ -652,6 +714,7 @@
     var isCadastro = state.tab === 'cadastro';
     var isPresenca = state.tab === 'presenca';
     var isTrilho = state.tab === 'trilho';
+    var isNovo = state.tab === 'novo';
 
     // ---- Trilho (Maturidade / CTL / Seminário Pastoral) ----
     var tf = state.trilhoFilters;
@@ -714,9 +777,16 @@
       goCadastro: function () { setState({ tab: 'cadastro' }); },
       goPresenca: function () { setState({ tab: 'presenca' }); },
       goTrilho: function () { setState({ tab: 'trilho' }); },
-      isTrilho: isTrilho,
+      goNovo: function () { setState({ tab: 'novo' }); },
+      isTrilho: isTrilho, isNovo: isNovo,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
       tabTrilhoBorder: isTrilho ? '#1B2344' : 'transparent',
+      tabNovoColor: isNovo ? '#1B2344' : '#8a99ab',
+      tabNovoBorder: isNovo ? '#1B2344' : 'transparent',
+      novoForm: state.novoForm, novoSalvo: state.novoSalvo,
+      onNF: function (key) { return function (e) { setNF(key, e.target.value); }; },
+      submitNovoMembro: function () { submitNovoMembro(); },
+      celulaOptionsForm: celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
       trilhoKpis: trilhoKpis, trilhoStackedBars: trilhoStackedBars, trilhoCourses: trilhoCourses,
       trilhoFilters: tf,
       trilhoCelulaOptions: trilhoCelulaOptions,
@@ -758,6 +828,10 @@
       onBatizado: function (e) { setF('batizado', e.target.value); },
       onEncontro: function (e) { setF('encontro', e.target.value); },
       clearFilters: function () { setState({ q: '', filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' } }); },
+      shareMembrosWhatsapp: function () { shareMembrosWhatsapp(); },
+      shareAdultosWhatsapp: function () { shareListWhatsapp('Adultos — Nome e Nascimento', people, 'nome', 'nascLabel'); },
+      shareVisitantesWhatsapp: function () { shareListWhatsapp('Visitantes — Nome e Nascimento', visitantes, 'nome', 'nascLabel'); },
+      shareKidsWhatsapp: function () { shareListWhatsapp('Crianças — Nome e Nascimento', kids3a12, 'nome', 'nascLabel'); },
       sortNome: function () { setState(function (st) { return { sort: { key: 'nome', dir: st.sort.key === 'nome' ? -st.sort.dir : 1 } }; }); },
       sortIdade: function () { setState(function (st) { return { sort: { key: 'idade', dir: st.sort.key === 'idade' ? -st.sort.dir : 1 } }; }); },
       closeDetail: function () { setState({ selected: null }); },
@@ -808,6 +882,7 @@
       '<button ' + cb(vals.goCadastro) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCadastroColor + ';border-bottom:2.5px solid ' + vals.tabCadastroBorder + ';margin-bottom:-1px">Cadastro de Membros</button>' +
       '<button ' + cb(vals.goPresenca) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabPresencaColor + ';border-bottom:2.5px solid ' + vals.tabPresencaBorder + ';margin-bottom:-1px">Presença por Célula</button>' +
       '<button ' + cb(vals.goTrilho) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabTrilhoColor + ';border-bottom:2.5px solid ' + vals.tabTrilhoBorder + ';margin-bottom:-1px">Trilho do Vencedor</button>' +
+      '<button ' + cb(vals.goNovo) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabNovoColor + ';border-bottom:2.5px solid ' + vals.tabNovoBorder + ';margin-bottom:-1px">+ Novo Cadastro</button>' +
       '</div>';
   }
 
@@ -862,6 +937,7 @@
       opt('', 'Encontro: todos', vals.filters.encontro === '') + opt('Sim', 'Encontro: Sim', vals.filters.encontro === 'Sim') + opt('Não', 'Encontro: Não', vals.filters.encontro === 'Não') +
       '</select>' +
       '<button ' + cb(vals.clearFilters) + ' style="padding:10px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Limpar</button>' +
+      '<button ' + cb(vals.shareMembrosWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:10px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' Enviar via WhatsApp</button>' +
       '</div>';
 
     // KPI row
@@ -968,6 +1044,7 @@
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Adultos <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.people.length + ' na seleção</span></div>' +
+      '<button ' + cb(vals.shareAdultosWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
       '<div style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
@@ -986,6 +1063,7 @@
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-top:16px">' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Visitantes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.visitantes.length + ' na seleção</span></div>' +
+      '<button ' + cb(vals.shareVisitantesWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
       '<div style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
@@ -1002,7 +1080,10 @@
 
     // Crianças 3-12
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-top:16px">' +
-      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Crianças e pré-adolescentes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· 3 a 12 anos · ' + vals.kids3a12.length + ' pessoas</span></div></div>' +
+      '<div style="padding:18px 22px 14px"><div style="display:flex;align-items:baseline">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Crianças e pré-adolescentes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· 3 a 12 anos · ' + vals.kids3a12.length + ' pessoas</span></div>' +
+      '<button ' + cb(vals.shareKidsWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer;margin-left:auto">' + whatsappIcon + ' WhatsApp</button>' +
+      '</div></div>' +
       '<div style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
@@ -1205,6 +1286,73 @@
     return html;
   }
 
+  function selectField(label, cbAttr, options, current) {
+    return '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">' + escHtml(label) + '</label>' +
+      '<select ' + cbAttr + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;background:#fff">' +
+      options.map(function (o) { return opt(o.v, o.label, current === o.v); }).join('') +
+      '</select></div>';
+  }
+
+  function simNaoField(label, cbAttr, current) {
+    return selectField(label, cbAttr, [{ v: 'Não', label: 'Não' }, { v: 'Sim', label: 'Sim' }], current);
+  }
+
+  function novoHtml(vals) {
+    var f = vals.novoForm;
+    var html = '<div style="max-width:640px;margin:24px auto 60px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:19px;margin-bottom:4px">Novo Cadastro</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Preencha os dados da pessoa para incluí-la neste dashboard. Fica salvo neste navegador e soma aos totais e gráficos.</div>';
+
+    if (vals.novoSalvo) {
+      html += '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:16px">Pessoa cadastrada com sucesso.</div>';
+    }
+
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:24px;box-shadow:0 1px 2px rgba(20,36,58,.04);display:flex;flex-direction:column;gap:16px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+      '<input type="text" id="novo-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onNF('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+      selectField('Célula', cb(vals.onNF('celula'), 'change'), vals.celulaOptionsForm, f.celula) +
+      '</div>' +
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      selectField('Posição', cb(vals.onNF('posicao'), 'change'), [
+        { v: 'Membro', label: 'Membro' }, { v: 'Líder de Célula', label: 'Líder de Célula' }, { v: 'Anfitrião', label: 'Anfitrião' },
+        { v: 'Discipulador', label: 'Discipulador' }, { v: 'Frequentador Assíduo', label: 'Frequentador Assíduo' }, { v: 'Visitante', label: 'Visitante' }
+      ], f.posicao) +
+      selectField('Estado civil', cb(vals.onNF('civil'), 'change'), [
+        { v: 'Solteiro (a)', label: 'Solteiro(a)' }, { v: 'Casado (a)', label: 'Casado(a)' }, { v: 'Amasiado (a)', label: 'Amasiado(a)' },
+        { v: 'Divorciado(a)', label: 'Divorciado(a)' }, { v: 'Viuvo (a)', label: 'Viúvo(a)' }
+      ], f.civil) +
+      '</div>' +
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
+      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onNF('nasc'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
+      '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+      '</div>' +
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      simNaoField('Foi batizado?', cb(vals.onNF('batizado'), 'change'), f.batizado) +
+      simNaoField('Já fez o Encontro com Deus?', cb(vals.onNF('encontro'), 'change'), f.encontro) +
+      '</div>' +
+
+      '<div style="font-size:12px;color:#6b7c93;font-weight:600;margin-top:6px">Trilho do Vencedor</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">' +
+      simNaoField('Ceifeiros', cb(vals.onNF('ceifeiros'), 'change'), f.ceifeiros) +
+      simNaoField('Maturidade', cb(vals.onNF('maturidade'), 'change'), f.maturidade) +
+      simNaoField('CTL', cb(vals.onNF('ctl'), 'change'), f.ctl) +
+      simNaoField('Seminário Pastoral', cb(vals.onNF('seminario'), 'change'), f.seminario) +
+      '</div>' +
+
+      '<button ' + cb(vals.submitNovoMembro) + ' style="margin-top:8px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Cadastrar pessoa</button>' +
+      '</div></div>';
+
+    return html;
+  }
+
   function trilhoHtml(vals) {
     var courseValues = { ceifeiros: 'Ceifeiros', maturidade: 'Maturidade', ctl: 'CTL', seminario: 'Seminário Pastoral' };
     var html = '<div>';
@@ -1289,6 +1437,7 @@
       (vals.isCadastro ? cadastroHtml(vals) : '') +
       (vals.isPresenca ? presencaHtml(vals) : '') +
       (vals.isTrilho ? trilhoHtml(vals) : '') +
+      (vals.isNovo ? novoHtml(vals) : '') +
       '</div>';
     root.innerHTML = html;
     if (focusInfo) {
