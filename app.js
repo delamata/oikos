@@ -158,7 +158,7 @@
     if (newSession === state.session) return;
     if (!newSession && !state.session) return;
     setState({ session: newSession });
-    if (newSession) { loadMembers(); loadCultos(); loadMovimentacoes(); }
+    if (newSession) { loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance(); }
   }
 
   function checkSession() {
@@ -171,16 +171,17 @@
     });
   }
 
-  function setLF(key, val) { setState(function (s) { var f = Object.assign({}, s.loginForm); f[key] = val; return { loginForm: f, loginError: null }; }); }
-
   function doLogin() {
-    var f = state.loginForm;
-    if (!f.email.trim() || !f.senha) return;
-    setState({ loginLoading: true, loginError: null });
-    sb.auth.signInWithPassword({ email: f.email.trim(), password: f.senha }).then(function (res) {
+    var emailEl = document.getElementById('login-email');
+    var senhaEl = document.getElementById('login-senha');
+    var email = (emailEl && emailEl.value || '').trim();
+    var senha = senhaEl && senhaEl.value || '';
+    if (!email || !senha) return;
+    setState({ loginLoading: true, loginError: null, loginForm: { email: email, senha: '' } });
+    sb.auth.signInWithPassword({ email: email, password: senha }).then(function (res) {
       if (res.error) { setState({ loginLoading: false, loginError: res.error.message }); return; }
       setState({ loginLoading: false, loginForm: { email: '', senha: '' }, session: res.data.session });
-      loadMembers(); loadCultos(); loadMovimentacoes();
+      loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance();
     });
   }
 
@@ -1784,13 +1785,13 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Entrar</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Acesso restrito aos líderes da Rede Oikos.</div>' +
       (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
-      '<div style="display:flex;flex-direction:column;gap:12px">' +
+      '<form ' + cb(vals.doLogin, 'submit') + ' style="display:flex;flex-direction:column;gap:12px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
-      '<input type="email" id="login-email" value="' + escHtml(vals.loginForm.email) + '" ' + cb(vals.onLoginEmail, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="email" id="login-email" value="' + escHtml(vals.loginForm.email) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha</label>' +
-      '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" ' + cb(vals.onLoginSenha, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
-      '<button ' + cb(vals.doLogin) + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
-      '</div></div></div>';
+      '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<button type="submit"' + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
+      '</form></div></div>';
   }
 
   function naoConfiguradoHtml() {
@@ -1817,9 +1818,7 @@
     } else if (!state.session) {
       html = loginHtml({
         loginForm: state.loginForm, loginError: state.loginError, loginLoading: state.loginLoading,
-        onLoginEmail: function (e) { setLF('email', e.target.value); },
-        onLoginSenha: function (e) { setLF('senha', e.target.value); },
-        doLogin: function () { doLogin(); },
+        doLogin: function (e) { if (e && e.preventDefault) e.preventDefault(); doLogin(); },
       });
     } else {
       var vals = computeVals();
@@ -1859,11 +1858,11 @@
     root.addEventListener('click', handleEvt);
     root.addEventListener('change', handleEvt);
     root.addEventListener('input', handleEvt);
+    root.addEventListener('submit', handleEvt);
     if (supabaseConfigured()) {
       sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
       checkSession();
     }
     render();
-    syncAttendance();
   });
 })();
