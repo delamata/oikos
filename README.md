@@ -18,7 +18,7 @@ dados + autenticação).
 
 1. Crie um projeto gratuito em [supabase.com](https://supabase.com).
 2. No **SQL Editor** do projeto, rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) (cria as tabelas e as políticas de acesso).
-3. Ainda no SQL Editor, rode [`supabase/seed.sql`](supabase/seed.sql) para importar os membros já cadastrados anteriormente.
+3. Ainda no SQL Editor, rode [`supabase/seed.sql`](supabase/seed.sql) **uma única vez** para importar os membros já cadastrados anteriormente — rodar de novo duplica todo mundo (se isso acontecer, rode [`supabase/dedupe_members.sql`](supabase/dedupe_members.sql) para corrigir).
 4. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Não há tela pública de cadastro — os acessos são só os que você criar aqui.
 5. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
    ```js
