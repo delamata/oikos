@@ -12,7 +12,7 @@ create table if not exists members (
   nome text not null,
   tipo text not null default 'Adultos',
   celula text not null,
-  posicao text not null default 'Membro',
+  posicao text not null default 'Visitante',
   batizado text not null default 'Não',
   encontro text not null default 'Não',
   civil text not null default 'Solteiro (a)',
@@ -23,6 +23,9 @@ create table if not exists members (
   seminario text not null default 'Não',
   ceifeiros text not null default 'Não',
   active boolean not null default true,
+  situacao_saida text not null default 'ativo'
+    check (situacao_saida in ('ativo', 'transferido_celula', 'transferido_rede', 'transferido_igreja', 'perdido')),
+  saida_detalhe text,
   created_by uuid references auth.users,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

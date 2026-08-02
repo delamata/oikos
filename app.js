@@ -22,6 +22,17 @@
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
 
+  // Situação de saída da rede: transferências (não contam como "perdido")
+  // e perdidos (saiu e não quer mais participar de nenhuma igreja).
+  var SITUACAO_OPTIONS = [
+    { v: 'ativo', label: 'Ativo' },
+    { v: 'transferido_celula', label: 'Transferido — outra célula' },
+    { v: 'transferido_rede', label: 'Transferido — outra rede' },
+    { v: 'transferido_igreja', label: 'Transferido — outra igreja' },
+    { v: 'perdido', label: 'Perdido' },
+  ];
+  var SITUACAO_LABELS = SITUACAO_OPTIONS.reduce(function (m, o) { m[o.v] = o.label; return m; }, {});
+
   var ATT_SHEET_ID = '1QgKeRKFm_jymG5WN6C_Kx904plvd0ss6YZCcw-4QTnU';
   var ATT_GID = '792733803';
   var ATT_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + ATT_SHEET_ID + '/gviz/tq?tqx=out:csv&gid=' + ATT_GID;
@@ -43,7 +54,7 @@
     return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
-  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não' };
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
 
   var state = {
     q: '',
@@ -146,7 +157,9 @@
 
   function celulaLabelOrRaw(campo, v) {
     if (v == null) return '—';
-    return campo === 'celula' ? celulaLabel(v) : v;
+    if (campo === 'celula') return celulaLabel(v);
+    if (campo === 'situacao_saida') return SITUACAO_LABELS[v] || v;
+    return v;
   }
 
   function setF(key, val) { setState(function (s) { var f = Object.assign({}, s.filters); f[key] = val; return { filters: f }; }); }
@@ -216,7 +229,7 @@
   function loadMembers() {
     if (!sb) return;
     setState({ membersStatus: 'loading' });
-    sb.from('members').select('*').eq('active', true).order('nome').then(function (res) {
+    sb.from('members').select('*').order('nome').then(function (res) {
       if (res.error) { console.warn('Erro ao carregar membros:', res.error.message); setState({ membersStatus: 'error' }); return; }
       setState({ members: res.data.map(mapMemberRow), membersStatus: 'ok', lastMembersSync: new Date().toISOString() });
     });
@@ -228,10 +241,12 @@
       batizado: f.batizado, encontro: f.encontro, civil: f.civil,
       nasc: f.nasc || null, tel: f.tel.trim(),
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
+      situacao_saida: f.situacao, saida_detalhe: (f.saidaDetalhe || '').trim() || null,
+      active: f.situacao === 'ativo',
     };
   }
 
-  var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'batizado', 'encontro'];
+  var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'batizado', 'encontro', 'situacao_saida'];
 
   function startEditMembro(p) {
     setState({
@@ -241,6 +256,7 @@
         batizado: p.batizado, encontro: p.encontro, civil: p.civil,
         nasc: p.nasc || '', tel: p.tel || '',
         maturidade: p.maturidade, ctl: p.ctl, seminario: p.seminario, ceifeiros: p.ceifeiros,
+        situacao: p.situacao_saida || 'ativo', saidaDetalhe: p.saida_detalhe || '',
       },
       novoEditId: p.id,
       novoEditOriginal: p,
@@ -472,7 +488,7 @@
   }
 
   function shareMembrosWhatsapp() {
-    var all = data();
+    var all = data().filter(function (p) { return p.active !== false; });
     var grupos = { 'Membro': 'Membros', 'Visitante': 'Visitantes', 'Frequentador Assíduo': 'Frequentadores' };
     var byCelula = {};
     all.forEach(function (p) {
@@ -535,7 +551,8 @@
   // Computed values (ported from renderVals())
   // ---------------------------------------------------------------------
   function computeVals() {
-    var all = data();
+    var allPessoas = data();
+    var all = allPessoas.filter(function (p) { return p.active !== false; });
     var f = state.filters;
     var q = state.q.trim().toLowerCase();
 
@@ -713,7 +730,7 @@
       var nascLabelSel = '—';
       if (s.nasc) { var d2 = new Date(s.nasc); nascLabelSel = d2.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }); }
       var historico = (state.movimentacoes || []).filter(function (m) { return m.member_id === s.id; }).map(function (m) {
-        var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', active: 'Status', nota: 'Nota' }[m.campo] || m.campo;
+        var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', situacao_saida: 'Situação', nota: 'Nota' }[m.campo] || m.campo;
         var desc = m.campo === 'nota' ? m.observacao : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
         return { data: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }), campoLabel: campoLabel, desc: desc };
       });
@@ -925,7 +942,7 @@
       if (mf.campo && m.campo !== mf.campo) return false;
       return true;
     }).map(function (m) {
-      var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', active: 'Status', nota: 'Nota' }[m.campo] || m.campo;
+      var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', situacao_saida: 'Situação', nota: 'Nota' }[m.campo] || m.campo;
       var desc = m.campo === 'nota' ? (m.observacao || '') : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
       return {
         dataLabel: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -935,6 +952,25 @@
       };
     });
     var movCelulaOptions = celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; });
+
+    // ---- Perdidos por célula (não conta transferidos) ----
+    var pessoasSairam = allPessoas.filter(function (p) { return p.active === false; });
+    var perdidosPorCelula = {};
+    pessoasSairam.forEach(function (p) {
+      if (p.situacao_saida !== 'perdido') return;
+      perdidosPorCelula[p.celula] = (perdidosPorCelula[p.celula] || 0) + 1;
+    });
+    var perdidosRows = celOrder.filter(function (c) { return perdidosPorCelula[c]; }).map(function (c) {
+      return { celula: celulaLabel(c), qtd: perdidosPorCelula[c] };
+    });
+    var totalPerdidos = pessoasSairam.filter(function (p) { return p.situacao_saida === 'perdido'; }).length;
+    var sairamRows = pessoasSairam.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }).map(function (p) {
+      return {
+        nome: p.nome, celulaLabel: celulaLabel(p.celula),
+        situacaoLabel: SITUACAO_LABELS[p.situacao_saida] || p.situacao_saida || '—',
+        detalhe: p.saida_detalhe || '—',
+      };
+    });
 
     // ---- Trilho (Maturidade / CTL / Seminário Pastoral) ----
     var tf = state.trilhoFilters;
@@ -1029,6 +1065,7 @@
       onCFCelula: function (e) { setCF('celula', e.target.value); },
       onCFQ: function (e) { setCF('q', e.target.value); },
       movRows: movRows, movStatus: state.movStatus, movFilters: mf, movCelulaOptions: movCelulaOptions,
+      perdidosRows: perdidosRows, totalPerdidos: totalPerdidos, sairamRows: sairamRows,
       onMFCelula: function (e) { setMF('celula', e.target.value); },
       onMFCampo: function (e) { setMF('campo', e.target.value); },
       trilhoKpis: trilhoKpis, trilhoStackedBars: trilhoStackedBars, trilhoCourses: trilhoCourses,
@@ -1609,6 +1646,15 @@
       simNaoField('Seminário Pastoral', cb(vals.onNF('seminario'), 'change'), f.seminario) +
       '</div>' +
 
+      (editing ? (
+        '<div style="font-size:12px;color:#6b7c93;font-weight:600;margin-top:6px">Saída da rede</div>' +
+        '<div class="grid-form2">' +
+        selectField('Situação', cb(vals.onNF('situacao'), 'change'), SITUACAO_OPTIONS, f.situacao) +
+        '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Detalhe (opcional)</label>' +
+        '<input type="text" id="novo-saida-detalhe" value="' + escHtml(f.saidaDetalhe) + '" ' + cb(vals.onNF('saidaDetalhe'), 'input') + ' placeholder="Ex: célula/rede/igreja para onde foi" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+        '</div>'
+      ) : '') +
+
       '<div style="display:flex;gap:10px;margin-top:8px">' +
       '<button ' + cb(vals.submitNovoMembro) + (vals.novoSaving ? ' disabled' : '') + ' style="flex:1;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.novoSaving ? 'Salvando…' : (editing ? 'Salvar alterações' : 'Cadastrar pessoa')) + '</button>' +
       (editing ? '<button ' + cb(vals.cancelEditMembro) + ' style="padding:12px 18px;border:1px solid #d4deea;border-radius:9px;background:#fff;color:#6b7c93;font-size:14px;font-weight:600;cursor:pointer">Cancelar</button>' : '') +
@@ -1749,8 +1795,45 @@
   }
 
   function movimentacoesHtml(vals) {
-    var campoOptions = [{ v: 'celula', label: 'Célula' }, { v: 'posicao', label: 'Posição' }, { v: 'batizado', label: 'Batismo' }, { v: 'encontro', label: 'Encontro com Deus' }, { v: 'nota', label: 'Nota' }];
+    var campoOptions = [{ v: 'celula', label: 'Célula' }, { v: 'posicao', label: 'Posição' }, { v: 'batizado', label: 'Batismo' }, { v: 'encontro', label: 'Encontro com Deus' }, { v: 'situacao_saida', label: 'Situação' }, { v: 'nota', label: 'Nota' }];
     var html = '<div>';
+
+    html += '<div class="grid-form2" style="margin:18px 0 16px">' +
+      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Perdidos por Célula <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.totalPerdidos + ' no total</span></div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-top:2px">Só conta quem saiu como "Perdido" — transferidos não entram nessa contagem.</div></div>' +
+      (vals.perdidosRows.length
+        ? '<div class="table-scroll" style="max-height:260px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+          '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
+          '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Perdidos</th>' +
+          '</tr></thead><tbody>' +
+          vals.perdidosRows.map(function (r) {
+            return '<tr style="border-bottom:1px solid #f0f4f9">' +
+              '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(r.celula) + '</td>' +
+              '<td style="padding:9px 22px;text-align:right;color:#6B3FA0;font-weight:700">' + r.qtd + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>'
+        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Nenhum perdido registrado.</div>') +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Pessoas que saíram <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.sairamRows.length + '</span></div></div>' +
+      (vals.sairamRows.length
+        ? '<div class="table-scroll" style="max-height:260px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+          '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
+          '<th style="text-align:left;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Situação</th>' +
+          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Detalhe</th>' +
+          '</tr></thead><tbody>' +
+          vals.sairamRows.map(function (r) {
+            return '<tr style="border-bottom:1px solid #f0f4f9">' +
+              '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(r.nome) + ' <span style="font-weight:500;color:#6b7c93">· ' + escHtml(r.celulaLabel) + '</span></td>' +
+              '<td style="padding:9px 12px;color:#4a5b70">' + escHtml(r.situacaoLabel) + '</td>' +
+              '<td style="padding:9px 22px;color:#4a5b70">' + escHtml(r.detalhe) + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>'
+        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Ninguém saiu da rede ainda.</div>') +
+      '</div></div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
       '<select ' + cb(vals.onMFCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +

@@ -11,7 +11,7 @@ dados + autenticação).
 - **Presença por Célula** — lida de uma planilha Google (formulário que os líderes já preenchem), somente leitura.
 - **Presença no Culto** — check-in pessoa por pessoa, por culto/data.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
-- **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro por pessoa, mais notas manuais.
+- **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e o relatório de **Perdidos por Célula** (conta só quem saiu como "Perdido"; transferidos não entram nessa contagem).
 - **+ Novo Cadastro** — formulário de criação e edição de membros.
 
 ## Configuração inicial (uma vez só)
@@ -19,6 +19,7 @@ dados + autenticação).
 1. Crie um projeto gratuito em [supabase.com](https://supabase.com).
 2. No **SQL Editor** do projeto, rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) (cria as tabelas e as políticas de acesso).
 3. Ainda no SQL Editor, rode [`supabase/seed.sql`](supabase/seed.sql) **uma única vez** para importar os membros já cadastrados anteriormente — rodar de novo duplica todo mundo (se isso acontecer, rode [`supabase/dedupe_members.sql`](supabase/dedupe_members.sql) para corrigir). Depois rode [`supabase/migrate_posicoes.sql`](supabase/migrate_posicoes.sql) uma vez para atualizar os cadastros importados para o novo modelo de posições.
+   - Se o seu projeto Supabase já existia **antes** do campo "Situação" (transferência/perdido) ser adicionado, rode também [`supabase/add_situacao_saida.sql`](supabase/add_situacao_saida.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
 4. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Não há tela pública de cadastro — os acessos são só os que você criar aqui.
 5. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
    ```js
