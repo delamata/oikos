@@ -1109,7 +1109,7 @@
 
   function tabsHtml(vals) {
     return '' +
-      '<div style="display:flex;gap:6px;margin:18px 0 4px;border-bottom:1px solid #dde5f0;flex-wrap:wrap">' +
+      '<div class="tab-nav">' +
       '<button ' + cb(vals.goCadastro) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCadastroColor + ';border-bottom:2.5px solid ' + vals.tabCadastroBorder + ';margin-bottom:-1px">Cadastro de Membros</button>' +
       '<button ' + cb(vals.goPresenca) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabPresencaColor + ';border-bottom:2.5px solid ' + vals.tabPresencaBorder + ';margin-bottom:-1px">Presença por Célula</button>' +
       '<button ' + cb(vals.goCulto) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCultoColor + ';border-bottom:2.5px solid ' + vals.tabCultoBorder + ';margin-bottom:-1px">Presença no Culto</button>' +
@@ -1174,7 +1174,7 @@
       '</div>';
 
     // KPI row
-    html += '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:16px">' +
+    html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
       kpiCard('Na seleção', vals.k.total, vals.k.adultosKidsLabel) +
       kpiCard('Membros da rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
       kpiCard('Batizados', vals.k.batPct, vals.k.batLabel, { pct: true, valueColor: '#149C88' }) +
@@ -1184,7 +1184,7 @@
       '</div>';
 
     // Charts grid
-    html += '<div style="display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-bottom:16px">' +
+    html += '<div class="grid-2a" style="margin-bottom:16px">' +
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Jornada espiritual</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Batismo e Encontro com Deus na seleção atual</div>' +
@@ -1219,7 +1219,7 @@
       '</div></div></div>';
 
     // Posição + Células
-    html += '<div style="display:grid;grid-template-columns:1fr 1.15fr;gap:16px;margin-bottom:16px">' +
+    html += '<div class="grid-2b" style="margin-bottom:16px">' +
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Composição por posição</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Clique para filtrar</div>' +
@@ -1279,7 +1279,7 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Adultos <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.people.length + ' na seleção</span></div>' +
       '<button ' + cb(vals.shareAdultosWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
-      '<div style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th ' + cb(vals.sortNome) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Nome ' + vals.sortNomeArrow + '</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1298,7 +1298,7 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Visitantes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.visitantes.length + ' na seleção</span></div>' +
       '<button ' + cb(vals.shareVisitantesWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
-      '<div style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1317,7 +1317,7 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Crianças e pré-adolescentes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· 3 a 12 anos · ' + vals.kids3a12.length + ' pessoas</span></div>' +
       '<button ' + cb(vals.shareKidsWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer;margin-left:auto">' + whatsappIcon + ' WhatsApp</button>' +
       '</div></div>' +
-      '<div style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1413,7 +1413,7 @@
       '<span style="font-size:11.5px;color:' + vals.syncP.color + ';font-weight:600">' + escHtml(vals.syncP.text) + '</span></button>' +
       '</div>';
 
-    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px">' +
+    html += '<div class="grid-kpi4" style="margin-bottom:16px">' +
       kpiCard('Encontros registrados', vals.pk.registros, vals.pk.periodoLabel) +
       kpiCard('Presença média', vals.pk.media, 'pessoas por encontro', { gradient: true }) +
       kpiCard('Frequentadores presentes', vals.pk.totalFA, 'soma de presenças de FAs', { valueColor: '#149C88' }) +
@@ -1423,13 +1423,13 @@
     function simpleTable(title, headers, rows, rowFn) {
       return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
         '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">' + title + '</div></div>' +
-        '<div style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
+        '<div class="table-scroll" style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
         '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' + headers + '</tr></thead><tbody>' +
         rows.map(rowFn).join('') +
         '</tbody></table></div></div>';
     }
 
-    html += '<div style="display:grid;grid-template-columns:1.2fr 1fr;gap:16px;margin-bottom:16px">' +
+    html += '<div class="grid-2c" style="margin-bottom:16px">' +
       simpleTable('Frequência da Célula',
         '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Dia</th>' +
         '<th style="text-align:left;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Mês</th>' +
@@ -1465,7 +1465,7 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Frequência por Líder de Célula</div>' +
       '<button ' + cb(vals.shareFreqLiderWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '</div>' +
-      '<div style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
+      '<div class="table-scroll" style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Líder / Célula</th>' +
       '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Membros</th>' +
@@ -1507,7 +1507,7 @@
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Registros <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.pk.registros + ' na seleção</span></div></div>' +
-      '<div style="max-height:400px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:400px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th ' + cb(vals.sortPData) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Data ' + vals.sortPDataArrow + '</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1564,12 +1564,12 @@
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
       '<input type="text" id="novo-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onNF('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      '<div class="grid-form2">' +
       selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
       selectField('Célula', cb(vals.onNF('celula'), 'change'), vals.celulaOptionsForm, f.celula) +
       '</div>' +
 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      '<div class="grid-form2">' +
       selectField('Posição', cb(vals.onNF('posicao'), 'change'), [
         { v: 'Membro', label: 'Membro' }, { v: 'Líder de Célula', label: 'Líder de Célula' }, { v: 'Anfitrião', label: 'Anfitrião' },
         { v: 'Discipulador', label: 'Discipulador' }, { v: 'Frequentador Assíduo', label: 'Frequentador Assíduo' }, { v: 'Visitante', label: 'Visitante' }
@@ -1580,20 +1580,20 @@
       ], f.civil) +
       '</div>' +
 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      '<div class="grid-form2">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
       '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onNF('nasc'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
       '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '</div>' +
 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+      '<div class="grid-form2">' +
       simNaoField('Foi batizado?', cb(vals.onNF('batizado'), 'change'), f.batizado) +
       simNaoField('Já fez o Encontro com Deus?', cb(vals.onNF('encontro'), 'change'), f.encontro) +
       '</div>' +
 
       '<div style="font-size:12px;color:#6b7c93;font-weight:600;margin-top:6px">Trilho do Vencedor</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">' +
+      '<div class="grid-form4">' +
       simNaoField('Ceifeiros', cb(vals.onNF('ceifeiros'), 'change'), f.ceifeiros) +
       simNaoField('Maturidade', cb(vals.onNF('maturidade'), 'change'), f.maturidade) +
       simNaoField('CTL', cb(vals.onNF('ctl'), 'change'), f.ctl) +
@@ -1625,7 +1625,7 @@
       '<button ' + cb(vals.clearTFilters) + ' style="padding:10px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Limpar</button>' +
       '</div>';
 
-    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px">' +
+    html += '<div class="grid-kpi4" style="margin-bottom:16px">' +
       vals.trilhoKpis.map(function (k) {
         return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
           '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#6b7c93;font-weight:600">' + escHtml(k.label) + '</div>' +
@@ -1660,7 +1660,7 @@
       '<button ' + cb(vals.shareTrilhoWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<button ' + cb(vals.downloadTrilhoPdf) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1B2344" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Baixar PDF</button>' +
       '</div></div>' +
-      '<div style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1689,7 +1689,7 @@
     if (!vals.cultoAtual) {
       html += '<div style="font-size:13px;color:#6b7c93;margin-bottom:16px">Escolha uma data acima para abrir o check-in, ou clique num culto já registrado na lista abaixo.</div>';
     } else {
-      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">' +
+      html += '<div class="grid-kpi3" style="margin-bottom:16px">' +
         kpiCard('Culto selecionado', vals.cultoAtual.dataLabel, 'check-in em andamento') +
         kpiCard('Presentes', vals.cultoPresentes, 'de ' + vals.cultoTotal + ' na seleção', { gradient: true }) +
         kpiCard('Presença', vals.cultoPct, '% da seleção', { pct: true, valueColor: '#149C88' }) +
@@ -1704,7 +1704,7 @@
         '</div>';
 
       html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
-        '<div style="max-height:520px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+        '<div class="table-scroll" style="max-height:520px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
         '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
         '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
         '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
@@ -1723,7 +1723,7 @@
 
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Cultos registrados</div></div>' +
-      '<div style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
       '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Presentes</th>' +
@@ -1756,7 +1756,7 @@
 
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Movimentações <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.movRows.length + ' registros</span></div></div>' +
-      '<div style="max-height:600px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:600px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
@@ -1822,7 +1822,7 @@
       });
     } else {
       var vals = computeVals();
-      html = '<div style="min-height:100vh;padding:26px 30px 56px;max-width:1420px;margin:0 auto">' +
+      html = '<div class="page-wrap">' +
         headerHtml(vals) + tabsHtml(vals) +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isPresenca ? presencaHtml(vals) : '') +
