@@ -5,6 +5,23 @@
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   var celOrder = ['Otavio e Jô', 'Claudio e Renata', 'Pr.Paulo', 'Josivan e Celia', 'Janaina', 'Discipulador'];
 
+  // Hierarquia de posições dentro da igreja, da chegada (Visitante) até liderança sênior.
+  var posicaoOrder = ['Visitante', 'Frequentador Assíduo', 'Membro', 'Líder em Treinamento', 'Anfitrião', 'Anjo da Guarda', 'Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  var posicaoColor = {
+    'Visitante': '#8A63C9', 'Frequentador Assíduo': '#149C88', 'Membro': '#1B2344',
+    'Líder em Treinamento': '#7FA8E8', 'Anfitrião': '#5B8FE0', 'Anjo da Guarda': '#C77DBB',
+    'Líder': '#3B5FDD', 'Discipulador': '#6B3FA0', 'Obreiro': '#0E7A68',
+    'Pastor de Rede': '#A1780F', 'Pastor': '#B0281E',
+  };
+  // Posições "além de Visitante/FA" — usadas nos KPIs de Liderança e Membros da rede.
+  var POSICOES_LIDERANCA = ['Líder em Treinamento', 'Anfitrião', 'Anjo da Guarda', 'Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  var POSICOES_REDE = ['Membro'].concat(POSICOES_LIDERANCA);
+  var POSICOES_POTENCIAIS = ['Visitante', 'Frequentador Assíduo'];
+
+  function posicaoOptions() {
+    return posicaoOrder.map(function (p) { return { v: p, label: p }; });
+  }
+
   var ATT_SHEET_ID = '1QgKeRKFm_jymG5WN6C_Kx904plvd0ss6YZCcw-4QTnU';
   var ATT_GID = '792733803';
   var ATT_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + ATT_SHEET_ID + '/gviz/tq?tqx=out:csv&gid=' + ATT_GID;
@@ -26,7 +43,7 @@
     return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
-  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Membro', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não' };
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não' };
 
   var state = {
     q: '',
@@ -538,9 +555,9 @@
     var kids = total - adultos;
     var batN = filtered.filter(function (p) { return p.batizado === 'Sim'; }).length;
     var encN = filtered.filter(function (p) { return p.encontro === 'Sim'; }).length;
-    var lideranca = filtered.filter(function (p) { return ['Líder de Célula', 'Anfitrião', 'Discipulador'].indexOf(p.posicao) >= 0; }).length;
-    var potenciais = filtered.filter(function (p) { return ['Visitante', 'Frequentador Assíduo'].indexOf(p.posicao) >= 0; }).length;
-    var membrosRede = filtered.filter(function (p) { return ['Membro', 'Líder de Célula', 'Anfitrião', 'Discipulador'].indexOf(p.posicao) >= 0; }).length;
+    var lideranca = filtered.filter(function (p) { return POSICOES_LIDERANCA.indexOf(p.posicao) >= 0; }).length;
+    var potenciais = filtered.filter(function (p) { return POSICOES_POTENCIAIS.indexOf(p.posicao) >= 0; }).length;
+    var membrosRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; }).length;
     var batPct = pct(batN), encPct = pct(encN);
 
     var k = {
@@ -567,8 +584,8 @@
     });
 
     // Posição bars
-    var posOrder = ['Membro', 'Líder de Célula', 'Anfitrião', 'Discipulador', 'Frequentador Assíduo', 'Visitante'];
-    var posColor = { 'Membro': '#1B2344', 'Líder de Célula': '#3B5FDD', 'Anfitrião': '#5B8FE0', 'Discipulador': '#6B3FA0', 'Frequentador Assíduo': '#149C88', 'Visitante': '#8A63C9' };
+    var posOrder = posicaoOrder;
+    var posColor = posicaoColor;
     var posCounts = {};
     filtered.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
     var posMax = Math.max(1, Object.values(posCounts).reduce(function (a, b) { return Math.max(a, b); }, 0));
@@ -1156,12 +1173,7 @@
       '</select>' +
       '<select ' + cb(vals.onPosicao, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as posições', vals.filters.posicao === '') +
-      opt('Membro', 'Membro', vals.filters.posicao === 'Membro') +
-      opt('Líder de Célula', 'Líder de Célula', vals.filters.posicao === 'Líder de Célula') +
-      opt('Anfitrião', 'Anfitrião', vals.filters.posicao === 'Anfitrião') +
-      opt('Discipulador', 'Discipulador', vals.filters.posicao === 'Discipulador') +
-      opt('Frequentador Assíduo', 'Frequentador Assíduo', vals.filters.posicao === 'Frequentador Assíduo') +
-      opt('Visitante', 'Visitante', vals.filters.posicao === 'Visitante') +
+      posicaoOptions().map(function (o) { return opt(o.v, o.label, vals.filters.posicao === o.v); }).join('') +
       '</select>' +
       '<select ' + cb(vals.onBatizado, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Batismo: todos', vals.filters.batizado === '') + opt('Sim', 'Batizado: Sim', vals.filters.batizado === 'Sim') + opt('Não', 'Batizado: Não', vals.filters.batizado === 'Não') +
@@ -1570,10 +1582,7 @@
       '</div>' +
 
       '<div class="grid-form2">' +
-      selectField('Posição', cb(vals.onNF('posicao'), 'change'), [
-        { v: 'Membro', label: 'Membro' }, { v: 'Líder de Célula', label: 'Líder de Célula' }, { v: 'Anfitrião', label: 'Anfitrião' },
-        { v: 'Discipulador', label: 'Discipulador' }, { v: 'Frequentador Assíduo', label: 'Frequentador Assíduo' }, { v: 'Visitante', label: 'Visitante' }
-      ], f.posicao) +
+      selectField('Posição', cb(vals.onNF('posicao'), 'change'), posicaoOptions(), f.posicao) +
       selectField('Estado civil', cb(vals.onNF('civil'), 'change'), [
         { v: 'Solteiro (a)', label: 'Solteiro(a)' }, { v: 'Casado (a)', label: 'Casado(a)' }, { v: 'Amasiado (a)', label: 'Amasiado(a)' },
         { v: 'Divorciado(a)', label: 'Divorciado(a)' }, { v: 'Viuvo (a)', label: 'Viúvo(a)' }
