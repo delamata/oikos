@@ -1036,7 +1036,7 @@
       goCadastro: function () { setState({ tab: 'cadastro' }); },
       goPresenca: function () { setState({ tab: 'presenca' }); },
       goTrilho: function () { setState({ tab: 'trilho' }); },
-      goNovo: function () { setState({ tab: 'novo' }); },
+      goNovo: function () { setState({ tab: 'novo', novoSalvo: false, novoError: null }); },
       goCulto: function () { setState({ tab: 'culto' }); },
       goMov: function () { setState({ tab: 'mov' }); },
       isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov,
