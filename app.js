@@ -612,16 +612,20 @@
     });
 
     // Posição bars
-    var posOrder = posicaoOrder;
     var posColor = posicaoColor;
     var posCounts = {};
     filtered.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
+    // Inclui qualquer valor de posição fora da lista atual (ex: registro
+    // antigo ainda não migrado) em vez de escondê-lo silenciosamente —
+    // assim a soma das barras nunca fica menor que o total real.
+    var posExtras = Object.keys(posCounts).filter(function (p) { return posicaoOrder.indexOf(p) < 0; }).sort();
+    var posOrder = posicaoOrder.concat(posExtras);
     var posMax = Math.max(1, Object.values(posCounts).reduce(function (a, b) { return Math.max(a, b); }, 0));
     var posBars = posOrder.filter(function (p) { return posCounts[p]; }).map(function (p) {
       var active = f.posicao === p;
       return {
         label: p, n: posCounts[p], w: Math.round(posCounts[p] / posMax * 100) + '%',
-        color: posColor[p] || '#1B2344',
+        color: posColor[p] || '#94a3b8',
         bg: active ? '#eaf1fa' : 'transparent',
         weight: active ? 700 : 500,
         onClick: function () { setF('posicao', active ? '' : p); },
