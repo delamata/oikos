@@ -21,7 +21,7 @@
   .tab-nav::-webkit-scrollbar{height:5px}
   .tab-nav button{flex:0 0 auto}
 
-  .grid-kpi6{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+  .grid-kpi6{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px}
   .grid-kpi4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
   .grid-kpi3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
   .grid-2a{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
@@ -32,9 +32,6 @@
   .table-scroll{overflow:auto;-webkit-overflow-scrolling:touch}
   .table-scroll table{min-width:640px}
 
-  @media (max-width:900px){
-    .grid-kpi6{grid-template-columns:repeat(3,1fr)}
-  }
   @media (max-width:700px){
     .page-wrap{padding:16px 14px 40px}
     .grid-2a,.grid-2b,.grid-2c{grid-template-columns:1fr}
@@ -43,7 +40,6 @@
     .grid-form4{grid-template-columns:repeat(2,1fr)}
   }
   @media (max-width:560px){
-    .grid-kpi6{grid-template-columns:repeat(2,1fr)}
     .grid-kpi3{grid-template-columns:1fr}
     header h1{font-size:20px !important}
     header{gap:12px !important}

@@ -12,4 +12,4 @@ alter table members add constraint members_situacao_saida_check
 -- situação mudar para qualquer outro valor pelo app, active vira false
 -- automaticamente (a pessoa some da listagem principal, mas continua no
 -- banco para o relatório de Perdidos por Célula e o histórico em
--- Movimentações).
+-- Movimentações). 
