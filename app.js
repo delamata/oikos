@@ -596,6 +596,7 @@
       visitantesLabel: visitAdultos + ' adultos · ' + visitKids + ' kids/juvenis',
       totalFA: faFiltrados.length,
       faLabel: faAdultos + ' adultos · ' + faKids + ' kids/juvenis',
+      totalKids: kids,
       batPct: batPct, batLabel: batN + ' de ' + total + ' pessoas',
       encPct: encPct, encLabel: encN + ' de ' + total + ' pessoas',
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
@@ -1247,6 +1248,7 @@
       kpiCard('Membros da Rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
       kpiCard('Total de Frequentadores Assíduos', vals.k.totalFA, vals.k.faLabel, { valueColor: '#149C88' }) +
       kpiCard('Total de Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { valueColor: '#8A63C9' }) +
+      kpiCard('Total de Kids e Juvenis', vals.k.totalKids, 'crianças e adolescentes na seleção', { valueColor: '#6B3FA0' }) +
       '</div>';
 
     // Charts grid
