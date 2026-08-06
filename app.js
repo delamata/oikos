@@ -55,6 +55,11 @@
   }
 
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
+  var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', nasc: '', tel: '' };
+
+  function urlWantsCadastroPublico() {
+    try { return /[?&]cadastro(=|&|$)/.test(window.location.search); } catch (e) { return false; }
+  }
 
   var state = {
     q: '',
@@ -69,6 +74,27 @@
     loginForm: { email: '', senha: '' },
     loginError: null,
     loginLoading: false,
+
+    // vínculo login → cadastro (profiles)
+    profile: null,          // null = ainda verificando; false = sem vínculo; objeto = vinculado
+    profileStatus: 'idle',
+    directory: [],          // members_directory, usado só na tela de vínculo
+    directoryStatus: 'idle',
+    selfLinkQuery: '',
+    selfLinkSaving: false,
+    selfLinkError: null,
+
+    // hierarquia célula → discipulador/obreiro (só Pastor/Admin edita)
+    celulaHierarquia: [],
+    hierarquiaStatus: 'idle',
+    hierarquiaSaving: false,
+
+    // cadastro público (sem login)
+    isPublicCadastro: urlWantsCadastroPublico(),
+    publicForm: Object.assign({}, publicFormDefaults),
+    publicSaving: false,
+    publicError: null,
+    publicSalvo: false,
 
     // membros (Supabase)
     members: [],
@@ -188,7 +214,7 @@
     if (newSession === state.session) return;
     if (!newSession && !state.session) return;
     setState({ session: newSession });
-    if (newSession) { loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance(); }
+    if (newSession) { loadProfile(); }
   }
 
   function checkSession() {
@@ -211,12 +237,98 @@
     sb.auth.signInWithPassword({ email: email, password: senha }).then(function (res) {
       if (res.error) { setState({ loginLoading: false, loginError: res.error.message }); return; }
       setState({ loginLoading: false, loginForm: { email: '', senha: '' }, session: res.data.session });
-      loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance();
+      loadProfile();
     });
   }
 
   function doLogout() {
-    sb.auth.signOut().then(function () { setState({ session: false, members: [], cultos: [], movimentacoes: [] }); });
+    sb.auth.signOut().then(function () {
+      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, directory: [], celulaHierarquia: [] });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Vínculo login → cadastro (profiles) e hierarquia célula → discipulador/obreiro
+  // ---------------------------------------------------------------------
+  function afterLinked() {
+    loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance(); loadCelulaHierarquia();
+  }
+
+  function loadProfile() {
+    if (!sb || !state.session) return;
+    setState({ profileStatus: 'loading' });
+    sb.from('profiles').select('*').eq('user_id', state.session.user.id).maybeSingle().then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar perfil:', res.error.message); setState({ profileStatus: 'error' }); return; }
+      setState({ profile: res.data || false, profileStatus: 'ok' });
+      if (res.data) afterLinked(); else loadDirectory();
+    });
+  }
+
+  function loadDirectory() {
+    if (!sb) return;
+    setState({ directoryStatus: 'loading' });
+    sb.from('members_directory').select('*').order('nome').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar diretório:', res.error.message); setState({ directoryStatus: 'error' }); return; }
+      setState({ directory: res.data, directoryStatus: 'ok' });
+    });
+  }
+
+  function setSelfLinkQuery(v) { setState({ selfLinkQuery: v }); }
+
+  function selfLink(memberId) {
+    if (!sb || !state.session || !memberId) return;
+    setState({ selfLinkSaving: true, selfLinkError: null });
+    sb.from('profiles').insert({ user_id: state.session.user.id, member_id: memberId }).select().single().then(function (res) {
+      if (res.error) { setState({ selfLinkSaving: false, selfLinkError: res.error.message }); return; }
+      setState({ selfLinkSaving: false, profile: res.data });
+      afterLinked();
+    });
+  }
+
+  function loadCelulaHierarquia() {
+    if (!sb) return;
+    setState({ hierarquiaStatus: 'loading' });
+    sb.from('celula_hierarquia').select('*').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar hierarquia:', res.error.message); setState({ hierarquiaStatus: 'error' }); return; }
+      setState({ celulaHierarquia: res.data, hierarquiaStatus: 'ok' });
+    });
+  }
+
+  function setHierarquiaCampo(celula, campo, memberId) {
+    if (!sb) return;
+    setState({ hierarquiaSaving: true });
+    var patch = {};
+    patch[campo] = memberId || null;
+    sb.from('celula_hierarquia').update(patch).eq('celula', celula).then(function (res) {
+      if (res.error) { console.warn('Erro ao salvar hierarquia:', res.error.message); setState({ hierarquiaSaving: false }); return; }
+      loadCelulaHierarquia();
+      setState({ hierarquiaSaving: false });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Cadastro público (sem login)
+  // ---------------------------------------------------------------------
+  function setPublicField(key, val) { setState(function (s) { var f = Object.assign({}, s.publicForm); f[key] = val; return { publicForm: f, publicError: null }; }); }
+
+  function irParaCadastroPublico() { setState({ isPublicCadastro: true }); }
+  function voltarParaLogin() { setState({ isPublicCadastro: false, publicSalvo: false, publicError: null }); }
+
+  function submitPublico() {
+    if (!sb) return;
+    var f = state.publicForm;
+    if (!f.nome.trim()) return;
+    setState({ publicSaving: true, publicError: null });
+    var row = {
+      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, nasc: f.nasc || null, tel: f.tel.trim(),
+      posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
+      maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não',
+      situacao_saida: 'ativo', active: true,
+    };
+    sb.from('members').insert(row).then(function (res) {
+      if (res.error) { setState({ publicSaving: false, publicError: res.error.message }); return; }
+      setState({ publicSaving: false, publicSalvo: true, publicForm: Object.assign({}, publicFormDefaults) });
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -924,6 +1036,25 @@
     var isNovo = state.tab === 'novo';
     var isCulto = state.tab === 'culto';
     var isMov = state.tab === 'mov';
+    var isHierarquia = state.tab === 'hierarquia';
+
+    // ---- Acesso total (Pastor/Pastor de Rede/admin) — só reflete a UI;
+    // quem garante de verdade é a RLS no Supabase. ----
+    var meuMembro = (state.profile && allPessoas.filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
+    var souFull = !!(state.profile && (state.profile.is_admin || (meuMembro && ['Pastor', 'Pastor de Rede'].indexOf(meuMembro.posicao) >= 0)));
+
+    // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
+    var discipuladores = allPessoas.filter(function (p) { return p.posicao === 'Discipulador' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
+    var obreiros = allPessoas.filter(function (p) { return p.posicao === 'Obreiro' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
+    var hierarquiaRows = celOrder.map(function (c) {
+      var row = (state.celulaHierarquia || []).filter(function (h) { return h.celula === c; })[0] || {};
+      return {
+        celula: c, celulaLabelText: celulaLabel(c),
+        discipuladorId: row.discipulador_id || '', obreiroId: row.obreiro_id || '',
+        onDiscipulador: function (e) { setHierarquiaCampo(c, 'discipulador_id', e.target.value); },
+        onObreiro: function (e) { setHierarquiaCampo(c, 'obreiro_id', e.target.value); },
+      };
+    });
 
     // ---- Presença no culto ----
     var todosAtivos = all.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
@@ -1060,7 +1191,9 @@
       goNovo: function () { setState({ tab: 'novo', novoSalvo: false, novoError: null }); },
       goCulto: function () { setState({ tab: 'culto' }); },
       goMov: function () { setState({ tab: 'mov' }); },
-      isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov,
+      goHierarquia: function () { setState({ tab: 'hierarquia' }); },
+      isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov, isHierarquia: isHierarquia,
+      souFull: souFull,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
       tabTrilhoBorder: isTrilho ? '#1B2344' : 'transparent',
       tabNovoColor: isNovo ? '#1B2344' : '#8a99ab',
@@ -1069,6 +1202,10 @@
       tabCultoBorder: isCulto ? '#1B2344' : 'transparent',
       tabMovColor: isMov ? '#1B2344' : '#8a99ab',
       tabMovBorder: isMov ? '#1B2344' : 'transparent',
+      tabHierarquiaColor: isHierarquia ? '#1B2344' : '#8a99ab',
+      tabHierarquiaBorder: isHierarquia ? '#1B2344' : 'transparent',
+      hierarquiaRows: hierarquiaRows, discipuladores: discipuladores, obreiros: obreiros,
+      hierarquiaStatus: state.hierarquiaStatus, hierarquiaSaving: state.hierarquiaSaving,
       novoForm: state.novoForm, novoSalvo: state.novoSalvo, novoSaving: state.novoSaving, novoError: state.novoError,
       isEditingMembro: !!state.novoEditId,
       cancelEditMembro: function () { cancelEditMembro(); },
@@ -1191,6 +1328,7 @@
       '<button ' + cb(vals.goTrilho) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabTrilhoColor + ';border-bottom:2.5px solid ' + vals.tabTrilhoBorder + ';margin-bottom:-1px">Trilho do Vencedor</button>' +
       '<button ' + cb(vals.goMov) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabMovColor + ';border-bottom:2.5px solid ' + vals.tabMovBorder + ';margin-bottom:-1px">Movimentações</button>' +
       '<button ' + cb(vals.goNovo) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabNovoColor + ';border-bottom:2.5px solid ' + vals.tabNovoBorder + ';margin-bottom:-1px">+ Novo Cadastro</button>' +
+      (vals.souFull ? '<button ' + cb(vals.goHierarquia) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabHierarquiaColor + ';border-bottom:2.5px solid ' + vals.tabHierarquiaBorder + ';margin-bottom:-1px">Hierarquia</button>' : '') +
       '</div>';
   }
 
@@ -1902,7 +2040,99 @@
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha</label>' +
       '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<button type="submit"' + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
-      '</form></div></div>';
+      '</form>' +
+      '<div style="margin-top:16px;text-align:center">' +
+      '<button ' + cb(vals.irParaCadastroPublico) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Sou visitante, quero me cadastrar</button>' +
+      '</div></div></div>';
+  }
+
+  function cadastroPublicoHtml(vals) {
+    var f = vals.publicForm;
+    var celulaOpts = celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Seja bem-vindo(a)!</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Preencha seus dados para se cadastrar na Rede Oikos.</div>' +
+      (vals.publicSalvo
+        ? '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:14px;font-size:13.5px;font-weight:600">Cadastro recebido, obrigado! Em breve alguém da célula vai entrar em contato.</div>'
+        : (
+          (vals.publicError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">Erro: ' + escHtml(vals.publicError) + '</div>' : '') +
+          '<form ' + cb(vals.submitPublico, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+          '<input type="text" id="pub-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onPF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<div class="grid-form2">' +
+          selectField('Tipo', cb(vals.onPF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+          selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula) +
+          '</div>' +
+          '<div class="grid-form2">' +
+          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
+          '<input type="date" id="pub-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onPF('nasc'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone</label>' +
+          '<input type="text" id="pub-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onPF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '</div>' +
+          '<button type="submit"' + (vals.publicSaving ? ' disabled' : '') + ' style="padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.publicSaving ? 'Enviando…' : 'Cadastrar') + '</button>' +
+          '</form>'
+        )) +
+      '<div style="margin-top:16px;text-align:center">' +
+      '<button ' + cb(vals.voltarParaLogin) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Já sou líder, quero entrar</button>' +
+      '</div></div></div>';
+  }
+
+  function carregandoHtml() {
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div style="font-size:13px;color:#6b7c93">Carregando…</div></div>';
+  }
+
+  function selfLinkHtml(vals) {
+    var q = (vals.selfLinkQuery || '').toLowerCase();
+    var results = (vals.directory || []).filter(function (m) { return !q || m.nome.toLowerCase().indexOf(q) >= 0; }).slice(0, 30);
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:440px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:19px;margin-bottom:4px">Qual desses é você?</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Selecione seu nome no cadastro para vincular ao seu login. Se você ainda não está cadastrado, peça para um líder te cadastrar primeiro.</div>' +
+      (vals.selfLinkError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">Erro: ' + escHtml(vals.selfLinkError) + '</div>' : '') +
+      '<input type="text" id="selflink-q" value="' + escHtml(vals.selfLinkQuery) + '" ' + cb(vals.onQuery, 'input') + ' placeholder="Buscar por nome…" style="width:100%;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box;margin-bottom:12px">' +
+      (vals.directoryStatus === 'loading'
+        ? '<div style="font-size:12.5px;color:#6b7c93">Carregando…</div>'
+        : '<div style="max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:6px">' +
+          results.map(function (m) {
+            return '<button ' + cb(vals.onPick(m.id)) + (vals.selfLinkSaving ? ' disabled' : '') + ' style="text-align:left;padding:10px 12px;border:1px solid #e2e9f2;border-radius:9px;background:#fff;cursor:pointer;font-size:13.5px">' +
+              '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(celulaLabel(m.celula)) + '</span></button>';
+          }).join('') +
+          (results.length === 0 ? '<div style="font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : '') +
+          '</div>') +
+      '<div style="margin-top:16px;text-align:center">' +
+      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6B3FA0;font-size:11.5px;font-weight:600;cursor:pointer">Sair</button>' +
+      '</div></div></div>';
+  }
+
+  function hierarquiaHtml(vals) {
+    var html = '<div>';
+    html += '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
+      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Discipulador responsável</th>' +
+      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Obreiro responsável</th>' +
+      '</tr></thead><tbody>' +
+      vals.hierarquiaRows.map(function (r) {
+        return '<tr style="border-bottom:1px solid #f0f4f9">' +
+          '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(r.celulaLabelText) + '</td>' +
+          '<td style="padding:8px 12px">' +
+          '<select ' + cb(r.onDiscipulador, 'change') + ' style="padding:8px 10px;border:1px solid #d4deea;border-radius:8px;background:#fff;font-size:13px;color:#14243a;min-width:200px">' +
+          opt('', 'Nenhum', r.discipuladorId === '') +
+          vals.discipuladores.map(function (o) { return opt(o.v, o.label, r.discipuladorId === o.v); }).join('') +
+          '</select></td>' +
+          '<td style="padding:8px 22px">' +
+          '<select ' + cb(r.onObreiro, 'change') + ' style="padding:8px 10px;border:1px solid #d4deea;border-radius:8px;background:#fff;font-size:13px;color:#14243a;min-width:200px">' +
+          opt('', 'Nenhum', r.obreiroId === '') +
+          vals.obreiros.map(function (o) { return opt(o.v, o.label, r.obreiroId === o.v); }).join('') +
+          '</select></td></tr>';
+      }).join('') +
+      '</tbody></table></div></div>';
+    html += '</div>';
+    return html;
   }
 
   function naoConfiguradoHtml() {
@@ -1926,10 +2156,28 @@
     var html;
     if (!supabaseConfigured()) {
       html = naoConfiguradoHtml();
+    } else if (state.isPublicCadastro) {
+      html = cadastroPublicoHtml({
+        publicForm: state.publicForm, publicSaving: state.publicSaving, publicError: state.publicError, publicSalvo: state.publicSalvo,
+        onPF: function (key) { return function (e) { setPublicField(key, e.target.value); }; },
+        submitPublico: function (e) { if (e && e.preventDefault) e.preventDefault(); submitPublico(); },
+        voltarParaLogin: function () { voltarParaLogin(); },
+      });
     } else if (!state.session) {
       html = loginHtml({
         loginForm: state.loginForm, loginError: state.loginError, loginLoading: state.loginLoading,
         doLogin: function (e) { if (e && e.preventDefault) e.preventDefault(); doLogin(); },
+        irParaCadastroPublico: function () { irParaCadastroPublico(); },
+      });
+    } else if (state.profile === null || state.profileStatus === 'loading') {
+      html = carregandoHtml();
+    } else if (state.profile === false) {
+      html = selfLinkHtml({
+        directory: state.directory, directoryStatus: state.directoryStatus,
+        selfLinkQuery: state.selfLinkQuery, selfLinkSaving: state.selfLinkSaving, selfLinkError: state.selfLinkError,
+        onQuery: function (e) { setSelfLinkQuery(e.target.value); },
+        onPick: function (id) { return function () { selfLink(id); }; },
+        logout: function () { doLogout(); },
       });
     } else {
       var vals = computeVals();
@@ -1941,6 +2189,7 @@
         (vals.isTrilho ? trilhoHtml(vals) : '') +
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
+        (vals.isHierarquia ? hierarquiaHtml(vals) : '') +
         '</div>';
     }
     root.innerHTML = html;
