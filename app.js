@@ -317,13 +317,15 @@
   function submitPublico() {
     if (!sb) return;
     var f = state.publicForm;
-    if (!f.nome.trim() || !f.celula || !f.nasc || !f.tel.trim()) {
+    var nascEl = document.getElementById('pub-nasc');
+    var nasc = nascEl ? nascEl.value : '';
+    if (!f.nome.trim() || !f.celula || !nasc || !f.tel.trim()) {
       setState({ publicError: 'Preencha todos os campos antes de enviar.' });
       return;
     }
     setState({ publicSaving: true, publicError: null });
     var row = {
-      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, nasc: f.nasc || null, tel: f.tel.trim(),
+      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, nasc: nasc, tel: f.tel.trim(),
       posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
       maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não',
       situacao_saida: 'ativo', active: true,
@@ -387,7 +389,8 @@
     var f = state.novoForm;
     if (!f.nome.trim() || !sb) return;
     setState({ novoSaving: true, novoError: null });
-    var row = novoFormToRow(f);
+    var nascEl = document.getElementById('novo-nasc');
+    var row = novoFormToRow(Object.assign({}, f, { nasc: nascEl ? nascEl.value : f.nasc }));
 
     if (state.novoEditId) {
       var original = state.novoEditOriginal;
@@ -500,12 +503,15 @@
   function abrirCulto(cultoId) { setState({ cultoAtual: cultoId }); }
 
   function criarCulto() {
-    if (!sb || !state.novoCultoData) return;
-    var existente = state.cultos.filter(function (c) { return c.data === state.novoCultoData && c.tipo === 'Culto'; })[0];
-    if (existente) { setState({ cultoAtual: existente.id }); return; }
-    sb.from('cultos').insert({ data: state.novoCultoData }).select().single().then(function (res) {
+    if (!sb) return;
+    var dataEl = document.getElementById('culto-data-input');
+    var data = dataEl ? dataEl.value : state.novoCultoData;
+    if (!data) return;
+    var existente = state.cultos.filter(function (c) { return c.data === data && c.tipo === 'Culto'; })[0];
+    if (existente) { setState({ cultoAtual: existente.id, novoCultoData: data }); return; }
+    sb.from('cultos').insert({ data: data }).select().single().then(function (res) {
       if (res.error) { console.warn('Erro ao criar culto:', res.error.message); return; }
-      setState(function (s) { return { cultos: [res.data].concat(s.cultos), cultoAtual: res.data.id }; });
+      setState(function (s) { return { cultos: [res.data].concat(s.cultos), cultoAtual: res.data.id, novoCultoData: data }; });
     });
   }
 
@@ -1789,7 +1795,7 @@
 
       '<div class="grid-form2">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
-      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onNF('nasc'), 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
       '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '</div>' +
@@ -1898,7 +1904,7 @@
     var html = '<div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
+      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
       '<button ' + cb(vals.criarCulto) + ' style="padding:10px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Selecionar / criar culto</button>' +
       '</div>';
 
@@ -2072,7 +2078,7 @@
           '</div>' +
           '<div class="grid-form2">' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
-          '<input type="date" id="pub-nasc" required value="' + escHtml(f.nasc) + '" ' + cb(vals.onPF('nasc'), 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<input type="date" id="pub-nasc" required value="' + escHtml(f.nasc) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone</label>' +
           '<input type="text" id="pub-tel" required value="' + escHtml(f.tel) + '" ' + cb(vals.onPF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '</div>' +
