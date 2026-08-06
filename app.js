@@ -585,12 +585,17 @@
     var kidsSV = naoVisitante.length - adultosSV;
     var visitAdultos = visitantesFiltrados.filter(function (p) { return p.tipo === 'Adultos'; }).length;
     var visitKids = visitantesFiltrados.length - visitAdultos;
+    var faFiltrados = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; });
+    var faAdultos = faFiltrados.filter(function (p) { return p.tipo === 'Adultos'; }).length;
+    var faKids = faFiltrados.length - faAdultos;
 
     var k = {
       total: naoVisitante.length,
       adultosKidsLabel: adultosSV + ' adultos · ' + kidsSV + ' kids/juvenis',
       totalVisitantes: visitantesFiltrados.length,
       visitantesLabel: visitAdultos + ' adultos · ' + visitKids + ' kids/juvenis',
+      totalFA: faFiltrados.length,
+      faLabel: faAdultos + ' adultos · ' + faKids + ' kids/juvenis',
       batPct: batPct, batLabel: batN + ' de ' + total + ' pessoas',
       encPct: encPct, encLabel: encN + ' de ' + total + ' pessoas',
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
@@ -1239,13 +1244,9 @@
 
     // KPI row
     html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
-      kpiCard('Total', vals.k.total, vals.k.adultosKidsLabel) +
-      kpiCard('Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { valueColor: '#8A63C9' }) +
-      kpiCard('Membros da rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
-      kpiCard('Batizados', vals.k.batPct, vals.k.batLabel, { pct: true, valueColor: '#149C88' }) +
-      kpiCard('Encontro c/ Deus', vals.k.encPct, vals.k.encLabel, { pct: true, valueColor: '#3B5FDD' }) +
-      kpiCard('Liderança', vals.k.lideranca, 'líderes, anfitriões e discip.') +
-      kpiCard('A conquistar', vals.k.potenciais, 'visitantes e FAs', { valueColor: '#6B3FA0' }) +
+      kpiCard('Membros da Rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
+      kpiCard('Total de Frequentadores Assíduos', vals.k.totalFA, vals.k.faLabel, { valueColor: '#149C88' }) +
+      kpiCard('Total de Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { valueColor: '#8A63C9' }) +
       '</div>';
 
     // Charts grid
