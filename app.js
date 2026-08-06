@@ -55,7 +55,7 @@
   }
 
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
-  var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', nasc: '', tel: '' };
+  var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
 
   function urlWantsCadastroPublico() {
     try { return /[?&]cadastro(=|&|$)/.test(window.location.search); } catch (e) { return false; }
@@ -317,7 +317,10 @@
   function submitPublico() {
     if (!sb) return;
     var f = state.publicForm;
-    if (!f.nome.trim()) return;
+    if (!f.nome.trim() || !f.celula || !f.nasc || !f.tel.trim()) {
+      setState({ publicError: 'Preencha todos os campos antes de enviar.' });
+      return;
+    }
     setState({ publicSaving: true, publicError: null });
     var row = {
       nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, nasc: f.nasc || null, tel: f.tel.trim(),
@@ -1741,9 +1744,10 @@
     return html;
   }
 
-  function selectField(label, cbAttr, options, current) {
+  function selectField(label, cbAttr, options, current, placeholder) {
     return '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">' + escHtml(label) + '</label>' +
-      '<select ' + cbAttr + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;background:#fff">' +
+      '<select ' + cbAttr + (placeholder ? ' required' : '') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;background:#fff">' +
+      (placeholder ? opt('', placeholder, current === '') : '') +
       options.map(function (o) { return opt(o.v, o.label, current === o.v); }).join('') +
       '</select></div>';
   }
@@ -1785,7 +1789,7 @@
 
       '<div class="grid-form2">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
-      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onNF('nasc'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onNF('nasc'), 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
       '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '</div>' +
@@ -1894,7 +1898,7 @@
     var html = '<div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'input') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
+      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" ' + cb(vals.onCultoData, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
       '<button ' + cb(vals.criarCulto) + ' style="padding:10px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Selecionar / criar culto</button>' +
       '</div>';
 
@@ -2048,7 +2052,8 @@
 
   function cadastroPublicoHtml(vals) {
     var f = vals.publicForm;
-    var celulaOpts = celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    // "Discipulado" é uma função, não uma célula que um visitante frequenta.
+    var celulaOpts = celOrder.filter(function (c) { return c !== 'Discipulador'; }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
     return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
       '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
@@ -2060,16 +2065,16 @@
           (vals.publicError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">Erro: ' + escHtml(vals.publicError) + '</div>' : '') +
           '<form ' + cb(vals.submitPublico, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
-          '<input type="text" id="pub-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onPF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<input type="text" id="pub-nome" required value="' + escHtml(f.nome) + '" ' + cb(vals.onPF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '<div class="grid-form2">' +
           selectField('Tipo', cb(vals.onPF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
-          selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula) +
+          selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
           '</div>' +
           '<div class="grid-form2">' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
-          '<input type="date" id="pub-nasc" value="' + escHtml(f.nasc) + '" ' + cb(vals.onPF('nasc'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<input type="date" id="pub-nasc" required value="' + escHtml(f.nasc) + '" ' + cb(vals.onPF('nasc'), 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone</label>' +
-          '<input type="text" id="pub-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onPF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<input type="text" id="pub-tel" required value="' + escHtml(f.tel) + '" ' + cb(vals.onPF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '</div>' +
           '<button type="submit"' + (vals.publicSaving ? ' disabled' : '') + ' style="padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.publicSaving ? 'Enviando…' : 'Cadastrar') + '</button>' +
           '</form>'
