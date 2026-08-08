@@ -830,7 +830,7 @@
     var people = sorted.map(function (p) {
       var bb = badge(p.batizado, 'bat'), eb = badge(p.encontro, 'enc');
       return {
-        nome: p.nome, celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
+        nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
         batizado: p.batizado, encontro: p.encontro,
         idadeLabel: p.idade != null ? String(p.idade) : '—',
         nascLabel: nascLabel(p.nasc),
@@ -846,7 +846,7 @@
       .map(function (p) {
         var bb = badge(p.batizado, 'bat'), eb = badge(p.encontro, 'enc');
         return {
-          nome: p.nome, celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
+          nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
           batizado: p.batizado, encontro: p.encontro,
           idadeLabel: p.idade != null ? String(p.idade) : '—',
           nascLabel: nascLabel(p.nasc),
@@ -861,7 +861,7 @@
       .sort(function (a, b) { return b.idade - a.idade; })
       .map(function (p) {
         var eb = badge(p.encontro, 'enc'), bb = badge(p.batizado, 'bat');
-        return { nome: p.nome, idade: p.idade, celulaLabel: celulaLabel(p.celula), encontro: p.encontro, encBg: eb[0], encFg: eb[1], batizado: p.batizado, batBg: bb[0], batFg: bb[1], nascLabel: nascLabel(p.nasc) };
+        return { nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', idade: p.idade, celulaLabel: celulaLabel(p.celula), encontro: p.encontro, encBg: eb[0], encFg: eb[1], batizado: p.batizado, batBg: bb[0], batFg: bb[1], nascLabel: nascLabel(p.nasc) };
       });
 
     // Detail
@@ -878,6 +878,7 @@
       });
       sel = {
         id: s.id, nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, fields: [
+          { label: 'Nº de matrícula', value: s.numero != null ? String(s.numero) : '—' },
           { label: 'Célula', value: celulaLabel(s.celula) },
           { label: 'Idade', value: s.idade != null ? s.idade + ' anos' : '—' },
           { label: 'Nascimento', value: nascLabelSel },
@@ -1496,6 +1497,7 @@
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
       '<div class="table-scroll" style="max-height:440px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nº</th>' +
       '<th ' + cb(vals.sortNome) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Nome ' + vals.sortNomeArrow + '</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Posição</th>' +
@@ -1515,6 +1517,7 @@
       '<div style="font-size:12px;color:#6b7c93">Clique numa linha para ver a ficha</div></div>' +
       '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nº</th>' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Posição</th>' +
@@ -1534,6 +1537,7 @@
       '</div></div>' +
       '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      '<th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nº</th>' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Batismo</th>' +
@@ -1543,6 +1547,7 @@
       '</tr></thead><tbody>' +
       vals.kids3a12.map(function (k) {
         return '<tr style="border-bottom:1px solid #f0f4f9">' +
+          '<td style="padding:11px 12px;text-align:right;color:#8a99ab;font-variant-numeric:tabular-nums">' + escHtml(k.numeroLabel) + '</td>' +
           '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(k.nome) + '</td>' +
           '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(k.celulaLabel) + '</td>' +
           '<td style="padding:11px 12px;text-align:center"><span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:' + k.batBg + ';color:' + k.batFg + '">' + escHtml(k.batizado) + '</span></td>' +
@@ -1560,6 +1565,7 @@
 
   function personRow(p) {
     return '<tr ' + cb(p.onSelect) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
+      '<td style="padding:11px 12px;text-align:right;color:#8a99ab;font-variant-numeric:tabular-nums">' + escHtml(p.numeroLabel) + '</td>' +
       '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(p.nome) + '</td>' +
       '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(p.celulaLabel) + '</td>' +
       '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(p.posicao) + '</td>' +
