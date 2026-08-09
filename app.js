@@ -2386,7 +2386,7 @@
       (vals.adminCelulaError ? adminBanner('error', vals.adminCelulaError) : '') +
       '<form ' + cb(vals.criarCelula, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome da célula</label>' +
-      '<input type="text" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminCelula('nome'), 'input') + ' placeholder="Ex: Família Esperança" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<input type="text" id="admincelula-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminCelula('nome'), 'input') + ' placeholder="Ex: Família Esperança" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div class="grid-form2">' +
       optionalSelectField('Discipulador responsável', cb(vals.onAdminCelula('discipuladorId'), 'change'), vals.discipuladores, f.discipuladorId, 'Nenhum ainda') +
       optionalSelectField('Obreiro responsável', cb(vals.onAdminCelula('obreiroId'), 'change'), vals.obreiros, f.obreiroId, 'Nenhum ainda') +
@@ -2404,9 +2404,9 @@
     };
     var pessoaBlock = f.modo === 'novo'
       ? '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
-        '<input type="text" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminLider('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>'
+        '<input type="text" id="adminlider-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminLider('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>'
       : '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Buscar pessoa já cadastrada</label>' +
-        '<input type="text" value="' + escHtml(f.query) + '" ' + cb(vals.onAdminLider('query'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+        '<input type="text" id="adminlider-busca" value="' + escHtml(f.query) + '" ' + cb(vals.onAdminLider('query'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
         (f.memberId
           ? '<div style="margin-top:8px;font-size:12.5px;color:#237a5a;font-weight:600">Selecionada: ' + escHtml(f.nome) + '</div>'
           : (vals.adminLiderBusca.length
