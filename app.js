@@ -3,7 +3,9 @@
 
   var MESES_PT = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-  var celOrder = ['Otavio e Jô', 'Claudio e Renata', 'Pr.Paulo', 'Josivan e Celia', 'Janaina', 'Discipulador'];
+  // Fallback só — a lista de verdade vem de celula_hierarquia (banco),
+  // ver currentCelulaList().
+  var celOrder = ['Otavio e Jô', 'Claudio e Renata', 'Pr.Paulo', 'Josivan e Celia', 'Janaina'];
 
   // Hierarquia de posições dentro da igreja, da chegada (Visitante) até liderança sênior.
   var posicaoOrder = ['Visitante', 'Frequentador Assíduo', 'Membro', 'Líder em Treinamento', 'Anfitrião', 'Anjo da Guarda', 'Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
@@ -56,6 +58,8 @@
 
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
   var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
+  // modo: 'novo' (cadastra a pessoa agora) ou 'existente' (já cadastrada, só recebe posição/login)
+  var adminLiderFormDefaults = { modo: 'novo', nome: '', posicao: 'Líder', celula: '', memberId: '', query: '', criarLogin: true, email: '', senha: '' };
 
   function urlWantsCadastroPublico() {
     try { return /[?&]cadastro(=|&|$)/.test(window.location.search); } catch (e) { return false; }
@@ -90,12 +94,25 @@
     hierarquiaStatus: 'idle',
     hierarquiaSaving: false,
 
+    // aba Administração: criar célula / criar liderança + login
+    adminCelulaForm: { nome: '', discipuladorId: '', obreiroId: '' },
+    adminCelulaSaving: false,
+    adminCelulaError: null,
+    adminCelulaSalvo: false,
+
+    adminLiderForm: Object.assign({}, adminLiderFormDefaults),
+    adminLiderSaving: false,
+    adminLiderError: null,
+    adminLiderSalvo: false,
+
     // cadastro público (sem login)
     isPublicCadastro: urlWantsCadastroPublico(),
     publicForm: Object.assign({}, publicFormDefaults),
     publicSaving: false,
     publicError: null,
     publicSalvo: false,
+    celulasPublicas: [],
+    celulasPublicasStatus: 'idle',
 
     // membros (Supabase)
     members: [],
@@ -181,6 +198,25 @@
     var m = { 'Otavio e Jô': 'Otávio e Jô', 'Claudio e Renata': 'Claudio e Renata', 'Pr.Paulo': 'Pr. Paulo', 'Josivan e Celia': 'Josivan e Célia', 'Janaina': 'Janaína', 'Discipulador': 'Discipulado' };
     return m[c] || c;
   }
+
+  // Lista de células vem do banco (celula_hierarquia, cadastrada pela
+  // aba Administração) — celOrder só serve de fallback antes do
+  // primeiro carregamento ou se a migração add_admin_area.sql ainda
+  // não rodou nesse projeto.
+  function currentCelulaList() {
+    return (state.celulaHierarquia && state.celulaHierarquia.length)
+      ? state.celulaHierarquia.map(function (h) { return h.celula; })
+      : celOrder;
+  }
+
+  // Discipulador, Obreiro, Pastor e Pastor de Rede são liderança sênior
+  // e não pertencem a uma célula específica — todo o resto precisa.
+  var POSICOES_SEM_CELULA = ['Discipulador', 'Obreiro', 'Pastor', 'Pastor de Rede'];
+  function celulaObrigatoria(posicao) {
+    return POSICOES_SEM_CELULA.indexOf(posicao) < 0;
+  }
+  // Posições que a aba Administração pode cadastrar como "nova liderança".
+  var POSICOES_ADMIN_LIDERANCA = ['Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
 
   function celulaLabelOrRaw(campo, v) {
     if (v == null) return '—';
@@ -308,11 +344,149 @@
   }
 
   // ---------------------------------------------------------------------
+  // Administração: nova célula, nova liderança (+ login inicial)
+  // ---------------------------------------------------------------------
+  function setAdminCelulaField(key, val) {
+    setState(function (s) { var f = Object.assign({}, s.adminCelulaForm); f[key] = val; return { adminCelulaForm: f, adminCelulaError: null, adminCelulaSalvo: false }; });
+  }
+
+  function criarCelula() {
+    if (!sb) return;
+    var f = state.adminCelulaForm;
+    var nome = (f.nome || '').trim();
+    if (!nome) { setState({ adminCelulaError: 'Digite o nome da célula.' }); return; }
+    setState({ adminCelulaSaving: true, adminCelulaError: null });
+    sb.from('celula_hierarquia').insert({
+      celula: nome,
+      discipulador_id: f.discipuladorId || null,
+      obreiro_id: f.obreiroId || null,
+    }).then(function (res) {
+      if (res.error) { setState({ adminCelulaSaving: false, adminCelulaError: res.error.message }); return; }
+      setState({ adminCelulaSaving: false, adminCelulaSalvo: true, adminCelulaForm: { nome: '', discipuladorId: '', obreiroId: '' } });
+      loadCelulaHierarquia();
+    });
+  }
+
+  function setAdminLiderField(key, val) {
+    setState(function (s) {
+      var f = Object.assign({}, s.adminLiderForm);
+      f[key] = val;
+      // Digitar de novo na busca invalida a pessoa selecionada antes.
+      if (key === 'query') f.memberId = '';
+      return { adminLiderForm: f, adminLiderError: null, adminLiderSalvo: false };
+    });
+  }
+
+  function setAdminLiderModo(modo) {
+    setState({ adminLiderForm: Object.assign({}, adminLiderFormDefaults, { modo: modo }), adminLiderError: null, adminLiderSalvo: false });
+  }
+
+  function pickAdminLiderExistente(member) {
+    setState(function (s) {
+      var f = Object.assign({}, s.adminLiderForm);
+      f.memberId = member.id; f.nome = member.nome;
+      // Só mantém a posição atual se já for uma das opções de liderança
+      // que essa tela oferece — senão o select mostraria "Líder" (1ª
+      // opção) enquanto o estado teria um valor que nem aparece nele.
+      f.posicao = POSICOES_ADMIN_LIDERANCA.indexOf(member.posicao) >= 0 ? member.posicao : 'Líder';
+      f.celula = member.celula || ''; f.query = member.nome;
+      return { adminLiderForm: f, adminLiderError: null, adminLiderSalvo: false };
+    });
+  }
+
+  function submitAdminLider() {
+    if (!sb) return;
+    var f = state.adminLiderForm;
+    var precisaCelula = celulaObrigatoria(f.posicao);
+    // E-mail/senha ficam sem binding de estado (mesmo padrão do login) —
+    // campos type=email/password perdem o cursor se forem controlados.
+    var emailEl = document.getElementById('adminlider-email');
+    var senhaEl = document.getElementById('adminlider-senha');
+    var email = ((emailEl && emailEl.value) || '').trim();
+    var senha = (senhaEl && senhaEl.value) || '';
+
+    if (f.modo === 'novo' && !f.nome.trim()) { setState({ adminLiderError: 'Digite o nome da pessoa.' }); return; }
+    if (f.modo === 'existente' && !f.memberId) { setState({ adminLiderError: 'Selecione a pessoa já cadastrada.' }); return; }
+    if (precisaCelula && !f.celula) { setState({ adminLiderError: 'Selecione a célula.' }); return; }
+    if (f.posicao === 'Líder' && f.celula) {
+      var h = (state.celulaHierarquia || []).filter(function (x) { return x.celula === f.celula; })[0];
+      if (!h || !h.discipulador_id) {
+        setState({ adminLiderError: 'Essa célula ainda não tem discipulador responsável. Defina um em "Nova Célula" (ou na tabela abaixo) antes de cadastrar o líder.' });
+        return;
+      }
+    }
+    if (f.criarLogin) {
+      if (!email) { setState({ adminLiderError: 'Digite o e-mail de login.' }); return; }
+      if (!senha || senha.length < 6) { setState({ adminLiderError: 'A senha inicial precisa ter pelo menos 6 caracteres.' }); return; }
+    }
+
+    setState({ adminLiderSaving: true, adminLiderError: null });
+
+    var afterMember = function (memberId) {
+      if (!f.criarLogin) {
+        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+        loadMembers(); loadCelulaHierarquia();
+        return;
+      }
+      sb.functions.invoke('admin-create-user', { body: { email: email, password: senha, member_id: memberId } }).then(function (res) {
+        if (res.error) {
+          var raw = res.error;
+          if (raw && raw.context && typeof raw.context.json === 'function') {
+            raw.context.json().then(function (body) {
+              setState({ adminLiderSaving: false, adminLiderError: (body && body.error) || raw.message || 'Não foi possível criar o login.' });
+            }).catch(function () {
+              setState({ adminLiderSaving: false, adminLiderError: raw.message || 'Não foi possível criar o login.' });
+            });
+            return;
+          }
+          setState({ adminLiderSaving: false, adminLiderError: (raw && raw.message) || 'Não foi possível criar o login.' });
+          return;
+        }
+        if (res.data && res.data.error) { setState({ adminLiderSaving: false, adminLiderError: res.data.error }); return; }
+        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+        loadMembers(); loadCelulaHierarquia();
+      });
+    };
+
+    if (f.modo === 'existente') {
+      sb.from('members').update({ posicao: f.posicao, celula: precisaCelula ? (f.celula || null) : null }).eq('id', f.memberId).then(function (res) {
+        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
+        afterMember(f.memberId);
+      });
+    } else {
+      var row = {
+        nome: f.nome.trim(), tipo: 'Adultos', posicao: f.posicao,
+        celula: precisaCelula ? (f.celula || null) : null,
+        batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
+        nasc: null, tel: '',
+        maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não',
+        situacao_saida: 'ativo', active: true,
+      };
+      sb.from('members').insert(row).select().single().then(function (res) {
+        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
+        afterMember(res.data.id);
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // Cadastro público (sem login)
   // ---------------------------------------------------------------------
   function setPublicField(key, val) { setState(function (s) { var f = Object.assign({}, s.publicForm); f[key] = val; return { publicForm: f, publicError: null }; }); }
 
-  function irParaCadastroPublico() { setState({ isPublicCadastro: true }); }
+  // Quem não está logado não lê celula_hierarquia pela sessão normal —
+  // a policy "hierarquia_select_anon" (add_admin_area.sql) libera isso
+  // especificamente pra essa tela.
+  function loadCelulasPublicas() {
+    if (!sb) return;
+    setState({ celulasPublicasStatus: 'loading' });
+    sb.from('celula_hierarquia').select('celula').order('celula').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar células:', res.error.message); setState({ celulasPublicasStatus: 'error' }); return; }
+      setState({ celulasPublicas: res.data.map(function (r) { return r.celula; }), celulasPublicasStatus: 'ok' });
+    });
+  }
+
+  function irParaCadastroPublico() { setState({ isPublicCadastro: true }); loadCelulasPublicas(); }
   function voltarParaLogin() { setState({ isPublicCadastro: false, publicSalvo: false, publicError: null }); }
 
   function submitPublico() {
@@ -355,7 +529,7 @@
 
   function novoFormToRow(f) {
     return {
-      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, posicao: f.posicao,
+      nome: f.nome.trim(), tipo: f.tipo, celula: celulaObrigatoria(f.posicao) ? (f.celula || null) : null, posicao: f.posicao,
       batizado: f.batizado, encontro: f.encontro, civil: f.civil,
       nasc: f.nasc || null, tel: f.tel.trim(),
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
@@ -619,7 +793,7 @@
       c[grupos[p.posicao]].push(p.nome);
     });
     var lines = ['*Membros, Visitantes e Frequentadores por Célula*', ''];
-    celOrder.filter(function (c) { return byCelula[c]; }).forEach(function (cel) {
+    currentCelulaList().filter(function (c) { return byCelula[c]; }).forEach(function (cel) {
       var g = byCelula[cel];
       lines.push('*' + celulaLabel(cel) + '*');
       lines.push('Membros (' + g.Membros.length + '): ' + (g.Membros.join(', ') || '—'));
@@ -767,7 +941,7 @@
       c.n++; if (p.batizado === 'Sim') c.bat++;
     });
     var celMax = Math.max(1, Object.values(celStats).map(function (c) { return c.n; }).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var celulaBars = celOrder.filter(function (c) { return celStats[c]; }).map(function (c) {
+    var celulaBars = currentCelulaList().filter(function (c) { return celStats[c]; }).map(function (c) {
       var st = celStats[c];
       var active = f.celula === c;
       return {
@@ -792,7 +966,7 @@
       c.total++; c.byPerfil[p.posicao] = (c.byPerfil[p.posicao] || 0) + 1;
     });
     var perfCelMax = Math.max(1, Object.values(perfCelStats).map(function (c) { return c.total; }).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var perfilBars = celOrder.filter(function (cel) { return perfCelStats[cel]; }).map(function (cel) {
+    var perfilBars = currentCelulaList().filter(function (cel) { return perfCelStats[cel]; }).map(function (cel) {
       var st = perfCelStats[cel];
       var segs = perfilOrder.filter(function (p) { return st.byPerfil[p]; }).map(function (p) {
         return {
@@ -976,7 +1150,7 @@
       var c = freqLiderStats[r.celula] || (freqLiderStats[r.celula] = { membros: 0, fa: 0, visit: 0, n: 0 });
       c.membros += r.membros; c.fa += r.fa; c.visit += r.visit; c.n++;
     });
-    var freqPorLiderRows = celOrder.filter(function (cel) { return freqLiderStats[cel]; }).map(function (cel) {
+    var freqPorLiderRows = currentCelulaList().filter(function (cel) { return freqLiderStats[cel]; }).map(function (cel) {
       var st = freqLiderStats[cel];
       return { celula: celulaLabelP(cel), membros: Math.round(st.membros / st.n), fa: Math.round(st.fa / st.n), visit: Math.round(st.visit / st.n) };
     });
@@ -1057,7 +1231,7 @@
     // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
     var discipuladores = allPessoas.filter(function (p) { return p.posicao === 'Discipulador' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
     var obreiros = allPessoas.filter(function (p) { return p.posicao === 'Obreiro' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
-    var hierarquiaRows = celOrder.map(function (c) {
+    var hierarquiaRows = currentCelulaList().map(function (c) {
       var row = (state.celulaHierarquia || []).filter(function (h) { return h.celula === c; })[0] || {};
       return {
         celula: c, celulaLabelText: celulaLabel(c),
@@ -1066,6 +1240,14 @@
         onObreiro: function (e) { setHierarquiaCampo(c, 'obreiro_id', e.target.value); },
       };
     });
+
+    // ---- Administração: nova liderança (busca de pessoa já cadastrada + aviso de discipulador faltando) ----
+    var alf = state.adminLiderForm;
+    var adminLiderBusca = (alf.modo === 'existente' && alf.query.trim())
+      ? allPessoas.filter(function (p) { return p.nome.toLowerCase().indexOf(alf.query.trim().toLowerCase()) >= 0; }).slice(0, 20)
+      : [];
+    var adminLiderCelulaInfo = (state.celulaHierarquia || []).filter(function (h) { return h.celula === alf.celula; })[0] || null;
+    var adminLiderSemDiscipulador = alf.posicao === 'Líder' && !!alf.celula && (!adminLiderCelulaInfo || !adminLiderCelulaInfo.discipulador_id);
 
     // ---- Presença no culto ----
     var todosAtivos = all.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
@@ -1096,7 +1278,7 @@
         onClick: function () { abrirCulto(c.id); },
       };
     });
-    var cultoCelulaOptions = celOrder.filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var cultoCelulaOptions = currentCelulaList().filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
 
     // ---- Movimentações ----
     var mf = state.movFilters;
@@ -1114,7 +1296,7 @@
         campoLabel: campoLabel, desc: desc,
       };
     });
-    var movCelulaOptions = celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var movCelulaOptions = currentCelulaList().map(function (c) { return { v: c, label: celulaLabel(c) }; });
 
     // ---- Perdidos por célula (não conta transferidos) ----
     var pessoasSairam = allPessoas.filter(function (p) { return p.active === false; });
@@ -1123,7 +1305,7 @@
       if (p.situacao_saida !== 'perdido') return;
       perdidosPorCelula[p.celula] = (perdidosPorCelula[p.celula] || 0) + 1;
     });
-    var perdidosRows = celOrder.filter(function (c) { return perdidosPorCelula[c]; }).map(function (c) {
+    var perdidosRows = currentCelulaList().filter(function (c) { return perdidosPorCelula[c]; }).map(function (c) {
       return { celula: celulaLabel(c), qtd: perdidosPorCelula[c] };
     });
     var totalPerdidos = pessoasSairam.filter(function (p) { return p.situacao_saida === 'perdido'; }).length;
@@ -1149,7 +1331,7 @@
       if (tf.curso && p[tf.curso] !== 'Sim') return false;
       return true;
     });
-    var trilhoCelulaOptions = celOrder.filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var trilhoCelulaOptions = currentCelulaList().filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
     var trilhoKpis = trilhoCourses.map(function (c) {
       var done = trilhoPop.filter(function (p) { return p[c.key] === 'Sim'; }).length;
       var pctv = trilhoPop.length ? Math.round(done / trilhoPop.length * 100) : 0;
@@ -1164,11 +1346,11 @@
       if (p.seminario === 'Sim') c.seminario++;
       if (p.ceifeiros === 'Sim') c.ceifeiros++;
     });
-    var trilhoCelMax = Math.max(1, celOrder.filter(function (c) { return trilhoCelStats[c]; }).map(function (cel) {
+    var trilhoCelMax = Math.max(1, currentCelulaList().filter(function (c) { return trilhoCelStats[c]; }).map(function (cel) {
       var st = trilhoCelStats[cel];
       return st.maturidade + st.ctl + st.seminario + st.ceifeiros;
     }).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var trilhoStackedBars = celOrder.filter(function (cel) { return trilhoCelStats[cel]; }).map(function (cel) {
+    var trilhoStackedBars = currentCelulaList().filter(function (cel) { return trilhoCelStats[cel]; }).map(function (cel) {
       var st = trilhoCelStats[cel];
       var volTotal = st.maturidade + st.ctl + st.seminario + st.ceifeiros;
       var segs = trilhoCourses.filter(function (c) { return st[c.key] > 0; }).map(function (c) {
@@ -1220,12 +1402,24 @@
       tabHierarquiaBorder: isHierarquia ? '#1B2344' : 'transparent',
       hierarquiaRows: hierarquiaRows, discipuladores: discipuladores, obreiros: obreiros,
       hierarquiaStatus: state.hierarquiaStatus, hierarquiaSaving: state.hierarquiaSaving,
+      adminCelulaForm: state.adminCelulaForm, adminCelulaSaving: state.adminCelulaSaving,
+      adminCelulaError: state.adminCelulaError, adminCelulaSalvo: state.adminCelulaSalvo,
+      onAdminCelula: function (key) { return function (e) { setAdminCelulaField(key, e.target.value); }; },
+      criarCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); criarCelula(); },
+      adminLiderForm: alf, adminLiderSaving: state.adminLiderSaving,
+      adminLiderError: state.adminLiderError, adminLiderSalvo: state.adminLiderSalvo,
+      adminLiderBusca: adminLiderBusca, adminLiderSemDiscipulador: adminLiderSemDiscipulador,
+      posicoesAdminLideranca: POSICOES_ADMIN_LIDERANCA.map(function (p) { return { v: p, label: p }; }),
+      onAdminLider: function (key) { return function (e) { setAdminLiderField(key, e.target.value); }; },
+      setAdminLiderModo: function (modo) { return function () { setAdminLiderModo(modo); }; },
+      pickAdminLiderExistente: function (m) { return function () { pickAdminLiderExistente(m); }; },
+      submitAdminLider: function (e) { if (e && e.preventDefault) e.preventDefault(); submitAdminLider(); },
       novoForm: state.novoForm, novoSalvo: state.novoSalvo, novoSaving: state.novoSaving, novoError: state.novoError,
       isEditingMembro: !!state.novoEditId,
       cancelEditMembro: function () { cancelEditMembro(); },
       onNF: function (key) { return function (e) { setNF(key, e.target.value); }; },
       submitNovoMembro: function () { submitNovoMembro(); },
-      celulaOptionsForm: celOrder.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
+      celulaOptionsForm: currentCelulaList().map(function (c) { return { v: c, label: celulaLabel(c) }; }),
       cultos: historicoCultos, cultosStatus: state.cultosStatus,
       novoCultoData: state.novoCultoData,
       onCultoData: function (e) { setCultoData(e.target.value); },
@@ -1339,7 +1533,7 @@
       { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
       { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
       { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
-      { icon: 'hierarquia', label: 'Hierarquia', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull },
+      { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull },
     ];
     return '' +
       '<aside class="sidebar' + (vals.sidebarOpen ? ' sidebar-open' : '') + '">' +
@@ -1406,12 +1600,7 @@
       '</select>' +
       '<select ' + cb(vals.onCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as células', vals.filters.celula === '') +
-      opt('Otavio e Jô', 'Otávio e Jô', vals.filters.celula === 'Otavio e Jô') +
-      opt('Claudio e Renata', 'Claudio e Renata', vals.filters.celula === 'Claudio e Renata') +
-      opt('Pr.Paulo', 'Pr. Paulo', vals.filters.celula === 'Pr.Paulo') +
-      opt('Josivan e Celia', 'Josivan e Célia', vals.filters.celula === 'Josivan e Celia') +
-      opt('Janaina', 'Janaína', vals.filters.celula === 'Janaina') +
-      opt('Discipulador', 'Discipulado', vals.filters.celula === 'Discipulador') +
+      vals.celulaOptionsForm.map(function (o) { return opt(o.v, o.label, vals.filters.celula === o.v); }).join('') +
       '</select>' +
       '<select ' + cb(vals.onPosicao, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as posições', vals.filters.posicao === '') +
@@ -1800,6 +1989,17 @@
       '</select></div>';
   }
 
+  // Como selectField, mas a opção em branco nunca é "required" — pra
+  // campos opcionais de verdade (ex: discipulador/obreiro responsável
+  // ainda não definido).
+  function optionalSelectField(label, cbAttr, options, current, emptyLabel) {
+    return '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">' + escHtml(label) + '</label>' +
+      '<select ' + cbAttr + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;background:#fff">' +
+      opt('', emptyLabel || 'Nenhum', current === '') +
+      options.map(function (o) { return opt(o.v, o.label, current === o.v); }).join('') +
+      '</select></div>';
+  }
+
   function simNaoField(label, cbAttr, current) {
     return selectField(label, cbAttr, [{ v: 'Não', label: 'Não' }, { v: 'Sim', label: 'Sim' }], current);
   }
@@ -1824,7 +2024,14 @@
 
       '<div class="grid-form2">' +
       selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
-      selectField('Célula', cb(vals.onNF('celula'), 'change'), vals.celulaOptionsForm, f.celula) +
+      (celulaObrigatoria(f.posicao)
+        // Sem placeholder quando já tem uma célula válida (comportamento de sempre).
+        // Com placeholder "Selecionar" (e required) quando está vazia — evita
+        // salvar sem célula ao trocar a posição de liderança sênior pra uma
+        // que exige célula no meio da edição.
+        ? selectField('Célula', cb(vals.onNF('celula'), 'change'), vals.celulaOptionsForm, f.celula, f.celula ? undefined : 'Selecionar')
+        : '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Célula</label>' +
+          '<div style="margin-top:5px;padding:10px 12px;border:1px dashed #d4deea;border-radius:9px;font-size:12.5px;color:#8a99ab">Não se aplica a esta posição</div></div>') +
       '</div>' +
 
       '<div class="grid-form2">' +
@@ -2100,8 +2307,8 @@
 
   function cadastroPublicoHtml(vals) {
     var f = vals.publicForm;
-    // "Discipulado" é uma função, não uma célula que um visitante frequenta.
-    var celulaOpts = celOrder.filter(function (c) { return c !== 'Discipulador'; }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var celulaOpts = (vals.celulasPublicas || []).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var celulaPlaceholder = vals.celulasPublicasStatus === 'loading' ? 'Carregando…' : 'Selecionar';
     return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
       '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
@@ -2116,7 +2323,7 @@
           '<input type="text" id="pub-nome" required value="' + escHtml(f.nome) + '" ' + cb(vals.onPF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '<div class="grid-form2">' +
           selectField('Tipo', cb(vals.onPF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
-          selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
+          selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula, celulaPlaceholder) +
           '</div>' +
           '<div class="grid-form2">' +
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
@@ -2159,9 +2366,92 @@
       '</div></div></div>';
   }
 
+  function adminCard(title, subtitle, inner) {
+    return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(20,36,58,.04);margin-bottom:16px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">' + escHtml(title) + '</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">' + escHtml(subtitle) + '</div>' +
+      inner + '</div>';
+  }
+
+  function adminBanner(kind, text) {
+    var bg = kind === 'ok' ? '#e2f2ea' : (kind === 'warn' ? '#faf1de' : '#f7e2e2');
+    var fg = kind === 'ok' ? '#237a5a' : (kind === 'warn' ? '#a1780f' : '#a02020');
+    return '<div style="background:' + bg + ';color:' + fg + ';border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(text) + '</div>';
+  }
+
+  function adminNovaCelulaHtml(vals) {
+    var f = vals.adminCelulaForm;
+    var body = '' +
+      (vals.adminCelulaSalvo ? adminBanner('ok', 'Célula criada com sucesso.') : '') +
+      (vals.adminCelulaError ? adminBanner('error', vals.adminCelulaError) : '') +
+      '<form ' + cb(vals.criarCelula, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome da célula</label>' +
+      '<input type="text" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminCelula('nome'), 'input') + ' placeholder="Ex: Família Esperança" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div class="grid-form2">' +
+      optionalSelectField('Discipulador responsável', cb(vals.onAdminCelula('discipuladorId'), 'change'), vals.discipuladores, f.discipuladorId, 'Nenhum ainda') +
+      optionalSelectField('Obreiro responsável', cb(vals.onAdminCelula('obreiroId'), 'change'), vals.obreiros, f.obreiroId, 'Nenhum ainda') +
+      '</div>' +
+      '<button type="submit"' + (vals.adminCelulaSaving ? ' disabled' : '') + ' style="align-self:flex-start;padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminCelulaSaving ? 'Criando…' : 'Criar célula') + '</button>' +
+      '</form>';
+    return adminCard('Nova Célula', 'Cadastre uma célula nova pra ela aparecer nos formulários de cadastro (interno e público).', body);
+  }
+
+  function adminNovaLiderancaHtml(vals) {
+    var f = vals.adminLiderForm;
+    var modoBtn = function (modo, label) {
+      var active = f.modo === modo;
+      return '<button type="button" ' + cb(vals.setAdminLiderModo(modo)) + ' style="padding:8px 14px;border:1px solid ' + (active ? '#1B2344' : '#d4deea') + ';border-radius:8px;background:' + (active ? '#1B2344' : '#fff') + ';color:' + (active ? '#fff' : '#4a5b70') + ';font-size:12.5px;font-weight:600;cursor:pointer">' + label + '</button>';
+    };
+    var pessoaBlock = f.modo === 'novo'
+      ? '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+        '<input type="text" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminLider('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>'
+      : '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Buscar pessoa já cadastrada</label>' +
+        '<input type="text" value="' + escHtml(f.query) + '" ' + cb(vals.onAdminLider('query'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+        (f.memberId
+          ? '<div style="margin-top:8px;font-size:12.5px;color:#237a5a;font-weight:600">Selecionada: ' + escHtml(f.nome) + '</div>'
+          : (vals.adminLiderBusca.length
+            ? '<div style="margin-top:8px;max-height:160px;overflow:auto;display:flex;flex-direction:column;gap:5px">' +
+              vals.adminLiderBusca.map(function (m) {
+                return '<button type="button" ' + cb(vals.pickAdminLiderExistente(m)) + ' style="text-align:left;padding:8px 10px;border:1px solid #e2e9f2;border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px">' +
+                  '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.posicao) + (m.celula ? ' · ' + escHtml(celulaLabel(m.celula)) : '') + '</span></button>';
+              }).join('') + '</div>'
+            : (f.query.trim() ? '<div style="margin-top:8px;font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : ''))) +
+        '</div>';
+    var body = '' +
+      '<div style="display:flex;gap:8px;margin-bottom:16px">' + modoBtn('novo', 'Nova pessoa') + modoBtn('existente', 'Pessoa já cadastrada') + '</div>' +
+      (vals.adminLiderSalvo ? adminBanner('ok', 'Liderança cadastrada com sucesso.') : '') +
+      (vals.adminLiderError ? adminBanner('error', vals.adminLiderError) : '') +
+      (vals.adminLiderSemDiscipulador ? adminBanner('warn', 'Essa célula ainda não tem discipulador responsável — defina um em "Nova Célula" ou na tabela abaixo antes de enviar.') : '') +
+      '<form ' + cb(vals.submitAdminLider, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      pessoaBlock +
+      '<div class="grid-form2">' +
+      selectField('Posição', cb(vals.onAdminLider('posicao'), 'change'), vals.posicoesAdminLideranca, f.posicao) +
+      (celulaObrigatoria(f.posicao)
+        ? selectField('Célula', cb(vals.onAdminLider('celula'), 'change'), vals.celulaOptionsForm, f.celula, 'Selecionar')
+        : '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Célula</label>' +
+          '<div style="margin-top:5px;padding:10px 12px;border:1px dashed #d4deea;border-radius:9px;font-size:12.5px;color:#8a99ab">Não se aplica a esta posição</div></div>') +
+      '</div>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#14243a;font-weight:600;cursor:pointer">' +
+      '<input type="checkbox"' + (f.criarLogin ? ' checked' : '') + ' ' + cb(function (e) { setAdminLiderField('criarLogin', e.target.checked); }, 'change') + '> Criar acesso de login agora' +
+      '</label>' +
+      (f.criarLogin
+        ? '<div class="grid-form2">' +
+          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail de login</label>' +
+          '<input type="email" id="adminlider-email" placeholder="pessoa@exemplo.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha inicial</label>' +
+          '<input type="text" id="adminlider-senha" placeholder="mínimo 6 caracteres" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+          '</div>'
+        : '') +
+      '<button type="submit"' + (vals.adminLiderSaving ? ' disabled' : '') + ' style="align-self:flex-start;padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminLiderSaving ? 'Salvando…' : 'Cadastrar') + '</button>' +
+      '</form>';
+    return adminCard('Nova Liderança', 'Cadastre um novo Pastor, Obreiro, Discipulador ou Líder — e, se quiser, já crie o login dele.', body);
+  }
+
   function hierarquiaHtml(vals) {
-    var html = '<div>';
-    html += '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
+    var html = '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Cadastre novas células e liderança, e defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
+    html += adminNovaCelulaHtml(vals);
+    html += adminNovaLiderancaHtml(vals);
+    html += '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin:20px 0 12px">Discipulador e Obreiro por célula</div>';
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
@@ -2184,7 +2474,6 @@
           '</select></td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
-    html += '</div>';
     return html;
   }
 
@@ -2212,6 +2501,7 @@
     } else if (state.isPublicCadastro) {
       html = cadastroPublicoHtml({
         publicForm: state.publicForm, publicSaving: state.publicSaving, publicError: state.publicError, publicSalvo: state.publicSalvo,
+        celulasPublicas: state.celulasPublicas, celulasPublicasStatus: state.celulasPublicasStatus,
         onPF: function (key) { return function (e) { setPublicField(key, e.target.value); }; },
         submitPublico: function (e) { if (e && e.preventDefault) e.preventDefault(); submitPublico(); },
         voltarParaLogin: function () { voltarParaLogin(); },
@@ -2277,6 +2567,7 @@
     if (supabaseConfigured()) {
       sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
       checkSession();
+      if (state.isPublicCadastro) loadCelulasPublicas();
     }
     render();
   });
