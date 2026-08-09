@@ -67,6 +67,7 @@
     sort: { key: 'idade', dir: 1 },
     selected: null,
     tab: 'cadastro',
+    sidebarOpen: false,
     trilhoFilters: { celula: '', curso: '' },
 
     // autenticação (Supabase Auth)
@@ -1195,13 +1196,16 @@
       tabCadastroBorder: isCadastro ? '#1B2344' : 'transparent',
       tabPresencaColor: isPresenca ? '#1B2344' : '#8a99ab',
       tabPresencaBorder: isPresenca ? '#1B2344' : 'transparent',
-      goCadastro: function () { setState({ tab: 'cadastro' }); },
-      goPresenca: function () { setState({ tab: 'presenca' }); },
-      goTrilho: function () { setState({ tab: 'trilho' }); },
-      goNovo: function () { setState({ tab: 'novo', novoSalvo: false, novoError: null }); },
-      goCulto: function () { setState({ tab: 'culto' }); },
-      goMov: function () { setState({ tab: 'mov' }); },
-      goHierarquia: function () { setState({ tab: 'hierarquia' }); },
+      goCadastro: function () { setState({ tab: 'cadastro', sidebarOpen: false }); },
+      goPresenca: function () { setState({ tab: 'presenca', sidebarOpen: false }); },
+      goTrilho: function () { setState({ tab: 'trilho', sidebarOpen: false }); },
+      goNovo: function () { setState({ tab: 'novo', novoSalvo: false, novoError: null, sidebarOpen: false }); },
+      goCulto: function () { setState({ tab: 'culto', sidebarOpen: false }); },
+      goMov: function () { setState({ tab: 'mov', sidebarOpen: false }); },
+      goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
+      sidebarOpen: state.sidebarOpen,
+      openSidebar: function () { setState({ sidebarOpen: true }); },
+      closeSidebar: function () { setState({ sidebarOpen: false }); },
       isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov, isHierarquia: isHierarquia,
       souFull: souFull,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
@@ -1305,40 +1309,72 @@
 
   var whatsappIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="#149C88" stroke="none"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 1.8a8.2 8.2 0 0 1 6.9 12.6 8.2 8.2 0 0 1-13-9.8A8.1 8.1 0 0 1 12 3.8Zm-3.4 4a1 1 0 0 0-.8.4c-.3.4-1 1.2-1 2.7 0 1.6 1 3.1 1.2 3.3.1.2 2 3.2 5 4.4 2.4 1 2.9.8 3.4.8.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.3-.6-.4l-2-1c-.3-.1-.5-.2-.7.1-.2.3-.8 1-1 1.2-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.6c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.8-1-2.4-.2-.6-.4-.5-.6-.5h-.4Z"/></svg>';
 
-  function headerHtml(vals) {
-    return '' +
-      '<header style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:2px solid #1B2344;flex-wrap:wrap">' +
-      '<div style="display:flex;align-items:center;gap:16px">' +
-      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:44px;width:auto">' +
-      '<div style="border-left:1px solid #d8dce8;padding-left:16px">' +
-      '<div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#1B2344;font-weight:700">Videira SCS <span style="color:#c3cfde;font-weight:500">|</span> Rede Oikos <span style="color:#c3cfde;font-weight:500">|</span> André e Simone</div>' +
-      '<h1 style="font-family:\'Spectral\',serif;font-weight:700;font-size:27px;margin:2px 0 0;letter-spacing:-.01em">Cadastro de Membros &amp; FAs</h1>' +
-      '</div></div>' +
-      '<div style="display:flex;align-items:center;gap:16px">' +
-      '<button ' + cb(vals.onRefresh) + ' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid #e2e9f2;background:#fff;border-radius:20px;padding:6px 12px 6px 10px;cursor:pointer">' +
-      '<span style="width:7px;height:7px;border-radius:50%;background:' + vals.sync.dot + '"></span>' +
-      '<span style="font-size:11.5px;color:' + vals.sync.color + ';font-weight:600">' + escHtml(vals.sync.text) + '</span>' +
-      '</button>' +
-      '<div style="text-align:right">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:30px;line-height:1;color:#1B2344">' + vals.totalAll + '</div>' +
-      '<div style="font-size:11px;color:#6b7c93;font-weight:500;letter-spacing:.02em">pessoas cadastradas</div>' +
-      '</div>' +
-      '<div style="text-align:right;border-left:1px solid #d8dce8;padding-left:16px">' +
-      '<div style="font-size:12px;color:#4a5b70;font-weight:600">' + escHtml(vals.userEmail) + '</div>' +
-      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6B3FA0;font-size:11.5px;font-weight:600;cursor:pointer">Sair</button>' +
-      '</div></div></header>';
+  var NAV_ICONS = {
+    cadastro: '<circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7"></path>',
+    presenca: '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>',
+    culto: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="m9 15 2 2 4-4"></path>',
+    trilho: '<path d="M5 3v18"></path><path d="M5 4h11l-2 4 2 4H5"></path>',
+    mov: '<path d="M4 7h4l3 10h6"></path><path d="M4 17h4l3-10h6"></path><path d="m17 4 3 3-3 3"></path><path d="m17 14 3 3-3 3"></path>',
+    novo: '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
+    hierarquia: '<circle cx="12" cy="4.5" r="2"></circle><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="18" r="2"></circle><path d="M12 6.5v4"></path><path d="M12 10.5 6 16"></path><path d="M12 10.5 18 16"></path>',
+  };
+
+  function navIcon(key) {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto">' + NAV_ICONS[key] + '</svg>';
   }
 
-  function tabsHtml(vals) {
+  function sideNavItem(iconKey, label, active, onClick) {
+    var bg = active ? 'rgba(255,255,255,.14)' : 'transparent';
+    var color = active ? '#fff' : 'rgba(255,255,255,.7)';
+    var borderColor = active ? '#149C88' : 'transparent';
+    return '<button ' + cb(onClick) + ' style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:none;border-left:3px solid ' + borderColor + ';border-radius:0 9px 9px 0;background:' + bg + ';color:' + color + ';font-size:13.5px;font-weight:600;cursor:pointer">' +
+      navIcon(iconKey) + '<span>' + escHtml(label) + '</span></button>';
+  }
+
+  function sidebarHtml(vals) {
+    var items = [
+      { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
+      { icon: 'presenca', label: 'Presença por Célula', active: vals.isPresenca, onClick: vals.goPresenca, show: true },
+      { icon: 'culto', label: 'Presença no Culto', active: vals.isCulto, onClick: vals.goCulto, show: true },
+      { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
+      { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
+      { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
+      { icon: 'hierarquia', label: 'Hierarquia', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull },
+    ];
     return '' +
-      '<div class="tab-nav">' +
-      '<button ' + cb(vals.goCadastro) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCadastroColor + ';border-bottom:2.5px solid ' + vals.tabCadastroBorder + ';margin-bottom:-1px">Cadastro de Membros</button>' +
-      '<button ' + cb(vals.goPresenca) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabPresencaColor + ';border-bottom:2.5px solid ' + vals.tabPresencaBorder + ';margin-bottom:-1px">Presença por Célula</button>' +
-      '<button ' + cb(vals.goCulto) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabCultoColor + ';border-bottom:2.5px solid ' + vals.tabCultoBorder + ';margin-bottom:-1px">Presença no Culto</button>' +
-      '<button ' + cb(vals.goTrilho) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabTrilhoColor + ';border-bottom:2.5px solid ' + vals.tabTrilhoBorder + ';margin-bottom:-1px">Trilho do Vencedor</button>' +
-      '<button ' + cb(vals.goMov) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabMovColor + ';border-bottom:2.5px solid ' + vals.tabMovBorder + ';margin-bottom:-1px">Movimentações</button>' +
-      '<button ' + cb(vals.goNovo) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabNovoColor + ';border-bottom:2.5px solid ' + vals.tabNovoBorder + ';margin-bottom:-1px">+ Novo Cadastro</button>' +
-      (vals.souFull ? '<button ' + cb(vals.goHierarquia) + ' style="padding:11px 18px;border:none;background:transparent;cursor:pointer;font-size:13.5px;font-weight:600;color:' + vals.tabHierarquiaColor + ';border-bottom:2.5px solid ' + vals.tabHierarquiaBorder + ';margin-bottom:-1px">Hierarquia</button>' : '') +
+      '<aside class="sidebar' + (vals.sidebarOpen ? ' sidebar-open' : '') + '">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:36px;width:auto">' +
+      '<button ' + cb(vals.closeSidebar) + ' class="sidebar-close-btn" style="border:none;background:rgba(255,255,255,.1);color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1">✕</button>' +
+      '</div>' +
+      '<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">' +
+      '<div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:700">Videira SCS · Rede Oikos</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:18px;color:#fff;margin-top:3px;line-height:1.25">Cadastro de Membros &amp; FAs</div>' +
+      '</div>' +
+      '<nav style="display:flex;flex-direction:column;gap:3px;margin-top:22px">' +
+      items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick); }).join('') +
+      '</nav>' +
+      '<div style="margin-top:auto;padding-top:18px">' +
+      '<button ' + cb(vals.onRefresh) + ' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);border-radius:20px;padding:7px 12px;cursor:pointer;width:100%">' +
+      '<span style="width:7px;height:7px;border-radius:50%;background:' + vals.sync.dot + '"></span>' +
+      '<span style="font-size:11.5px;color:#fff;font-weight:600">' + escHtml(vals.sync.text) + '</span>' +
+      '</button>' +
+      '<div style="display:flex;align-items:baseline;gap:8px;padding:12px 2px 0">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:22px;color:#fff;line-height:1">' + vals.totalAll + '</div>' +
+      '<div style="font-size:11px;color:rgba(255,255,255,.62);font-weight:500">pessoas cadastradas</div>' +
+      '</div>' +
+      '<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.14)">' +
+      '<div style="font-size:12px;color:#fff;font-weight:600;overflow-wrap:anywhere">' + escHtml(vals.userEmail) + '</div>' +
+      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#8fd6c6;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:3px">Sair</button>' +
+      '</div></div>' +
+      '</aside>' +
+      '<div class="sidebar-backdrop' + (vals.sidebarOpen ? ' show' : '') + '" ' + cb(vals.closeSidebar) + '></div>';
+  }
+
+  function mobileTopbarHtml(vals) {
+    return '<div class="mobile-topbar">' +
+      '<button ' + cb(vals.openSidebar) + ' style="border:none;background:#eef2f7;width:36px;height:36px;border-radius:9px;cursor:pointer;color:#1B2344;font-size:17px;line-height:1">☰</button>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:15px;color:#1B2344">Cadastro de Membros &amp; FAs</div>' +
       '</div>';
   }
 
@@ -2198,8 +2234,10 @@
       });
     } else {
       var vals = computeVals();
-      html = '<div class="page-wrap">' +
-        headerHtml(vals) + tabsHtml(vals) +
+      html = '<div class="app-shell">' +
+        sidebarHtml(vals) +
+        '<main class="main-content">' +
+        mobileTopbarHtml(vals) +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isPresenca ? presencaHtml(vals) : '') +
         (vals.isCulto ? presencaCultoHtml(vals) : '') +
@@ -2207,7 +2245,7 @@
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
         (vals.isHierarquia ? hierarquiaHtml(vals) : '') +
-        '</div>';
+        '</main></div>';
     }
     root.innerHTML = html;
     if (focusInfo) {
