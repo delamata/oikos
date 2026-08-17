@@ -217,6 +217,10 @@
   }
   // Posições que a aba Administração pode cadastrar como "nova liderança".
   var POSICOES_ADMIN_LIDERANCA = ['Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  // Quem pode responder por um discipulador na tabela de hierarquia —
+  // normalmente um Obreiro, mas também pode ser direto um Pastor de
+  // Rede ou Pastor.
+  var POSICOES_OBREIRO_OU_ACIMA = ['Obreiro', 'Pastor de Rede', 'Pastor'];
 
   function celulaLabelOrRaw(campo, v) {
     if (v == null) return '—';
@@ -1229,8 +1233,11 @@
     var souFull = !!(state.profile && (state.profile.is_admin || (meuMembro && ['Pastor', 'Pastor de Rede'].indexOf(meuMembro.posicao) >= 0)));
 
     // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
+    // Quem responde por um discipulador pode ser um Obreiro, mas também
+    // pode pular direto pra Pastor de Rede ou Pastor, dependendo do
+    // tamanho da rede.
     var discipuladores = allPessoas.filter(function (p) { return p.posicao === 'Discipulador' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
-    var obreiros = allPessoas.filter(function (p) { return p.posicao === 'Obreiro' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
+    var obreiros = allPessoas.filter(function (p) { return POSICOES_OBREIRO_OU_ACIMA.indexOf(p.posicao) >= 0 && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome + ' (' + p.posicao + ')' }; });
     var hierarquiaRows = currentCelulaList().map(function (c) {
       var row = (state.celulaHierarquia || []).filter(function (h) { return h.celula === c; })[0] || {};
       return {
@@ -2389,7 +2396,7 @@
       '<input type="text" id="admincelula-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onAdminCelula('nome'), 'input') + ' placeholder="Ex: Família Esperança" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div class="grid-form2">' +
       optionalSelectField('Discipulador responsável', cb(vals.onAdminCelula('discipuladorId'), 'change'), vals.discipuladores, f.discipuladorId, 'Nenhum ainda') +
-      optionalSelectField('Obreiro responsável', cb(vals.onAdminCelula('obreiroId'), 'change'), vals.obreiros, f.obreiroId, 'Nenhum ainda') +
+      optionalSelectField('Obreiro/Pastor responsável', cb(vals.onAdminCelula('obreiroId'), 'change'), vals.obreiros, f.obreiroId, 'Nenhum ainda') +
       '</div>' +
       '<button type="submit"' + (vals.adminCelulaSaving ? ' disabled' : '') + ' style="align-self:flex-start;padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminCelulaSaving ? 'Criando…' : 'Criar célula') + '</button>' +
       '</form>';
@@ -2457,7 +2464,7 @@
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Discipulador responsável</th>' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Obreiro responsável</th>' +
+      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Obreiro/Pastor responsável</th>' +
       '</tr></thead><tbody>' +
       vals.hierarquiaRows.map(function (r) {
         return '<tr style="border-bottom:1px solid #f0f4f9">' +
