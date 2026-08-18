@@ -329,7 +329,11 @@
   function loadCelulaHierarquia() {
     if (!sb) return;
     setState({ hierarquiaStatus: 'loading' });
-    sb.from('celula_hierarquia').select('*').then(function (res) {
+    // Sem order(), o Postgres pode devolver as linhas em ordem diferente
+    // a cada busca — a tabela reordenava sozinha depois de cada troca de
+    // discipulador/obreiro, dando a impressão de que a linha errada foi
+    // alterada.
+    sb.from('celula_hierarquia').select('*').order('celula').then(function (res) {
       if (res.error) { console.warn('Erro ao carregar hierarquia:', res.error.message); setState({ hierarquiaStatus: 'error' }); return; }
       setState({ celulaHierarquia: res.data, hierarquiaStatus: 'ok' });
     });
