@@ -430,7 +430,32 @@
 
     setState({ adminLiderSaving: true, adminLiderError: null });
 
+    // Mensagem de erro de sb.functions.invoke(): quando a function responde
+    // (mesmo com erro), dá pra ler o corpo JSON via error.context.json().
+    // Quando a chamada nem chega numa function de verdade (não publicada,
+    // nome errado, etc.), o supabase-js só devolve "Failed to send a
+    // request to the Edge Function" — aí a gente troca por uma explicação
+    // que dá pra agir.
+    var edgeFunctionErrorMessage = function (raw) {
+      if (raw && raw.context && typeof raw.context.json === 'function') {
+        return raw.context.json().then(function (body) { return (body && body.error) || raw.message || 'Não foi possível criar o login.'; })
+          .catch(function () { return raw.message || 'Não foi possível criar o login.'; });
+      }
+      var msg = (raw && raw.message) || '';
+      if (/failed to send a request/i.test(msg)) {
+        return Promise.resolve('Não consegui falar com a Edge Function "admin-create-user". Ela provavelmente ainda não foi publicada no seu projeto Supabase (ou o nome está diferente) — veja "Criar login com senha inicial" no README. O cadastro da pessoa já foi salvo; assim que publicar a function, é só clicar em Cadastrar de novo pra criar o login.');
+      }
+      return Promise.resolve(msg || 'Não foi possível criar o login.');
+    };
+
     var afterMember = function (memberId) {
+      // Trava o formulário em "pessoa já cadastrada" apontando pra quem
+      // acabou de ser criado — se a criação do login falhar (ex: Edge
+      // Function fora do ar) e o usuário tentar de novo, evita cadastrar
+      // a mesma pessoa duas vezes; só tenta o login de novo.
+      setState(function (s) {
+        return { adminLiderForm: Object.assign({}, s.adminLiderForm, { modo: 'existente', memberId: memberId, nome: f.nome, query: f.nome }) };
+      });
       if (!f.criarLogin) {
         setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
         loadMembers(); loadCelulaHierarquia();
@@ -438,16 +463,7 @@
       }
       sb.functions.invoke('admin-create-user', { body: { email: email, password: senha, member_id: memberId } }).then(function (res) {
         if (res.error) {
-          var raw = res.error;
-          if (raw && raw.context && typeof raw.context.json === 'function') {
-            raw.context.json().then(function (body) {
-              setState({ adminLiderSaving: false, adminLiderError: (body && body.error) || raw.message || 'Não foi possível criar o login.' });
-            }).catch(function () {
-              setState({ adminLiderSaving: false, adminLiderError: raw.message || 'Não foi possível criar o login.' });
-            });
-            return;
-          }
-          setState({ adminLiderSaving: false, adminLiderError: (raw && raw.message) || 'Não foi possível criar o login.' });
+          edgeFunctionErrorMessage(res.error).then(function (msg) { setState({ adminLiderSaving: false, adminLiderError: msg }); });
           return;
         }
         if (res.data && res.data.error) { setState({ adminLiderSaving: false, adminLiderError: res.data.error }); return; }
