@@ -35,6 +35,12 @@ create table if not exists members (
 create index if not exists members_celula_idx on members (celula);
 create index if not exists members_active_idx on members (active);
 
+-- Não deixa cadastrar a mesma pessoa duas vezes (mesmo nome + mesma
+-- data de nascimento) — vale até pro cadastro público sem login.
+create unique index if not exists members_nome_nasc_unique
+  on members (lower(btrim(nome)), nasc)
+  where nasc is not null;
+
 -- ---------------------------------------------------------------------
 -- cultos: um registro por culto/data (para o check-in de presença)
 -- ---------------------------------------------------------------------

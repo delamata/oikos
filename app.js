@@ -222,6 +222,18 @@
   // Rede ou Pastor.
   var POSICOES_OBREIRO_OU_ACIMA = ['Obreiro', 'Pastor de Rede', 'Pastor'];
 
+  // members_nome_nasc_unique (supabase/add_unique_nome_nasc.sql) barra
+  // cadastro duplicado (mesmo nome + mesma data de nascimento) direto
+  // no banco — aqui só troca o erro cru do Postgres por uma mensagem
+  // que a pessoa entende.
+  function friendlyMemberInsertError(err) {
+    if (!err) return null;
+    if (err.code === '23505' || /members_nome_nasc_unique|duplicate key/i.test(err.message || '')) {
+      return 'Já existe uma pessoa cadastrada com esse nome e essa data de nascimento.';
+    }
+    return err.message;
+  }
+
   function celulaLabelOrRaw(campo, v) {
     if (v == null) return '—';
     if (campo === 'celula') return celulaLabel(v);
@@ -474,7 +486,7 @@
 
     if (f.modo === 'existente') {
       sb.from('members').update({ posicao: f.posicao, celula: precisaCelula ? (f.celula || null) : null }).eq('id', f.memberId).then(function (res) {
-        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
+        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: friendlyMemberInsertError(res.error) }); return; }
         afterMember(f.memberId);
       });
     } else {
@@ -487,7 +499,7 @@
         situacao_saida: 'ativo', active: true,
       };
       sb.from('members').insert(row).select().single().then(function (res) {
-        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
+        if (res.error) { setState({ adminLiderSaving: false, adminLiderError: friendlyMemberInsertError(res.error) }); return; }
         afterMember(res.data.id);
       });
     }
@@ -530,7 +542,7 @@
       situacao_saida: 'ativo', active: true,
     };
     sb.from('members').insert(row).then(function (res) {
-      if (res.error) { setState({ publicSaving: false, publicError: res.error.message }); return; }
+      if (res.error) { setState({ publicSaving: false, publicError: friendlyMemberInsertError(res.error) }); return; }
       setState({ publicSaving: false, publicSalvo: true, publicForm: Object.assign({}, publicFormDefaults) });
     });
   }
@@ -594,7 +606,7 @@
     if (state.novoEditId) {
       var original = state.novoEditOriginal;
       sb.from('members').update(row).eq('id', state.novoEditId).select().single().then(function (res) {
-        if (res.error) { setState({ novoSaving: false, novoError: res.error.message }); return; }
+        if (res.error) { setState({ novoSaving: false, novoError: friendlyMemberInsertError(res.error) }); return; }
         var movs = MOVIMENTACAO_CAMPOS.filter(function (campo) { return original[campo] !== row[campo]; })
           .map(function (campo) { return { member_id: state.novoEditId, campo: campo, valor_anterior: original[campo], valor_novo: row[campo] }; });
         var afterSave = function () {
@@ -610,7 +622,7 @@
       });
     } else {
       sb.from('members').insert(row).then(function (res) {
-        if (res.error) { setState({ novoSaving: false, novoError: res.error.message }); return; }
+        if (res.error) { setState({ novoSaving: false, novoError: friendlyMemberInsertError(res.error) }); return; }
         setState({ novoSaving: false, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
         loadMembers();
       });
