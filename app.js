@@ -2512,6 +2512,17 @@
       '</div></div>';
   }
 
+  // Campos "não controlados" (sem data-cb de evento; lidos direto do DOM
+  // só na hora de enviar o formulário — ver submitNovoMembro(), doLogin(),
+  // etc.) — necessário pra type=date/email/password não perderem o
+  // cursor/valor a cada tecla. Só que como o app inteiro re-renderiza
+  // (root.innerHTML) a cada mudança de QUALQUER campo da tela, digitar
+  // num campo vizinho controlado (ex: Telefone) recria esses inputs do
+  // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
+  // nascimento). Por isso preservamos o valor atual antes de trocar o
+  // HTML e devolvemos ele depois.
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'culto-data-input', 'pub-nasc', 'adminlider-email', 'adminlider-senha'];
+
   function render() {
     var root = document.getElementById('app');
     var active = document.activeElement;
@@ -2519,6 +2530,11 @@
     if (active && root.contains(active) && active.id) {
       focusInfo = { id: active.id, start: active.selectionStart, end: active.selectionEnd };
     }
+    var uncontrolledValues = {};
+    UNCONTROLLED_FIELD_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) uncontrolledValues[id] = el.value;
+    });
     callbacks = {};
     cbSeq = 0;
 
@@ -2565,6 +2581,11 @@
         '</main></div>';
     }
     root.innerHTML = html;
+    UNCONTROLLED_FIELD_IDS.forEach(function (id) {
+      if (!uncontrolledValues[id]) return;
+      var el = document.getElementById(id);
+      if (el) el.value = uncontrolledValues[id];
+    });
     if (focusInfo) {
       var el = document.getElementById(focusInfo.id);
       if (el) {
