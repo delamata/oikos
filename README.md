@@ -24,6 +24,25 @@ formulário é simplificado (nome, tipo, célula, nascimento, telefone) e
 sempre grava a pessoa como "Visitante" — o RLS no banco garante isso
 mesmo que alguém tente forçar outro valor.
 
+## Cadastro de Membros sem login (versão limitada)
+
+Quem abre o site sem estar logado cai direto numa versão limitada do
+**Cadastro de Membros** — não precisa de login pra consultar quem já
+está cadastrado. Só mostra **nome, célula, posição e idade**; não
+mostra telefone, data de nascimento exata, estado civil, nem abre a
+ficha detalhada de cada pessoa (isso continua exigindo login). As
+outras abas aparecem trancadas na barra lateral — clicar em qualquer
+uma delas abre o formulário de login.
+
+Isso é garantido por uma **view** separada no banco
+(`members_publico`, ver `supabase/add_public_cadastro_view.sql`) que só
+expõe essas colunas pra quem não está logado — a tabela `members`
+inteira continua 100% bloqueada pra quem não tem sessão, então não dá
+pra "pedir mais campos" burlando a tela: o telefone e a data de
+nascimento de ninguém saem do banco sem login.
+
+Um botão **"Entrar"** na barra lateral abre o login normal de sempre.
+
 ## Acesso por nível de liderança
 
 Cada login vê nos relatórios só o que está no seu escopo, decidido pela
@@ -102,22 +121,23 @@ normalmente, e o login continua podendo ser criado do jeito de sempre
    - Se o seu projeto já existia **antes** do número de matrícula (coluna "Nº"), rode também [`supabase/add_numero.sql`](supabase/add_numero.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Se o seu projeto já existia **antes** do bloqueio de cadastro duplicado (mesmo nome + mesma data de nascimento), rode também [`supabase/add_unique_nome_nasc.sql`](supabase/add_unique_nome_nasc.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
-6. (Opcional, mas recomendado) Publique a Edge Function `admin-create-user` — veja "Criar login com senha inicial" acima. Sem isso, a aba Administração continua funcionando, só sem o botão de criar senha na hora.
-7. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Só o cadastro de uma pessoa nova é público — logins continuam sendo só os que você criar aqui (ou pela aba Administração, se configurou a Edge Function).
-8. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
+6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
+7. (Opcional, mas recomendado) Publique a Edge Function `admin-create-user` — veja "Criar login com senha inicial" acima. Sem isso, a aba Administração continua funcionando, só sem o botão de criar senha na hora.
+8. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Só o cadastro de uma pessoa nova é público — logins continuam sendo só os que você criar aqui (ou pela aba Administração, se configurou a Edge Function).
+9. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
    ```js
    window.SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
    window.SUPABASE_ANON_KEY = 'sua-anon-key';
    ```
    Esses valores são públicos por design do Supabase — a segurança dos dados vem das políticas de RLS em `schema.sql`/`add_rbac.sql`, não do sigilo dessas strings.
-9. Faça login pela primeira vez (você) — a tela "Qual desses é você?" vai aparecer; selecione seu próprio cadastro.
-10. Vire admin com acesso total: em **Authentication → Users**, copie o seu
+10. Faça login pela primeira vez (você) — a tela "Qual desses é você?" vai aparecer; selecione seu próprio cadastro.
+11. Vire admin com acesso total: em **Authentication → Users**, copie o seu
     `User UID`, depois rode no SQL Editor (`auth.uid()` não funciona aqui —
     o SQL Editor não roda como um usuário logado do app):
     ```sql
     update profiles set is_admin = true where user_id = 'COLE-SEU-USER-UID-AQUI';
     ```
-11. Com acesso total, abra a aba **Administração** pra cadastrar células, liderança, e definir o discipulador/obreiro de cada célula.
+12. Com acesso total, abra a aba **Administração** pra cadastrar células, liderança, e definir o discipulador/obreiro de cada célula.
 
 ## Rodando localmente
 
