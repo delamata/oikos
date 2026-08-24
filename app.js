@@ -59,7 +59,9 @@
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
   var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
   // modo: 'novo' (cadastra a pessoa agora) ou 'existente' (já cadastrada, só recebe posição/login)
-  var adminLiderFormDefaults = { modo: 'novo', nome: '', posicao: 'Líder', celula: '', memberId: '', query: '', criarLogin: true, email: '', senha: '' };
+  // tipoLogin: 'senha' (Edge Function cria o usuário) ou 'google'
+  // (grava um convite; a pessoa entra com Google e vincula sozinha).
+  var adminLiderFormDefaults = { modo: 'novo', nome: '', posicao: 'Líder', celula: '', memberId: '', query: '', criarLogin: true, tipoLogin: 'senha', email: '', senha: '' };
 
   function urlWantsCadastroPublico() {
     try { return /[?&]cadastro(=|&|$)/.test(window.location.search); } catch (e) { return false; }
@@ -94,6 +96,11 @@
     selfLinkQuery: '',
     selfLinkSaving: false,
     selfLinkError: null,
+
+    // auto-cadastro de quem entrou por login social e não tinha convite
+    socialForm: Object.assign({}, publicFormDefaults),
+    socialSaving: false,
+    socialError: null,
 
     // hierarquia célula → discipulador/obreiro (só Pastor/Admin edita)
     celulaHierarquia: [],
@@ -301,6 +308,11 @@
     });
   }
 
+  function loginComGoogle() {
+    if (!sb) return;
+    sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+  }
+
   function doLogout() {
     sb.auth.signOut().then(function () {
       setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, directory: [], celulaHierarquia: [], showLoginForm: false });
@@ -324,9 +336,31 @@
     setState({ profileStatus: 'loading' });
     sb.from('profiles').select('*').eq('user_id', state.session.user.id).maybeSingle().then(function (res) {
       if (res.error) { console.warn('Erro ao carregar perfil:', res.error.message); setState({ profileStatus: 'error' }); return; }
-      setState({ profile: res.data || false, profileStatus: 'ok' });
-      if (res.data) afterLinked(); else loadDirectory();
+      if (res.data) {
+        setState({ profile: res.data, profileStatus: 'ok' });
+        afterLinked();
+        return;
+      }
+      // Sem vínculo ainda: pode ser alguém que um admin convidou por
+      // e-mail (Administração → Convidar por Google). aceitar_convite()
+      // confere o e-mail já verificado pelo provedor e vincula sozinho.
+      sb.rpc('aceitar_convite').then(function (conv) {
+        if (!conv.error && conv.data) { loadProfile(); return; }
+        setState({ profile: false, profileStatus: 'ok' });
+        // Quem entrou por e-mail/senha escolhe o próprio nome na lista
+        // (fluxo de sempre). Quem entrou por login social sem convite
+        // não pode fazer isso — só criar o próprio cadastro novo.
+        if (!isSocialSession()) loadDirectory();
+      });
     });
+  }
+
+  // Provedor da sessão atual: 'email' (login com senha) ou social
+  // ('google', etc). Decide qual tela de vínculo aparece.
+  function isSocialSession() {
+    var u = state.session && state.session.user;
+    var provider = u && u.app_metadata && u.app_metadata.provider;
+    return !!provider && provider !== 'email';
   }
 
   function loadDirectory() {
@@ -347,6 +381,39 @@
       if (res.error) { setState({ selfLinkSaving: false, selfLinkError: res.error.message }); return; }
       setState({ selfLinkSaving: false, profile: res.data });
       afterLinked();
+    });
+  }
+
+  // Auto-cadastro de quem entrou por login social sem convite: só pode
+  // criar um cadastro NOVO pra si mesma (sempre Visitante) e vincular a
+  // ele — nunca escolher alguém que já existe na lista.
+  function setSocialField(key, val) {
+    setState(function (s) { var f = Object.assign({}, s.socialForm); f[key] = val; return { socialForm: f, socialError: null }; });
+  }
+
+  function submitAutoCadastroSocial() {
+    if (!sb || !state.session) return;
+    var f = state.socialForm;
+    var nascEl = document.getElementById('social-nasc');
+    var nasc = nascEl ? nascEl.value : '';
+    if (!f.nome.trim() || !f.celula || !nasc || !f.tel.trim()) {
+      setState({ socialError: 'Preencha todos os campos antes de enviar.' });
+      return;
+    }
+    setState({ socialSaving: true, socialError: null });
+    var row = {
+      nome: f.nome.trim(), tipo: f.tipo, celula: f.celula, nasc: nasc, tel: f.tel.trim(),
+      posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
+      maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não',
+      situacao_saida: 'ativo', active: true,
+    };
+    sb.from('members').insert(row).select().single().then(function (res) {
+      if (res.error) { setState({ socialSaving: false, socialError: friendlyMemberInsertError(res.error) }); return; }
+      sb.from('profiles').insert({ user_id: state.session.user.id, member_id: res.data.id }).select().single().then(function (p) {
+        if (p.error) { setState({ socialSaving: false, socialError: p.error.message }); return; }
+        setState({ socialSaving: false, socialForm: Object.assign({}, publicFormDefaults), profile: p.data });
+        afterLinked();
+      });
     });
   }
 
@@ -447,9 +514,10 @@
         return;
       }
     }
+    var tipoLogin = f.tipoLogin || 'senha';
     if (f.criarLogin) {
       if (!email) { setState({ adminLiderError: 'Digite o e-mail de login.' }); return; }
-      if (!senha || senha.length < 6) { setState({ adminLiderError: 'A senha inicial precisa ter pelo menos 6 caracteres.' }); return; }
+      if (tipoLogin === 'senha' && (!senha || senha.length < 6)) { setState({ adminLiderError: 'A senha inicial precisa ter pelo menos 6 caracteres.' }); return; }
     }
 
     setState({ adminLiderSaving: true, adminLiderError: null });
@@ -483,6 +551,17 @@
       if (!f.criarLogin) {
         setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
         loadMembers(); loadCelulaHierarquia();
+        return;
+      }
+      // Convite por Google: só grava o e-mail autorizado. Quando a
+      // pessoa entrar com o Google desse e-mail, aceitar_convite()
+      // vincula sozinho — sem Edge Function, sem senha.
+      if (tipoLogin === 'google') {
+        sb.from('member_invites').upsert({ email: email.toLowerCase(), member_id: memberId }, { onConflict: 'email' }).then(function (res) {
+          if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
+          setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+          loadMembers(); loadCelulaHierarquia();
+        });
         return;
       }
       sb.functions.invoke('admin-create-user', { body: { email: email, password: senha, member_id: memberId } }).then(function (res) {
@@ -1566,6 +1645,8 @@
 
   var whatsappIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="#149C88" stroke="none"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 1.8a8.2 8.2 0 0 1 6.9 12.6 8.2 8.2 0 0 1-13-9.8A8.1 8.1 0 0 1 12 3.8Zm-3.4 4a1 1 0 0 0-.8.4c-.3.4-1 1.2-1 2.7 0 1.6 1 3.1 1.2 3.3.1.2 2 3.2 5 4.4 2.4 1 2.9.8 3.4.8.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.3-.6-.4l-2-1c-.3-.1-.5-.2-.7.1-.2.3-.8 1-1 1.2-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.6c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.8-1-2.4-.2-.6-.4-.5-.6-.5h-.4Z"/></svg>';
 
+  var googleIcon = '<svg width="16" height="16" viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24c0-1.6-.1-2.7-.4-3.9H24v7.1h12c-.2 1.8-1.5 4.6-4.4 6.4l6.7 5.2C42.2 35.2 45 30.1 45 24Z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46Z"/><path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.8-2.9-.8-4.5s.3-3.1.7-4.5l-7.1-5.5C2.8 17 2 20.4 2 24s.8 7 2.3 10l7.2-5.5Z"/><path fill="#EA4335" d="M24 10.6c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 4.4 29.9 2 24 2 15.4 2 8.1 6.9 4.3 14l7.1 5.5c1.9-5.3 6.8-8.9 12.6-8.9Z"/></svg>';
+
   var NAV_ICONS = {
     cadastro: '<circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7"></path>',
     presenca: '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>',
@@ -2537,6 +2618,13 @@
       '<input type="password" id="login-senha" value="' + escHtml(vals.loginForm.senha) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<button type="submit"' + (vals.loginLoading ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.loginLoading ? 'Entrando…' : 'Entrar') + '</button>' +
       '</form>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin:16px 0 14px">' +
+      '<div style="flex:1;height:1px;background:#e2e9f2"></div>' +
+      '<div style="font-size:11px;color:#8a99ab;font-weight:600">ou</div>' +
+      '<div style="flex:1;height:1px;background:#e2e9f2"></div>' +
+      '</div>' +
+      '<button ' + cb(vals.loginComGoogle) + ' style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:11px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13.5px;font-weight:600;color:#14243a;cursor:pointer">' +
+      googleIcon + ' Continuar com Google</button>' +
       '<div style="margin-top:16px;text-align:center;display:flex;flex-direction:column;gap:8px">' +
       (vals.voltarDoLogin ? '<button ' + cb(vals.voltarDoLogin) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Ver cadastro sem entrar</button>' : '') +
       '<button ' + cb(vals.irParaCadastroPublico) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Sou visitante, quero me cadastrar</button>' +
@@ -2599,6 +2687,39 @@
           }).join('') +
           (results.length === 0 ? '<div style="font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : '') +
           '</div>') +
+      '<div style="margin-top:16px;text-align:center">' +
+      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6B3FA0;font-size:11.5px;font-weight:600;cursor:pointer">Sair</button>' +
+      '</div></div></div>';
+  }
+
+  // Quem entrou por login social e não tinha convite de um admin: não
+  // pode escolher um nome que já existe (isso daria acesso aos dados de
+  // outra pessoa) — só criar o próprio cadastro, sempre como Visitante.
+  function autoCadastroSocialHtml(vals) {
+    var f = vals.socialForm;
+    var celulaOpts = (vals.celulasPublicas || []).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+    var celulaPlaceholder = vals.celulasPublicasStatus === 'loading' ? 'Carregando…' : 'Selecionar';
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Complete seu cadastro</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Entrou como <b>' + escHtml(vals.userEmail) + '</b>. Preencha seus dados para concluir o cadastro na Rede Oikos. Se você já é líder e deveria ter acesso, peça para um administrador convidar esse e-mail.</div>' +
+      (vals.socialError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">Erro: ' + escHtml(vals.socialError) + '</div>' : '') +
+      '<form ' + cb(vals.submitSocial, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+      '<input type="text" id="social-nome" required value="' + escHtml(f.nome) + '" ' + cb(vals.onSF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div class="grid-form2">' +
+      selectField('Tipo', cb(vals.onSF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+      selectField('Célula que você frequenta', cb(vals.onSF('celula'), 'change'), celulaOpts, f.celula, celulaPlaceholder) +
+      '</div>' +
+      '<div class="grid-form2">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
+      '<input type="date" id="social-nasc" required value="' + escHtml(f.nasc) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone</label>' +
+      '<input type="text" id="social-tel" required value="' + escHtml(f.tel) + '" ' + cb(vals.onSF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '</div>' +
+      '<button type="submit"' + (vals.socialSaving ? ' disabled' : '') + ' style="padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.socialSaving ? 'Salvando…' : 'Concluir cadastro') + '</button>' +
+      '</form>' +
       '<div style="margin-top:16px;text-align:center">' +
       '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6B3FA0;font-size:11.5px;font-weight:600;cursor:pointer">Sair</button>' +
       '</div></div></div>';
@@ -2673,12 +2794,23 @@
       '<input type="checkbox"' + (f.criarLogin ? ' checked' : '') + ' ' + cb(function (e) { setAdminLiderField('criarLogin', e.target.checked); }, 'change') + '> Criar acesso de login agora' +
       '</label>' +
       (f.criarLogin
-        ? '<div class="grid-form2">' +
-          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail de login</label>' +
-          '<input type="email" id="adminlider-email" placeholder="pessoa@exemplo.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
-          '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha inicial</label>' +
-          '<input type="text" id="adminlider-senha" placeholder="mínimo 6 caracteres" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
-          '</div>'
+        ? '<div style="display:flex;gap:8px">' +
+          ['senha', 'google'].map(function (tipo) {
+            var ativo = (f.tipoLogin || 'senha') === tipo;
+            var label = tipo === 'senha' ? 'Definir senha inicial' : 'Convidar por Google';
+            return '<button type="button" ' + cb(function () { setAdminLiderField('tipoLogin', tipo); }) + ' style="padding:7px 12px;border:1px solid ' + (ativo ? '#1B2344' : '#d4deea') + ';border-radius:8px;background:' + (ativo ? '#1B2344' : '#fff') + ';color:' + (ativo ? '#fff' : '#4a5b70') + ';font-size:12px;font-weight:600;cursor:pointer">' + label + '</button>';
+          }).join('') +
+          '</div>' +
+          ((f.tipoLogin || 'senha') === 'google'
+            ? '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail do Google</label>' +
+              '<input type="email" id="adminlider-email" placeholder="pessoa@gmail.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+              '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Quando a pessoa entrar com o Google usando esse e-mail, o acesso é vinculado sozinho — sem senha.</div></div>'
+            : '<div class="grid-form2">' +
+              '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail de login</label>' +
+              '<input type="email" id="adminlider-email" placeholder="pessoa@exemplo.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+              '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha inicial</label>' +
+              '<input type="text" id="adminlider-senha" placeholder="mínimo 6 caracteres" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+              '</div>')
         : '') +
       '<button type="submit"' + (vals.adminLiderSaving ? ' disabled' : '') + ' style="align-self:flex-start;padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminLiderSaving ? 'Salvando…' : 'Cadastrar') + '</button>' +
       '</form>';
@@ -2732,7 +2864,7 @@
   // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
   // nascimento). Por isso preservamos o valor atual antes de trocar o
   // HTML e devolvemos ele depois.
-  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'culto-data-input', 'pub-nasc', 'adminlider-email', 'adminlider-senha'];
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'culto-data-input', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
 
   function render() {
     var root = document.getElementById('app');
@@ -2764,6 +2896,7 @@
       html = loginHtml({
         loginForm: state.loginForm, loginError: state.loginError, loginLoading: state.loginLoading,
         doLogin: function (e) { if (e && e.preventDefault) e.preventDefault(); doLogin(); },
+        loginComGoogle: function () { loginComGoogle(); },
         irParaCadastroPublico: function () { irParaCadastroPublico(); },
         voltarDoLogin: function () { voltarDoLogin(); },
       });
@@ -2786,6 +2919,17 @@
         '</main></div>';
     } else if (state.profile === null || state.profileStatus === 'loading') {
       html = carregandoHtml();
+    } else if (state.profile === false && isSocialSession()) {
+      // Login social sem convite de admin: só pode criar o próprio
+      // cadastro (nunca escolher alguém que já existe na lista).
+      html = autoCadastroSocialHtml({
+        socialForm: state.socialForm, socialSaving: state.socialSaving, socialError: state.socialError,
+        celulasPublicas: state.celulasPublicas, celulasPublicasStatus: state.celulasPublicasStatus,
+        userEmail: (state.session && state.session.user && state.session.user.email) || '',
+        onSF: function (key) { return function (e) { setSocialField(key, e.target.value); }; },
+        submitSocial: function (e) { if (e && e.preventDefault) e.preventDefault(); submitAutoCadastroSocial(); },
+        logout: function () { doLogout(); },
+      });
     } else if (state.profile === false) {
       html = selfLinkHtml({
         directory: state.directory, directoryStatus: state.directoryStatus,

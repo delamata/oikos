@@ -111,6 +111,44 @@ desmarcado: a tela ainda cadastra a pessoa e a posição/célula dela
 normalmente, e o login continua podendo ser criado do jeito de sempre
 (**Authentication → Users → Invite user**, passo 5 abaixo).
 
+## Login com Google
+
+A tela de entrada tem um botão **"Continuar com Google"**, além do
+login por e-mail/senha de sempre. Ele funciona de dois jeitos, e a
+diferença entre eles é o que mantém os dados protegidos:
+
+- **Pessoa convidada por um admin** — na aba Administração → Nova
+  Liderança, escolha "Convidar por Google" e informe o e-mail do
+  Google dela (em vez de definir uma senha). Quando ela entrar com
+  esse e-mail, o acesso é vinculado **sozinho** ao cadastro certo, sem
+  precisar escolher nada.
+- **Pessoa não convidada** (qualquer um com conta Google) — ela
+  **não** consegue se vincular a um cadastro que já existe. Só pode
+  criar um cadastro novo pra si mesma, sempre como "Visitante" — igual
+  ao cadastro público, só que já com login. É por isso que a tela
+  "Qual desses é você?" (onde dá pra escolher qualquer nome da lista)
+  continua aparecendo **apenas** para quem entrou com e-mail/senha
+  criada por um admin.
+
+### Ativando o Google no Supabase (uma vez só)
+
+Isso é configuração de painel, não código:
+
+1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+   crie um **OAuth client ID** do tipo "Web application".
+2. No Supabase, em **Authentication → Providers → Google**, ative o
+   provedor e cole o **Client ID** e o **Client Secret**. Copie a
+   *Callback URL* que o Supabase mostra ali e cole de volta no Google
+   Cloud Console em "Authorized redirect URIs".
+3. Em **Authentication → URL Configuration**, confira que a **Site
+   URL** aponta pro endereço real onde o site está publicado (ex: a
+   URL do GitHub Pages) e adicione-a também em "Redirect URLs".
+
+Para testar depois de configurar: convide um e-mail de teste pela aba
+Administração e entre com o Google desse e-mail (deve vincular
+sozinho); depois entre com um Google diferente, sem convite (deve
+oferecer só o formulário de cadastro novo, sem lista de nomes).
+
 ## Configuração inicial (uma vez só)
 
 1. Crie um projeto gratuito em [supabase.com](https://supabase.com).
@@ -122,22 +160,24 @@ normalmente, e o login continua podendo ser criado do jeito de sempre
    - Se o seu projeto já existia **antes** do bloqueio de cadastro duplicado (mesmo nome + mesma data de nascimento), rode também [`supabase/add_unique_nome_nasc.sql`](supabase/add_unique_nome_nasc.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
-7. (Opcional, mas recomendado) Publique a Edge Function `admin-create-user` — veja "Criar login com senha inicial" acima. Sem isso, a aba Administração continua funcionando, só sem o botão de criar senha na hora.
-8. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Só o cadastro de uma pessoa nova é público — logins continuam sendo só os que você criar aqui (ou pela aba Administração, se configurou a Edge Function).
-9. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
-   ```js
-   window.SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
-   window.SUPABASE_ANON_KEY = 'sua-anon-key';
-   ```
-   Esses valores são públicos por design do Supabase — a segurança dos dados vem das políticas de RLS em `schema.sql`/`add_rbac.sql`, não do sigilo dessas strings.
-10. Faça login pela primeira vez (você) — a tela "Qual desses é você?" vai aparecer; selecione seu próprio cadastro.
-11. Vire admin com acesso total: em **Authentication → Users**, copie o seu
+7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
+8. (Opcional) Ative o **login com Google** — veja "Login com Google" abaixo. Sem isso, o botão "Continuar com Google" aparece mas dá erro; o login por e-mail/senha continua funcionando normalmente.
+9. (Opcional, mas recomendado) Publique a Edge Function `admin-create-user` — veja "Criar login com senha inicial" acima. Sem isso, a aba Administração continua funcionando, só sem o botão de criar senha na hora.
+10. Em **Authentication → Users → Invite user**, crie um login (e-mail/senha) para cada líder que vai usar o app. Só o cadastro de uma pessoa nova é público — logins continuam sendo só os que você criar aqui (ou pela aba Administração, se configurou a Edge Function).
+11. Em **Settings → API**, copie a **Project URL** e a **anon public key** e cole em [`config.js`](config.js):
+    ```js
+    window.SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
+    window.SUPABASE_ANON_KEY = 'sua-anon-key';
+    ```
+    Esses valores são públicos por design do Supabase — a segurança dos dados vem das políticas de RLS em `schema.sql`/`add_rbac.sql`, não do sigilo dessas strings.
+12. Faça login pela primeira vez (você) — a tela "Qual desses é você?" vai aparecer; selecione seu próprio cadastro.
+13. Vire admin com acesso total: em **Authentication → Users**, copie o seu
     `User UID`, depois rode no SQL Editor (`auth.uid()` não funciona aqui —
     o SQL Editor não roda como um usuário logado do app):
     ```sql
     update profiles set is_admin = true where user_id = 'COLE-SEU-USER-UID-AQUI';
     ```
-12. Com acesso total, abra a aba **Administração** pra cadastrar células, liderança, e definir o discipulador/obreiro de cada célula.
+14. Com acesso total, abra a aba **Administração** pra cadastrar células, liderança, e definir o discipulador/obreiro de cada célula.
 
 ## Rodando localmente
 
