@@ -117,6 +117,10 @@
     adminLiderSaving: false,
     adminLiderError: null,
     adminLiderSalvo: false,
+    // Dados do último e-mail autorizado, pra montar o aviso que o admin
+    // manda pra pessoa (o app não envia e-mail nenhum sozinho).
+    adminLiderConvite: null,
+    adminConviteCopiado: false,
 
     // cadastro público (sem login)
     isPublicCadastro: urlWantsCadastroPublico(),
@@ -549,7 +553,7 @@
         return { adminLiderForm: Object.assign({}, s.adminLiderForm, { modo: 'existente', memberId: memberId, nome: f.nome, query: f.nome }) };
       });
       if (!f.criarLogin) {
-        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults), adminLiderConvite: null });
         loadMembers(); loadCelulaHierarquia();
         return;
       }
@@ -557,9 +561,17 @@
       // pessoa entrar com o Google desse e-mail, aceitar_convite()
       // vincula sozinho — sem Edge Function, sem senha.
       if (tipoLogin === 'google') {
+        var nomeConvidado = f.nome;
         sb.from('member_invites').upsert({ email: email.toLowerCase(), member_id: memberId }, { onConflict: 'email' }).then(function (res) {
           if (res.error) { setState({ adminLiderSaving: false, adminLiderError: res.error.message }); return; }
-          setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+          setState({
+            adminLiderSaving: false, adminLiderSalvo: true,
+            adminLiderForm: Object.assign({}, adminLiderFormDefaults),
+            // Guardado só pra montar o aviso que o admin manda — o app
+            // não envia e-mail nenhum pra pessoa.
+            adminLiderConvite: { nome: nomeConvidado, email: email.toLowerCase() },
+            adminConviteCopiado: false,
+          });
           loadMembers(); loadCelulaHierarquia();
         });
         return;
@@ -570,7 +582,7 @@
           return;
         }
         if (res.data && res.data.error) { setState({ adminLiderSaving: false, adminLiderError: res.data.error }); return; }
-        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults) });
+        setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults), adminLiderConvite: null });
         loadMembers(); loadCelulaHierarquia();
       });
     };
@@ -920,6 +932,37 @@
     var lines = ['*' + title + '*', ''];
     rows.forEach(function (r) { lines.push('• ' + r[nomeKey] + ' — ' + (r[nascKey] || '—')); });
     window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
+  }
+
+  // Autorizar um e-mail não envia nada pra pessoa — quem avisa é o
+  // admin. Esta é a mensagem pronta pra isso.
+  function textoConviteAcesso(nome, email) {
+    var link = window.location.origin + window.location.pathname;
+    return [
+      'Oi' + (nome ? ' ' + nome.split(/\s+/)[0] : '') + '! Liberei seu acesso ao sistema da Rede Oikos.',
+      '',
+      'Para entrar:',
+      '1. Abra ' + link,
+      '2. Clique em *Entrar* e depois em *Continuar com Google*',
+      '3. Use exatamente esta conta Google: ' + email,
+      '',
+      'Só esse e-mail funciona — se entrar com outro, o acesso não é reconhecido.',
+    ].join('\n');
+  }
+
+  function compartilharConviteWhatsapp(nome, email) {
+    window.open('https://wa.me/?text=' + encodeURIComponent(textoConviteAcesso(nome, email)), '_blank');
+  }
+
+  function copiarConvite(nome, email) {
+    var texto = textoConviteAcesso(nome, email);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () {
+        setState({ adminConviteCopiado: true });
+      }, function () { window.prompt('Copie a mensagem:', texto); });
+      return;
+    }
+    window.prompt('Copie a mensagem:', texto);
   }
 
   function shareMembrosWhatsapp() {
@@ -1556,6 +1599,12 @@
       setAdminLiderModo: function (modo) { return function () { setAdminLiderModo(modo); }; },
       pickAdminLiderExistente: function (m) { return function () { pickAdminLiderExistente(m); }; },
       submitAdminLider: function (e) { if (e && e.preventDefault) e.preventDefault(); submitAdminLider(); },
+      adminLiderConvite: state.adminLiderConvite,
+      adminConviteCopiado: state.adminConviteCopiado,
+      conviteTexto: state.adminLiderConvite ? textoConviteAcesso(state.adminLiderConvite.nome, state.adminLiderConvite.email) : '',
+      compartilharConvite: function () { if (state.adminLiderConvite) compartilharConviteWhatsapp(state.adminLiderConvite.nome, state.adminLiderConvite.email); },
+      copiarConvite: function () { if (state.adminLiderConvite) copiarConvite(state.adminLiderConvite.nome, state.adminLiderConvite.email); },
+      fecharConvite: function () { setState({ adminLiderConvite: null, adminConviteCopiado: false }); },
       novoForm: state.novoForm, novoSalvo: state.novoSalvo, novoSaving: state.novoSaving, novoError: state.novoError,
       isEditingMembro: !!state.novoEditId,
       cancelEditMembro: function () { cancelEditMembro(); },
@@ -2738,6 +2787,21 @@
     return '<div style="background:' + bg + ';color:' + fg + ';border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(text) + '</div>';
   }
 
+  // Depois de autorizar um e-mail: o app não avisa ninguém, então
+  // entrega a mensagem pronta pro admin mandar.
+  function conviteProntoHtml(vals) {
+    var c = vals.adminLiderConvite;
+    return '<div style="background:#e2f2ea;border:1px solid #b9ded0;border-radius:11px;padding:14px 16px;margin-bottom:14px">' +
+      '<div style="font-size:13px;font-weight:700;color:#237a5a">Acesso liberado para ' + escHtml(c.email) + '</div>' +
+      '<div style="font-size:12px;color:#3f6b5b;margin-top:5px">Falta avisar a pessoa — o sistema não manda e-mail. Use a mensagem pronta abaixo:</div>' +
+      '<pre style="white-space:pre-wrap;background:#fff;border:1px solid #d3e7dd;border-radius:8px;padding:10px 12px;font-size:11.5px;color:#14243a;margin:10px 0 0;font-family:inherit">' + escHtml(vals.conviteTexto) + '</pre>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+      '<button type="button" ' + cb(vals.compartilharConvite) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #149C88;border-radius:9px;background:#fff;font-size:12.5px;color:#0E7A68;font-weight:700;cursor:pointer">' + whatsappIcon + ' Enviar por WhatsApp</button>' +
+      '<button type="button" ' + cb(vals.copiarConvite) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#4a5b70;font-weight:600;cursor:pointer">' + (vals.adminConviteCopiado ? 'Copiado!' : 'Copiar mensagem') + '</button>' +
+      '<button type="button" ' + cb(vals.fecharConvite) + ' style="padding:8px 14px;border:none;background:none;font-size:12.5px;color:#6b7c93;font-weight:600;cursor:pointer">Fechar</button>' +
+      '</div></div>';
+  }
+
   function adminNovaCelulaHtml(vals) {
     var f = vals.adminCelulaForm;
     var body = '' +
@@ -2778,7 +2842,8 @@
         '</div>';
     var body = '' +
       '<div style="display:flex;gap:8px;margin-bottom:16px">' + modoBtn('novo', 'Nova pessoa') + modoBtn('existente', 'Pessoa já cadastrada') + '</div>' +
-      (vals.adminLiderSalvo ? adminBanner('ok', 'Liderança cadastrada com sucesso.') : '') +
+      (vals.adminLiderSalvo && !vals.adminLiderConvite ? adminBanner('ok', 'Liderança cadastrada com sucesso.') : '') +
+      (vals.adminLiderConvite ? conviteProntoHtml(vals) : '') +
       (vals.adminLiderError ? adminBanner('error', vals.adminLiderError) : '') +
       (vals.adminLiderSemDiscipulador ? adminBanner('warn', 'Essa célula ainda não tem discipulador responsável — defina um em "Nova Célula" ou na tabela abaixo antes de enviar.') : '') +
       '<form ' + cb(vals.submitAdminLider, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
@@ -2797,14 +2862,15 @@
         ? '<div style="display:flex;gap:8px">' +
           ['senha', 'google'].map(function (tipo) {
             var ativo = (f.tipoLogin || 'senha') === tipo;
-            var label = tipo === 'senha' ? 'Definir senha inicial' : 'Convidar por Google';
+            var label = tipo === 'senha' ? 'Definir senha inicial' : 'Autorizar e-mail do Google';
             return '<button type="button" ' + cb(function () { setAdminLiderField('tipoLogin', tipo); }) + ' style="padding:7px 12px;border:1px solid ' + (ativo ? '#1B2344' : '#d4deea') + ';border-radius:8px;background:' + (ativo ? '#1B2344' : '#fff') + ';color:' + (ativo ? '#fff' : '#4a5b70') + ';font-size:12px;font-weight:600;cursor:pointer">' + label + '</button>';
           }).join('') +
           '</div>' +
           ((f.tipoLogin || 'senha') === 'google'
             ? '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail do Google</label>' +
               '<input type="email" id="adminlider-email" placeholder="pessoa@gmail.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
-              '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Quando a pessoa entrar com o Google usando esse e-mail, o acesso é vinculado sozinho — sem senha.</div></div>'
+              '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Quando a pessoa entrar com o Google usando esse e-mail, o acesso é vinculado sozinho — sem senha.</div>' +
+              '<div style="background:#faf1de;color:#a1780f;border-radius:8px;padding:9px 11px;font-size:11.5px;font-weight:600;margin-top:8px">O sistema <b>não envia e-mail</b> pra pessoa. Ao salvar, aparece aqui uma mensagem pronta pra você mandar por WhatsApp.</div></div>'
             : '<div class="grid-form2">' +
               '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail de login</label>' +
               '<input type="email" id="adminlider-email" placeholder="pessoa@exemplo.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +

@@ -117,11 +117,18 @@ A tela de entrada tem um botão **"Continuar com Google"**, além do
 login por e-mail/senha de sempre. Ele funciona de dois jeitos, e a
 diferença entre eles é o que mantém os dados protegidos:
 
-- **Pessoa convidada por um admin** — na aba Administração → Nova
-  Liderança, escolha "Convidar por Google" e informe o e-mail do
+- **Pessoa autorizada por um admin** — na aba Administração → Nova
+  Liderança, escolha "Autorizar e-mail do Google" e informe o e-mail do
   Google dela (em vez de definir uma senha). Quando ela entrar com
   esse e-mail, o acesso é vinculado **sozinho** ao cadastro certo, sem
   precisar escolher nada.
+
+  ⚠️ **O sistema não envia e-mail nenhum pra pessoa.** Autorizar só
+  registra que aquele e-mail está liberado; quem avisa é você. Depois
+  de salvar, a tela mostra uma **mensagem pronta** (com o link do site
+  e o e-mail que ela precisa usar) e botões para **enviar por
+  WhatsApp** ou copiar. Se ela entrar com outro e-mail Google, não
+  vincula — cai como visitante novo.
 - **Pessoa não convidada** (qualquer um com conta Google) — ela
   **não** consegue se vincular a um cadastro que já existe. Só pode
   criar um cadastro novo pra si mesma, sempre como "Visitante" — igual
