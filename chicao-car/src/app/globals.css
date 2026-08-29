@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Chicão Car — design tokens
+   Identidade: oficina automotiva. Base grafite (chão de oficina) + âmbar
+   (sinalização/ferramenta). Números em fonte monoespaçada para leitura rápida
+   no balcão.
+   =========================================================================== */
+@theme {
+  --color-ink-950: #0b0c0e;
+  --color-ink-900: #101215;
+  --color-ink-850: #15181c;
+  --color-ink-800: #1a1e23;
+  --color-ink-700: #232830;
+  --color-ink-600: #2e343d;
+  --color-ink-500: #3d444f;
+
+  --color-fog-400: #6f7782;
+  --color-fog-300: #8b939e;
+  --color-fog-200: #b6bcc5;
+  --color-fog-100: #e6e9ed;
+
+  --color-amber-brand: #f0a73c;
+  --color-amber-deep: #d1861c;
+  --color-amber-soft: #f7c777;
+
+  --color-ok: #3fbf87;
+  --color-warn: #e8b54a;
+  --color-danger: #f0605d;
+  --color-info: #5aa9f0;
+  --color-violet-soft: #a98bf0;
+
+  --font-display: var(--font-archivo), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-mono-numbers), ui-monospace, monospace;
+
+  --radius-card: 14px;
+
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-rise: rise 0.22s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+:root {
+  --bg: var(--color-ink-950);
+  --surface: var(--color-ink-900);
+  --surface-raised: var(--color-ink-850);
+  --line: var(--color-ink-700);
+  --text: var(--color-fog-100);
+  --text-muted: var(--color-fog-300);
+  --accent: var(--color-amber-brand);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--line);
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* respeita a área segura do iPhone quando usado como app na tela inicial */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* números sempre alinhados em colunas */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.label-caps {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-600);
+}
+
+/* rolagem horizontal de tabelas sem "pular" no iOS */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* remove as setinhas de input number (usamos máscara própria) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-amber-brand);
+  outline-offset: 2px;
+}
+
+/* ===========================================================================
+   Impressão — documentos A4 profissionais (não é "imprimir a tela")
+   =========================================================================== */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 12mm 14mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #101215 !important;
+  }
+
+  .no-print,
+  nav[data-app-nav],
+  header[data-app-header] {
+    display: none !important;
+  }
+
+  .print-sheet {
+    box-shadow: none !important;
+    border: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .print-break {
+    break-before: page;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}
