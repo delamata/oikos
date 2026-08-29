@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Ban,
@@ -46,12 +46,11 @@ import { useData } from "@/lib/data/provider";
 import { useAuth } from "@/lib/auth/provider";
 import { can } from "@/lib/permissions";
 import { amountOutstanding, buildWorkOrderView } from "@/lib/domain/work-orders";
-import { formatCurrency, formatDate, formatMileage, formatPlate } from "@/lib/utils/format";
+import { formatCurrency, formatDate, formatPlate } from "@/lib/utils/format";
 import type { WorkOrderStatus } from "@/types";
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const data = useData();
   const { profile } = useAuth();
   const actions = useWorkOrderActions();

@@ -22,7 +22,6 @@ import {
   WORK_ORDER_STATUS_OPTIONS,
 } from "@/lib/constants";
 import { formatCurrency, formatDate, formatPlate, normalize } from "@/lib/utils/format";
-import type { WorkOrderStatus } from "@/types";
 
 export default function WorkOrdersPage() {
   const data = useData();
