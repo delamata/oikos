@@ -10,7 +10,6 @@ import {
   parseISO,
   startOfDay,
   startOfMonth,
-  startOfWeek,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { Expense, Payment, Revenue } from "@/types";

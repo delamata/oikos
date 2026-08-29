@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils/cn";
 import { inputClass } from "./input";
 import { maskCurrency, parseCurrencyInput } from "@/lib/utils/masks";
 
+function toMasked(value: number): string {
+  return value ? maskCurrency(String(Math.round(value * 100))) : "";
+}
+
 /**
  * Campo de moeda BRL. O usuário digita apenas números e as casas decimais são
  * preenchidas da direita para a esquerda (comportamento de caixa/PDV).
@@ -24,16 +28,15 @@ export function CurrencyInput({
   placeholder?: string;
   disabled?: boolean;
 }) {
-  const [text, setText] = React.useState(() => (value ? maskCurrency(String(Math.round(value * 100))) : ""));
+  const [text, setText] = React.useState(() => toMasked(value));
+  const [lastValue, setLastValue] = React.useState(value);
 
-  // mantém o campo sincronizado quando o valor muda por fora (ex.: preço de tabela)
-  React.useEffect(() => {
-    const current = parseCurrencyInput(text);
-    if (Math.abs(current - value) > 0.005) {
-      setText(value ? maskCurrency(String(Math.round(value * 100))) : "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  // Valor alterado por fora (ex.: preço de tabela): ajusta durante a renderização,
+  // que é o padrão recomendado para estado derivado de props.
+  if (value !== lastValue) {
+    setLastValue(value);
+    if (Math.abs(parseCurrencyInput(text) - value) > 0.005) setText(toMasked(value));
+  }
 
   return (
     <div className="relative">

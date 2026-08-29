@@ -42,8 +42,6 @@ export function GlobalSearch({ className }: { className?: string }) {
     [term, data.customers, data.vehicles, data.work_orders],
   );
 
-  React.useEffect(() => setHighlight(0), [term]);
-
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
@@ -82,6 +80,7 @@ export function GlobalSearch({ className }: { className?: string }) {
         onFocus={() => setOpen(true)}
         onChange={(e) => {
           setTerm(e.target.value);
+          setHighlight(0);
           setOpen(true);
         }}
         onKeyDown={(e) => {
