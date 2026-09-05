@@ -24,10 +24,14 @@
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
 
-  // Situação de saída da rede: transferências (não contam como "perdido")
-  // e perdidos (saiu e não quer mais participar de nenhuma igreja).
+  // Situação da pessoa na rede. Só 'ativo' entra nas contagens e nos
+  // relatórios por célula — todo o resto zera o campo `active`:
+  // inativo (continua cadastrado, mas não participa hoje),
+  // transferências (não contam como "perdido") e perdido (saiu e não
+  // quer mais participar de nenhuma igreja).
   var SITUACAO_OPTIONS = [
     { v: 'ativo', label: 'Ativo' },
+    { v: 'inativo', label: 'Inativo' },
     { v: 'transferido_celula', label: 'Transferido — outra célula' },
     { v: 'transferido_rede', label: 'Transferido — outra rede' },
     { v: 'transferido_igreja', label: 'Transferido — outra igreja' },
@@ -2606,7 +2610,9 @@
         : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Nenhum perdido registrado.</div>') +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Pessoas que saíram <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.sairamRows.length + '</span></div></div>' +
+      '<div style="padding:18px 22px 14px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Fora da contagem <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.sairamRows.length + '</span></div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Inativos, transferidos e perdidos — não entram em nenhum total por célula</div></div>' +
       (vals.sairamRows.length
         ? '<div class="table-scroll" style="max-height:260px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
           '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
@@ -2621,7 +2627,7 @@
               '<td style="padding:9px 22px;color:#4a5b70">' + escHtml(r.detalhe) + '</td></tr>';
           }).join('') +
           '</tbody></table></div>'
-        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Ninguém saiu da rede ainda.</div>') +
+        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Todo mundo está ativo.</div>') +
       '</div></div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
