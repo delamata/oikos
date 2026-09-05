@@ -27,12 +27,16 @@ create table if not exists members (
   situacao_saida text not null default 'ativo'
     check (situacao_saida in ('ativo', 'inativo', 'transferido_celula', 'transferido_rede', 'transferido_igreja', 'perdido')),
   saida_detalhe text,
+  -- Cônjuge (opcional, só faz sentido com civil = 'Casado (a)'). O app
+  -- mantém o vínculo nos dois sentidos e replica célula/situação.
+  conjuge_id uuid references members(id) on delete set null,
   created_by uuid references auth.users,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists members_celula_idx on members (celula);
+create index if not exists members_conjuge_idx on members (conjuge_id);
 create index if not exists members_active_idx on members (active);
 
 -- Não deixa cadastrar a mesma pessoa duas vezes (mesmo nome + mesma

@@ -60,7 +60,12 @@
     return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
-  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '' };
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
+  // Campos que o cônjuge herda de quem foi salvo (célula e situação —
+  // onde a pessoa é contada e se é contada). Posição fica de fora de
+  // propósito: ela define o nível de acesso aos dados, então cada um
+  // tem a sua.
+  var CAMPOS_HERDADOS_CONJUGE = ['celula', 'situacao_saida', 'active'];
   var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
   // modo: 'novo' (cadastra a pessoa agora) ou 'existente' (já cadastrada, só recebe posição/login)
   // tipoLogin: 'senha' (Edge Function cria o usuário) ou 'google'
@@ -690,12 +695,15 @@
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
       situacao_saida: f.situacao, saida_detalhe: (f.saidaDetalhe || '').trim() || null,
       active: f.situacao === 'ativo',
+      // Só casado tem cônjuge — mudar o estado civil desfaz o vínculo.
+      conjuge_id: f.civil === 'Casado (a)' ? (f.conjugeId || null) : null,
     };
   }
 
   var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'batizado', 'encontro', 'situacao_saida'];
 
   function startEditMembro(p) {
+    var conjuge = p.conjuge_id ? memberById(p.conjuge_id) : null;
     setState({
       tab: 'novo', selected: null,
       novoForm: {
@@ -704,11 +712,68 @@
         nasc: p.nasc || '', tel: p.tel || '',
         maturidade: p.maturidade, ctl: p.ctl, seminario: p.seminario, ceifeiros: p.ceifeiros,
         situacao: p.situacao_saida || 'ativo', saidaDetalhe: p.saida_detalhe || '',
+        conjugeId: p.conjuge_id || '', conjugeNome: conjuge ? conjuge.nome : '', conjugeQuery: '',
       },
       novoEditId: p.id,
       novoEditOriginal: p,
       novoSalvo: false, novoError: null,
     });
+  }
+
+  function memberById(id) {
+    return (state.members || []).filter(function (m) { return m.id === id; })[0] || null;
+  }
+
+  function pickConjuge(m) {
+    setState(function (s) {
+      var f = Object.assign({}, s.novoForm, { conjugeId: m.id, conjugeNome: m.nome, conjugeQuery: '' });
+      return { novoForm: f, novoSalvo: false };
+    });
+  }
+
+  function limparConjuge() {
+    setState(function (s) {
+      var f = Object.assign({}, s.novoForm, { conjugeId: '', conjugeNome: '', conjugeQuery: '' });
+      return { novoForm: f, novoSalvo: false };
+    });
+  }
+
+  // Mantém o vínculo nos dois sentidos e replica célula/situação pro
+  // cônjuge. Quem foi desvinculado fica solto (conjuge_id = null).
+  function sincronizarConjuge(memberId, row, conjugeAnteriorId, done) {
+    var novoId = row.conjuge_id || null;
+    var tarefas = [];
+
+    if (conjugeAnteriorId && conjugeAnteriorId !== novoId) {
+      tarefas.push(function (next) {
+        sb.from('members').update({ conjuge_id: null }).eq('id', conjugeAnteriorId).then(function () { next(); });
+      });
+    }
+
+    if (novoId) {
+      tarefas.push(function (next) {
+        var anterior = memberById(novoId);
+        var patch = { conjuge_id: memberId };
+        CAMPOS_HERDADOS_CONJUGE.forEach(function (campo) { patch[campo] = row[campo]; });
+        sb.from('members').update(patch).eq('id', novoId).then(function () {
+          // Registra em Movimentações o que mudou no cônjuge por herança.
+          var movs = !anterior ? [] : MOVIMENTACAO_CAMPOS
+            .filter(function (campo) { return patch[campo] !== undefined && anterior[campo] !== patch[campo]; })
+            .map(function (campo) {
+              return { member_id: novoId, campo: campo, valor_anterior: anterior[campo], valor_novo: patch[campo] };
+            });
+          if (movs.length) sb.from('movimentacoes').insert(movs).then(function () { next(); });
+          else next();
+        });
+      });
+    }
+
+    var i = 0;
+    var proxima = function () {
+      if (i >= tarefas.length) { done(); return; }
+      tarefas[i++](proxima);
+    };
+    proxima();
   }
 
   function cancelEditMembro() {
@@ -729,21 +794,25 @@
         var movs = MOVIMENTACAO_CAMPOS.filter(function (campo) { return original[campo] !== row[campo]; })
           .map(function (campo) { return { member_id: state.novoEditId, campo: campo, valor_anterior: original[campo], valor_novo: row[campo] }; });
         var afterSave = function () {
-          setState({
-            novoSaving: false, novoSalvo: true, tab: 'cadastro',
-            novoEditId: null, novoEditOriginal: null, novoForm: Object.assign({}, novoFormDefaults),
-            selected: mapMemberRow(res.data),
+          sincronizarConjuge(state.novoEditId, row, original.conjuge_id || null, function () {
+            setState({
+              novoSaving: false, novoSalvo: true, tab: 'cadastro',
+              novoEditId: null, novoEditOriginal: null, novoForm: Object.assign({}, novoFormDefaults),
+              selected: mapMemberRow(res.data),
+            });
+            loadMembers(); loadMovimentacoes();
           });
-          loadMembers();
         };
-        if (movs.length) sb.from('movimentacoes').insert(movs).then(function () { loadMovimentacoes(); afterSave(); });
+        if (movs.length) sb.from('movimentacoes').insert(movs).then(function () { afterSave(); });
         else afterSave();
       });
     } else {
-      sb.from('members').insert(row).then(function (res) {
+      sb.from('members').insert(row).select().single().then(function (res) {
         if (res.error) { setState({ novoSaving: false, novoError: friendlyMemberInsertError(res.error) }); return; }
-        setState({ novoSaving: false, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
-        loadMembers();
+        sincronizarConjuge(res.data.id, row, null, function () {
+          setState({ novoSaving: false, novoSalvo: true, novoForm: Object.assign({}, novoFormDefaults) });
+          loadMembers(); loadMovimentacoes();
+        });
       });
     }
   }
@@ -1249,6 +1318,7 @@
           { label: 'Idade', value: s.idade != null ? s.idade + ' anos' : '—' },
           { label: 'Nascimento', value: nascLabelSel },
           { label: 'Estado civil', value: s.civil },
+          { label: 'Cônjuge', value: (s.conjuge_id && memberById(s.conjuge_id) ? memberById(s.conjuge_id).nome : '—') },
           { label: 'Batizado', value: s.batizado },
           { label: 'Encontro com Deus', value: s.encontro },
           { label: 'Telefone', value: s.tel || '—' },
@@ -1443,6 +1513,15 @@
     var adminLiderCelulaInfo = (state.celulaHierarquia || []).filter(function (h) { return h.celula === alf.celula; })[0] || null;
     var adminLiderSemDiscipulador = alf.posicao === 'Líder' && !!alf.celula && (!adminLiderCelulaInfo || !adminLiderCelulaInfo.discipulador_id);
 
+    // ---- Busca de cônjuge no formulário de cadastro (só adultos, e nunca a própria pessoa) ----
+    var nf = state.novoForm;
+    var conjugeQ = (nf.conjugeQuery || '').trim().toLowerCase();
+    var conjugeBusca = (nf.civil === 'Casado (a)' && !nf.conjugeId && conjugeQ)
+      ? allPessoas.filter(function (p) {
+        return p.id !== state.novoEditId && p.tipo === 'Adultos' && p.nome.toLowerCase().indexOf(conjugeQ) >= 0;
+      }).slice(0, 20)
+      : [];
+
     // ---- Presença no culto ----
     var todosAtivos = all.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
     var cf = state.cultoFilters;
@@ -1626,6 +1705,9 @@
       cancelEditMembro: function () { cancelEditMembro(); },
       onNF: function (key) { return function (e) { setNF(key, e.target.value); }; },
       submitNovoMembro: function () { submitNovoMembro(); },
+      conjugeBusca: conjugeBusca,
+      pickConjuge: function (m) { return function () { pickConjuge(m); }; },
+      limparConjuge: function () { limparConjuge(); },
       celulaOptionsForm: currentCelulaList().map(function (c) { return { v: c, label: celulaLabel(c) }; }),
       cultos: historicoCultos, cultosStatus: state.cultosStatus,
       novoCultoData: state.novoCultoData,
@@ -2388,6 +2470,28 @@
     return selectField(label, cbAttr, [{ v: 'Não', label: 'Não' }, { v: 'Sim', label: 'Sim' }], current);
   }
 
+  // Vínculo de cônjuge — só aparece com estado civil "Casado (a)".
+  // É opcional; ao salvar, o cônjuge herda célula e situação.
+  function conjugeField(vals, f) {
+    var selecionado = f.conjugeId
+      ? '<div style="display:flex;align-items:center;gap:10px;margin-top:5px;padding:10px 12px;border:1px solid #d3e7dd;border-radius:9px;background:#f2f9f6">' +
+        '<div style="flex:1;font-size:13.5px;font-weight:600;color:#237a5a">' + escHtml(f.conjugeNome || 'Cônjuge vinculado') + '</div>' +
+        '<button type="button" ' + cb(vals.limparConjuge) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12px;font-weight:600;cursor:pointer">Remover</button>' +
+        '</div>'
+      : '<input type="text" id="novo-conjuge" value="' + escHtml(f.conjugeQuery || '') + '" ' + cb(vals.onNF('conjugeQuery'), 'input') + ' placeholder="Buscar pelo nome…" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+        (vals.conjugeBusca.length
+          ? '<div style="margin-top:8px;max-height:160px;overflow:auto;display:flex;flex-direction:column;gap:5px">' +
+            vals.conjugeBusca.map(function (m) {
+              return '<button type="button" ' + cb(vals.pickConjuge(m)) + ' style="text-align:left;padding:8px 10px;border:1px solid #e2e9f2;border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px">' +
+                '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.posicao) + (m.celula ? ' · ' + escHtml(celulaLabel(m.celula)) : '') + '</span></button>';
+            }).join('') + '</div>'
+          : ((f.conjugeQuery || '').trim() ? '<div style="margin-top:8px;font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : ''));
+
+    return '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Cônjuge <span style="font-weight:500;color:#8a99ab">(opcional)</span></label>' +
+      selecionado +
+      '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Ao salvar, o cônjuge passa a ficar na mesma célula e com a mesma situação deste cadastro. A posição de cada um continua independente.</div></div>';
+  }
+
   function novoHtml(vals) {
     var f = vals.novoForm;
     var editing = vals.isEditingMembro;
@@ -2425,6 +2529,8 @@
         { v: 'Divorciado(a)', label: 'Divorciado(a)' }, { v: 'Viuvo (a)', label: 'Viúvo(a)' }
       ], f.civil) +
       '</div>' +
+
+      (f.civil === 'Casado (a)' ? conjugeField(vals, f) : '') +
 
       '<div class="grid-form2">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
