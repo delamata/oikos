@@ -11,7 +11,7 @@ dados + autenticação).
 - **Presença por Célula** — lida de uma planilha Google (formulário que os líderes já preenchem), somente leitura.
 - **Presença no Culto** — check-in pessoa por pessoa, por culto/data.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
-- **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem) e **Fora da contagem** (todo mundo que não está ativo, com a situação de cada um).
+- **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem), **Fora da contagem** (transferidos e perdidos) e **Inativos**. Nas duas últimas listas, clicar numa linha abre a ficha da pessoa — dá pra editar o cadastro dali, inclusive reativar quem voltou.
 
 ### Situação da pessoa
 

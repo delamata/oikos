@@ -1503,13 +1503,20 @@
       return { celula: celulaLabel(c), qtd: perdidosPorCelula[c] };
     });
     var totalPerdidos = pessoasSairam.filter(function (p) { return p.situacao_saida === 'perdido'; }).length;
-    var sairamRows = pessoasSairam.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }).map(function (p) {
+    var porNome = function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); };
+    var linhaFora = function (p) {
       return {
-        nome: p.nome, celulaLabel: celulaLabel(p.celula),
+        nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—',
+        celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
         situacaoLabel: SITUACAO_LABELS[p.situacao_saida] || p.situacao_saida || '—',
         detalhe: p.saida_detalhe || '—',
+        onSelect: function () { setState({ selected: p }); },
       };
-    });
+    };
+    // Inativos ganham lista própria (dá pra abrir a ficha e editar);
+    // "Fora da contagem" fica com transferidos e perdidos.
+    var inativosRows = pessoasSairam.filter(function (p) { return p.situacao_saida === 'inativo'; }).sort(porNome).map(linhaFora);
+    var sairamRows = pessoasSairam.filter(function (p) { return p.situacao_saida !== 'inativo'; }).sort(porNome).map(linhaFora);
 
     // ---- Trilho (Maturidade / CTL / Seminário Pastoral) ----
     var tf = state.trilhoFilters;
@@ -1631,7 +1638,7 @@
       onCFCelula: function (e) { setCF('celula', e.target.value); },
       onCFQ: function (e) { setCF('q', e.target.value); },
       movRows: movRows, movStatus: state.movStatus, movFilters: mf, movCelulaOptions: movCelulaOptions,
-      perdidosRows: perdidosRows, totalPerdidos: totalPerdidos, sairamRows: sairamRows,
+      perdidosRows: perdidosRows, totalPerdidos: totalPerdidos, sairamRows: sairamRows, inativosRows: inativosRows,
       onMFCelula: function (e) { setMF('celula', e.target.value); },
       onMFCampo: function (e) { setMF('campo', e.target.value); },
       trilhoKpis: trilhoKpis, trilhoStackedBars: trilhoStackedBars, trilhoCourses: trilhoCourses,
@@ -2587,6 +2594,29 @@
     return html;
   }
 
+  // Tabela usada pelas duas listas de quem está fora da contagem
+  // (Inativos e Transferidos/perdidos). A linha abre a ficha do membro.
+  function foraDaContagemTabela(rows, vazioTexto) {
+    var th = function (label, align, padding) {
+      return '<th style="text-align:' + align + ';padding:9px ' + padding + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
+    };
+    if (!rows.length) return '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">' + escHtml(vazioTexto) + '</div>';
+    return '<div class="table-scroll" style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      th('Nº', 'right', '12px') + th('Nome', 'left', '22px') + th('Posição', 'left', '12px') +
+      th('Situação', 'left', '12px') + th('Detalhe', 'left', '22px') +
+      '</tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr ' + cb(r.onSelect) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
+          '<td style="padding:9px 12px;text-align:right;color:#8a99ab;font-variant-numeric:tabular-nums">' + escHtml(r.numeroLabel) + '</td>' +
+          '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(r.nome) + ' <span style="font-weight:500;color:#6b7c93">· ' + escHtml(r.celulaLabel) + '</span></td>' +
+          '<td style="padding:9px 12px;color:#4a5b70">' + escHtml(r.posicao) + '</td>' +
+          '<td style="padding:9px 12px;color:#4a5b70">' + escHtml(r.situacaoLabel) + '</td>' +
+          '<td style="padding:9px 22px;color:#4a5b70">' + escHtml(r.detalhe) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
   function movimentacoesHtml(vals) {
     var campoOptions = [{ v: 'celula', label: 'Célula' }, { v: 'posicao', label: 'Posição' }, { v: 'batizado', label: 'Batismo' }, { v: 'encontro', label: 'Encontro com Deus' }, { v: 'situacao_saida', label: 'Situação' }, { v: 'nota', label: 'Nota' }];
     var html = '<div>';
@@ -2612,23 +2642,17 @@
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="padding:18px 22px 14px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Fora da contagem <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.sairamRows.length + '</span></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Inativos, transferidos e perdidos — não entram em nenhum total por célula</div></div>' +
-      (vals.sairamRows.length
-        ? '<div class="table-scroll" style="max-height:260px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-          '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
-          '<th style="text-align:left;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Situação</th>' +
-          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Detalhe</th>' +
-          '</tr></thead><tbody>' +
-          vals.sairamRows.map(function (r) {
-            return '<tr style="border-bottom:1px solid #f0f4f9">' +
-              '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(r.nome) + ' <span style="font-weight:500;color:#6b7c93">· ' + escHtml(r.celulaLabel) + '</span></td>' +
-              '<td style="padding:9px 12px;color:#4a5b70">' + escHtml(r.situacaoLabel) + '</td>' +
-              '<td style="padding:9px 22px;color:#4a5b70">' + escHtml(r.detalhe) + '</td></tr>';
-          }).join('') +
-          '</tbody></table></div>'
-        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Todo mundo está ativo.</div>') +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Transferidos e perdidos — clique numa linha para abrir a ficha</div></div>' +
+      foraDaContagemTabela(vals.sairamRows, 'Ninguém transferido ou perdido.') +
       '</div></div>';
+
+    // Inativos: lista própria, com a ficha aberta pelo clique na linha.
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
+      '<div style="padding:18px 22px 14px">' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Inativos <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.inativosRows.length + '</span></div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Continuam cadastrados, mas não entram em nenhum total por célula — clique numa linha para abrir a ficha e editar</div></div>' +
+      foraDaContagemTabela(vals.inativosRows, 'Ninguém inativo no momento.') +
+      '</div>';
 
     html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
       '<select ' + cb(vals.onMFCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
@@ -2660,6 +2684,9 @@
           '<td style="padding:10px 22px;color:#4a5b70">' + escHtml(r.desc) + '</td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
+
+    // Mesma ficha da aba Cadastro, pra abrir/editar quem está fora da contagem.
+    if (vals.selected) html += detailDrawerHtml(vals);
 
     html += '</div>';
     return html;
