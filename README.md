@@ -34,16 +34,24 @@ o cônjuge, escolhido entre os adultos já cadastrados. O vínculo vale
 nos dois sentidos: ao salvar, o cônjuge também passa a apontar de
 volta.
 
-Ao salvar, o cônjuge **herda deste cadastro a célula e a situação** —
-é o que impede o casal de ficar em células diferentes, ou um ativo e o
-outro não. A mudança fica registrada em Movimentações também na ficha
-do cônjuge.
+Ao salvar, o cônjuge **herda deste cadastro a célula, a posição, a
+situação e o nível de acesso** — inclusive o "Admin". Ou seja: se o
+André é Admin, a Simone passa a ter exatamente o mesmo acesso e a
+mesma posição. As mudanças ficam registradas em Movimentações também
+na ficha do cônjuge.
 
-A **posição fica de fora de propósito**: é ela que define o nível de
-acesso aos dados (veja "Acesso por nível"), então cada um tem a sua —
-o cônjuge de um Pastor não vira Pastor. Trocar o estado civil para
-algo diferente de Casado(a), ou clicar em "Remover", desfaz o vínculo
-dos dois lados.
+Duas coisas importantes:
+
+- **Quem manda é o cadastro que você salvou.** Se os dois estiverem
+  diferentes, o que vale é o de quem você acabou de editar — inclusive
+  para tirar acesso. Salvando o cadastro de alguém que não é Admin, o
+  cônjuge dele também deixa de ser.
+- O "Admin" só é copiado se **quem está salvando tem acesso total**, e
+  só se o cônjuge já tiver login. Se ele ganhar o login depois, é só
+  salvar o casal de novo pra aplicar.
+
+Trocar o estado civil para algo diferente de Casado(a), ou clicar em
+"Remover", desfaz o vínculo dos dois lados.
 
 ## Cadastro público (sem login)
 
@@ -197,6 +205,7 @@ oferecer só o formulário de cadastro novo, sem lista de nomes).
    - Se o seu projeto já existia **antes** do bloqueio de cadastro duplicado (mesmo nome + mesma data de nascimento), rode também [`supabase/add_unique_nome_nasc.sql`](supabase/add_unique_nome_nasc.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Se o seu projeto já existia **antes** da situação "Inativo", rode também [`supabase/add_situacao_inativo.sql`](supabase/add_situacao_inativo.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Se o seu projeto já existia **antes** do vínculo de cônjuge, rode também [`supabase/add_conjuge.sql`](supabase/add_conjuge.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
+   - Rode [`supabase/add_acesso_conjuge.sql`](supabase/add_acesso_conjuge.sql) uma vez, depois do `add_conjuge.sql` — é a function que copia o "Admin" para o cônjuge (o app sozinho não pode mexer nisso). Sem ela, célula/posição/situação ainda são herdadas, só o Admin que não.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.

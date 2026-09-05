@@ -61,11 +61,11 @@
   }
 
   var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
-  // Campos que o cônjuge herda de quem foi salvo (célula e situação —
-  // onde a pessoa é contada e se é contada). Posição fica de fora de
-  // propósito: ela define o nível de acesso aos dados, então cada um
-  // tem a sua.
-  var CAMPOS_HERDADOS_CONJUGE = ['celula', 'situacao_saida', 'active'];
+  // Campos que o cônjuge herda de quem foi salvo: onde a pessoa é
+  // contada (célula), se é contada (situação) e o nível de acesso
+  // (posição). O "Admin" mora em profiles.is_admin e é espelhado à
+  // parte, pela function sincronizar_acesso_conjuge().
+  var CAMPOS_HERDADOS_CONJUGE = ['celula', 'posicao', 'situacao_saida', 'active'];
   var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
   // modo: 'novo' (cadastra a pessoa agora) ou 'existente' (já cadastrada, só recebe posição/login)
   // tipoLogin: 'senha' (Edge Function cria o usuário) ou 'google'
@@ -738,8 +738,10 @@
     });
   }
 
-  // Mantém o vínculo nos dois sentidos e replica célula/situação pro
-  // cônjuge. Quem foi desvinculado fica solto (conjuge_id = null).
+  // Mantém o vínculo nos dois sentidos e replica célula, posição e
+  // situação pro cônjuge, mais o "Admin" (que vive em profiles e só a
+  // function sincronizar_acesso_conjuge pode copiar). Quem foi
+  // desvinculado fica solto (conjuge_id = null).
   function sincronizarConjuge(memberId, row, conjugeAnteriorId, done) {
     var novoId = row.conjuge_id || null;
     var tarefas = [];
@@ -765,6 +767,12 @@
           if (movs.length) sb.from('movimentacoes').insert(movs).then(function () { next(); });
           else next();
         });
+      });
+
+      // Espelha o "Admin" (profiles.is_admin). A function ignora quem
+      // não tem acesso total, então pra um líder comum isso é um no-op.
+      tarefas.push(function (next) {
+        sb.rpc('sincronizar_acesso_conjuge', { p_member_id: memberId }).then(function () { next(); });
       });
     }
 
@@ -2489,7 +2497,7 @@
 
     return '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Cônjuge <span style="font-weight:500;color:#8a99ab">(opcional)</span></label>' +
       selecionado +
-      '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Ao salvar, o cônjuge passa a ficar na mesma célula e com a mesma situação deste cadastro. A posição de cada um continua independente.</div></div>';
+      '<div style="font-size:11.5px;color:#8a99ab;margin-top:6px">Ao salvar, o cônjuge passa a ter a mesma célula, posição, situação e nível de acesso deste cadastro.</div></div>';
   }
 
   function novoHtml(vals) {
