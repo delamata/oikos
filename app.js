@@ -1218,7 +1218,12 @@
       .sort(function (a, b) { return b.idade - a.idade; })
       .map(function (p) {
         var eb = badge(p.encontro, 'enc'), bb = badge(p.batizado, 'bat');
-        return { nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', idade: p.idade, celulaLabel: celulaLabel(p.celula), encontro: p.encontro, encBg: eb[0], encFg: eb[1], batizado: p.batizado, batBg: bb[0], batFg: bb[1], nascLabel: nascLabel(p.nasc) };
+        return {
+          nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', idade: p.idade,
+          celulaLabel: celulaLabel(p.celula), encontro: p.encontro, encBg: eb[0], encFg: eb[1],
+          batizado: p.batizado, batBg: bb[0], batFg: bb[1], nascLabel: nascLabel(p.nasc),
+          onSelect: function () { setState({ selected: p }); },
+        };
       });
 
     // Detail
@@ -1972,6 +1977,7 @@
       '<div style="padding:18px 22px 14px"><div style="display:flex;align-items:baseline">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Crianças e pré-adolescentes <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· 3 a 12 anos · ' + vals.kids3a12.length + ' pessoas</span></div>' +
       '<button ' + cb(vals.shareKidsWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer;margin-left:auto">' + whatsappIcon + ' WhatsApp</button>' +
+      '<div style="font-size:12px;color:#6b7c93;margin-left:16px">Clique numa linha para ver a ficha</div>' +
       '</div></div>' +
       '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
@@ -1984,7 +1990,7 @@
       '<th style="text-align:right;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Idade</th>' +
       '</tr></thead><tbody>' +
       vals.kids3a12.map(function (k) {
-        return '<tr style="border-bottom:1px solid #f0f4f9">' +
+        return '<tr ' + cb(k.onSelect) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
           '<td style="padding:11px 12px;text-align:right;color:#8a99ab;font-variant-numeric:tabular-nums">' + escHtml(k.numeroLabel) + '</td>' +
           '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(k.nome) + '</td>' +
           '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(k.celulaLabel) + '</td>' +
