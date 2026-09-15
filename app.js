@@ -129,6 +129,11 @@
     adminCelulaSaving: false,
     adminCelulaError: null,
     adminCelulaSalvo: false,
+    // editar célula existente: { original, nome, discipuladorId, obreiroId }
+    adminCelulaEdit: null,
+    adminCelulaEditSaving: false,
+    adminCelulaEditError: null,
+    adminCelulaEditSalvo: null,
 
     adminLiderForm: Object.assign({}, adminLiderFormDefaults),
     adminLiderSaving: false,
@@ -474,15 +479,58 @@
     });
   }
 
-  function setHierarquiaCampo(celula, campo, memberId) {
-    if (!sb) return;
-    setState({ hierarquiaSaving: true });
-    var patch = {};
-    patch[campo] = memberId || null;
-    sb.from('celula_hierarquia').update(patch).eq('celula', celula).then(function (res) {
-      if (res.error) { console.warn('Erro ao salvar hierarquia:', res.error.message); setState({ hierarquiaSaving: false }); return; }
+  // Editar célula existente (nome, discipulador, obreiro). Passa pela
+  // function editar_celula() (supabase/add_editar_celula.sql) porque
+  // renomear precisa mover as pessoas da célula junto, numa transação só.
+  function abrirEdicaoCelula(h) {
+    setState({
+      adminCelulaEdit: { original: h.celula, nome: h.celula, discipuladorId: h.discipulador_id || '', obreiroId: h.obreiro_id || '' },
+      adminCelulaEditError: null, adminCelulaEditSalvo: null,
+    });
+    var el = document.getElementById('admincelula-edit-nome');
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+  }
+
+  function setAdminCelulaEdit(key, val) {
+    setState(function (s) {
+      var e = Object.assign({}, s.adminCelulaEdit);
+      e[key] = val;
+      return { adminCelulaEdit: e, adminCelulaEditError: null };
+    });
+  }
+
+  function cancelarEdicaoCelula() {
+    setState({ adminCelulaEdit: null, adminCelulaEditError: null });
+  }
+
+  function salvarEdicaoCelula() {
+    var e = state.adminCelulaEdit;
+    if (!sb || !e) return;
+    var nome = (e.nome || '').trim();
+    if (!nome) { setState({ adminCelulaEditError: 'Digite o nome da célula.' }); return; }
+    setState({ adminCelulaEditSaving: true, adminCelulaEditError: null });
+    sb.rpc('editar_celula', {
+      p_celula: e.original, p_novo_nome: nome,
+      p_discipulador_id: e.discipuladorId || null, p_obreiro_id: e.obreiroId || null,
+    }).then(function (res) {
+      if (res.error) {
+        var msg = res.error.message || 'Não foi possível salvar.';
+        if (res.error.code === 'PGRST202' || /could not find the function/i.test(msg)) {
+          msg = 'Falta rodar supabase/add_editar_celula.sql no SQL Editor do Supabase.';
+        }
+        setState({ adminCelulaEditSaving: false, adminCelulaEditError: msg });
+        return;
+      }
+      var renomeou = nome !== e.original;
+      setState(function (s) {
+        var patch = { adminCelulaEditSaving: false, adminCelulaEdit: null, adminCelulaEditSalvo: 'Célula "' + nome + '" atualizada.' };
+        // Filtros e formulário que apontavam pro nome antigo seguem a célula.
+        if (renomeou && s.filters.celula === e.original) patch.filters = Object.assign({}, s.filters, { celula: nome });
+        if (renomeou && s.novoForm.celula === e.original) patch.novoForm = Object.assign({}, s.novoForm, { celula: nome });
+        return patch;
+      });
       loadCelulaHierarquia();
-      setState({ hierarquiaSaving: false });
+      if (renomeou) { loadMembers(); loadMovimentacoes(); }
     });
   }
 
@@ -1533,13 +1581,15 @@
     // tamanho da rede.
     var discipuladores = allPessoas.filter(function (p) { return p.posicao === 'Discipulador' && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome }; });
     var obreiros = allPessoas.filter(function (p) { return POSICOES_OBREIRO_OU_ACIMA.indexOf(p.posicao) >= 0 && p.active !== false; }).map(function (p) { return { v: p.id, label: p.nome + ' (' + p.posicao + ')' }; });
+    var nomeMembro = function (id) { var m = id && memberById(id); return m ? m.nome : ''; };
     var hierarquiaRows = currentCelulaList().map(function (c) {
       var row = (state.celulaHierarquia || []).filter(function (h) { return h.celula === c; })[0] || {};
       return {
         celula: c, celulaLabelText: celulaLabel(c),
-        discipuladorId: row.discipulador_id || '', obreiroId: row.obreiro_id || '',
-        onDiscipulador: function (e) { setHierarquiaCampo(c, 'discipulador_id', e.target.value); },
-        onObreiro: function (e) { setHierarquiaCampo(c, 'obreiro_id', e.target.value); },
+        pessoas: all.filter(function (p) { return p.celula === c; }).length,
+        discipuladorNome: nomeMembro(row.discipulador_id), obreiroNome: nomeMembro(row.obreiro_id),
+        editando: !!(state.adminCelulaEdit && state.adminCelulaEdit.original === c),
+        onEditar: function () { abrirEdicaoCelula({ celula: c, discipulador_id: row.discipulador_id, obreiro_id: row.obreiro_id }); },
       };
     });
 
@@ -1701,7 +1751,17 @@
       goCadastro: function () { setState({ tab: 'cadastro', sidebarOpen: false }); },
       goPresenca: function () { setState({ tab: 'presenca', sidebarOpen: false }); },
       goTrilho: function () { setState({ tab: 'trilho', sidebarOpen: false }); },
-      goNovo: function () { setState({ tab: 'novo', novoSalvo: false, novoError: null, sidebarOpen: false }); },
+      goNovo: function () {
+        setState(function (s) {
+          var patch = { tab: 'novo', novoSalvo: false, novoError: null, sidebarOpen: false };
+          // A célula padrão do formulário pode ter sido renomeada/removida.
+          var lista = currentCelulaList();
+          if (!s.novoEditId && lista.length && lista.indexOf(s.novoForm.celula) < 0) {
+            patch.novoForm = Object.assign({}, s.novoForm, { celula: lista[0] });
+          }
+          return patch;
+        });
+      },
       goCulto: function () { setState({ tab: 'culto', sidebarOpen: false }); },
       goMov: function () { setState({ tab: 'mov', sidebarOpen: false }); },
       goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
@@ -1726,6 +1786,12 @@
       adminCelulaError: state.adminCelulaError, adminCelulaSalvo: state.adminCelulaSalvo,
       onAdminCelula: function (key) { return function (e) { setAdminCelulaField(key, e.target.value); }; },
       criarCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); criarCelula(); },
+      adminCelulaEdit: state.adminCelulaEdit, adminCelulaEditSaving: state.adminCelulaEditSaving,
+      adminCelulaEditError: state.adminCelulaEditError, adminCelulaEditSalvo: state.adminCelulaEditSalvo,
+      adminCelulaEditPessoas: state.adminCelulaEdit ? all.filter(function (p) { return p.celula === state.adminCelulaEdit.original; }).length : 0,
+      onAdminCelulaEdit: function (key) { return function (e) { setAdminCelulaEdit(key, e.target.value); }; },
+      salvarEdicaoCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); salvarEdicaoCelula(); },
+      cancelarEdicaoCelula: function () { cancelarEdicaoCelula(); },
       adminLiderForm: alf, adminLiderSaving: state.adminLiderSaving,
       adminLiderError: state.adminLiderError, adminLiderSalvo: state.adminLiderSalvo,
       adminLiderBusca: adminLiderBusca, adminLiderSemDiscipulador: adminLiderSemDiscipulador,
@@ -3467,31 +3533,62 @@
     return adminCard('Nova Liderança', 'Cadastre um novo Pastor, Obreiro, Discipulador ou Líder — e, se quiser, já crie o login dele.', body);
   }
 
+  function adminEditarCelulaHtml(vals) {
+    var e = vals.adminCelulaEdit;
+    // Se quem responde hoje mudou de posição, ainda aparece como "(atual)"
+    // — senão o select mostraria "Nenhum" e salvar apagaria o vínculo.
+    var comAtual = function (lista, id) {
+      if (!id || lista.some(function (o) { return o.v === id; })) return lista;
+      var m = memberById(id);
+      return [{ v: id, label: (m ? m.nome : 'Pessoa fora da sua lista') + ' (atual)' }].concat(lista);
+    };
+    var novoNome = (e.nome || '').trim();
+    var renomeando = !!novoNome && novoNome !== e.original;
+    var body = '' +
+      (vals.adminCelulaEditError ? adminBanner('error', vals.adminCelulaEditError) : '') +
+      (renomeando ? adminBanner('warn', 'Ao salvar, todas as pessoas desta célula (' + vals.adminCelulaEditPessoas + ' ativas, mais inativas e transferidas) passam para o nome "' + novoNome + '". Se a planilha de Presença por Célula usa o nome antigo, atualize lá também.') : '') +
+      '<form ' + cb(vals.salvarEdicaoCelula, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome da célula</label>' +
+      '<input type="text" id="admincelula-edit-nome" value="' + escHtml(e.nome) + '" ' + cb(vals.onAdminCelulaEdit('nome'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div class="grid-form2">' +
+      optionalSelectField('Discipulador responsável', cb(vals.onAdminCelulaEdit('discipuladorId'), 'change'), comAtual(vals.discipuladores, e.discipuladorId), e.discipuladorId, 'Nenhum') +
+      optionalSelectField('Obreiro/Pastor responsável', cb(vals.onAdminCelulaEdit('obreiroId'), 'change'), comAtual(vals.obreiros, e.obreiroId), e.obreiroId, 'Nenhum') +
+      '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button type="submit"' + (vals.adminCelulaEditSaving ? ' disabled' : '') + ' style="padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminCelulaEditSaving ? 'Salvando…' : 'Salvar alterações') + '</button>' +
+      '<button type="button" ' + cb(vals.cancelarEdicaoCelula) + ' style="padding:10px 16px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Cancelar</button>' +
+      '</div></form>';
+    return adminCard('Editar célula · ' + celulaLabel(e.original), 'Altere o nome e quem responde por ela. As pessoas continuam na célula.', body);
+  }
+
   function hierarquiaHtml(vals) {
     var html = '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Cadastre novas células e liderança, e defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
     html += adminNovaCelulaHtml(vals);
     html += adminNovaLiderancaHtml(vals);
-    html += '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin:20px 0 12px">Discipulador e Obreiro por célula</div>';
+    html += '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin:20px 0 4px">Células cadastradas</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:12px">Clique em Editar para mudar o nome da célula ou quem responde por ela.</div>';
+    if (vals.adminCelulaEditSalvo) html += adminBanner('ok', vals.adminCelulaEditSalvo);
+    if (vals.adminCelulaEdit) html += adminEditarCelulaHtml(vals);
+    var th = function (label, align, pad) {
+      return '<th style="text-align:' + align + ';padding:10px ' + pad + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
+    };
+    var naoDefinido = '<span style="color:#b08a2e;font-weight:600">Não definido</span>';
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Discipulador responsável</th>' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Obreiro/Pastor responsável</th>' +
+      th('Célula', 'left', '22px') + th('Pessoas', 'right', '12px') + th('Discipulador responsável', 'left', '12px') + th('Obreiro/Pastor responsável', 'left', '12px') + th('', 'right', '22px') +
       '</tr></thead><tbody>' +
       vals.hierarquiaRows.map(function (r) {
-        return '<tr style="border-bottom:1px solid #f0f4f9">' +
-          '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(r.celulaLabelText) + '</td>' +
-          '<td style="padding:8px 12px">' +
-          '<select ' + cb(r.onDiscipulador, 'change') + ' style="padding:8px 10px;border:1px solid #d4deea;border-radius:8px;background:#fff;font-size:13px;color:#14243a;min-width:200px">' +
-          opt('', 'Nenhum', r.discipuladorId === '') +
-          vals.discipuladores.map(function (o) { return opt(o.v, o.label, r.discipuladorId === o.v); }).join('') +
-          '</select></td>' +
-          '<td style="padding:8px 22px">' +
-          '<select ' + cb(r.onObreiro, 'change') + ' style="padding:8px 10px;border:1px solid #d4deea;border-radius:8px;background:#fff;font-size:13px;color:#14243a;min-width:200px">' +
-          opt('', 'Nenhum', r.obreiroId === '') +
-          vals.obreiros.map(function (o) { return opt(o.v, o.label, r.obreiroId === o.v); }).join('') +
-          '</select></td></tr>';
+        return '<tr style="border-bottom:1px solid #f0f4f9' + (r.editando ? ';background:#eef3ff' : '') + '">' +
+          '<td style="padding:12px 22px;font-weight:700;color:#14243a">' + escHtml(r.celulaLabelText) + '</td>' +
+          '<td style="padding:12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.pessoas + '</td>' +
+          '<td style="padding:12px;color:#14243a">' + (r.discipuladorNome ? escHtml(r.discipuladorNome) : naoDefinido) + '</td>' +
+          '<td style="padding:12px;color:#14243a">' + (r.obreiroNome ? escHtml(r.obreiroNome) : naoDefinido) + '</td>' +
+          '<td style="padding:8px 22px;text-align:right">' +
+          (r.editando
+            ? '<span style="font-size:12px;color:#2E4FC7;font-weight:700">Editando…</span>'
+            : '<button type="button" ' + cb(r.onEditar) + ' style="padding:7px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:700;cursor:pointer">Editar</button>') +
+          '</td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
     return html;

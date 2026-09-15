@@ -122,6 +122,14 @@ Na aba **Administração** (só acesso total):
 - **Nova Célula** — cadastra uma célula nova (nome + discipulador/obreiro
   responsável, opcional na hora de criar). A partir daí ela já aparece em
   todos os seletores de célula do app, inclusive no cadastro público.
+- **Células cadastradas** — lista cada célula com o número de pessoas,
+  o discipulador e o obreiro responsáveis. O botão **Editar** abre um
+  formulário para mudar o **nome** da célula e quem responde por ela.
+  Renomear leva junto todas as pessoas da célula (ativas, inativas e
+  transferidas) numa operação só, feita pela function `editar_celula()`
+  (`supabase/add_editar_celula.sql`), que só aceita acesso total. A
+  Presença por Célula vem da planilha Google: se ela usa o nome antigo,
+  atualize lá também.
 - **Nova Liderança** — cadastra um novo Pastor, Obreiro, Discipulador ou
   Líder, escolhendo entre criar a pessoa do zero ou vincular a acesso a
   alguém já cadastrado. Regras aplicadas:
@@ -218,6 +226,7 @@ oferecer só o formulário de cadastro novo, sem lista de nomes).
    - Se o seu projeto já existia **antes** do vínculo de cônjuge, rode também [`supabase/add_conjuge.sql`](supabase/add_conjuge.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Rode [`supabase/add_acesso_conjuge.sql`](supabase/add_acesso_conjuge.sql) uma vez, depois do `add_conjuge.sql` — é a function que copia o "Admin" para o cônjuge (o app sozinho não pode mexer nisso). Sem ela, célula/posição/situação ainda são herdadas, só o Admin que não.
    - Rode [`supabase/add_rede_conjuge.sql`](supabase/add_rede_conjuge.sql) uma vez, depois do `add_conjuge.sql` — faz o cônjuge de um discipulador/obreiro enxergar a mesma rede de discipulado.
+   - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
