@@ -7,11 +7,11 @@ dados + autenticação).
 
 ## Abas
 
-- **Início** — tela que abre ao entrar: um resumo da rede de quem está logado (pessoas ativas, células, líderes, KPIs de Membros da Rede/Frequentadores/Visitantes/Kids, Batismo e Encontro, composição por posição, estado civil, um cartão por célula e os aniversariantes do mês). O recorte depende de quem entra:
+- **Início** — tela que abre ao entrar: um resumo da rede de quem está logado (pessoas ativas, células, líderes, KPIs de Membros da Rede/Frequentadores/Visitantes/Jovens/Kids, Batismo e Encontro, composição por posição, estado civil, um cartão por célula e os aniversariantes do mês). O recorte depende de quem entra:
   - **Admin, Pastor e Pastor de Rede** veem toda a rede e podem filtrar por **Obreiro** e por **Discipulador** (o filtro de discipulador só lista quem está sob o obreiro escolhido). Os filtros seguem a regra do casal: escolher a Simone mostra as células em que o André é o discipulador, e vice-versa; nos cartões o casal aparece junto ("André & Simone"). Veem também a **Rede por discipulador** — clicar num nome filtra por ele.
   - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro**, as células em que é o obreiro responsável; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
   - Clicar num cartão de célula abre o Cadastro de Membros já filtrado por ela.
-- **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
+- **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. **Tipo** de cadastro: Adultos, Jovens ou Kids e Juvenis — cada tipo é contado pelo próprio nome nos indicadores; Jovens entram no Trilho do Vencedor junto com Adultos e podem ser vinculados como cônjuge. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
 - **Presença por Célula** — lida de uma planilha Google (formulário que os líderes já preenchem), somente leitura.
 - **Presença no Culto** — check-in pessoa por pessoa, por culto/data.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
@@ -34,7 +34,7 @@ cadastrado com a célula de origem preservada no histórico:
 ### Cônjuge
 
 Com estado civil **Casado(a)**, o cadastro pode (opcionalmente) apontar
-o cônjuge, escolhido entre os adultos já cadastrados. O vínculo vale
+o cônjuge, escolhido entre os adultos e jovens já cadastrados. O vínculo vale
 nos dois sentidos: ao salvar, o cônjuge também passa a apontar de
 volta.
 

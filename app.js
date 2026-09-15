@@ -23,6 +23,32 @@
   var CIVIL_ORDER = ['Casado (a)', 'Solteiro (a)', 'Viuvo (a)', 'Divorciado(a)', 'Amasiado (a)'];
   var CIVIL_LABELS = { 'Casado (a)': 'Casado(a)', 'Solteiro (a)': 'Solteiro(a)', 'Viuvo (a)': 'Viúvo(a)', 'Divorciado(a)': 'Divorciado(a)', 'Amasiado (a)': 'Amasiado(a)' };
 
+  // Tipo de cadastro. Cada tipo é contado pelo próprio nome — nunca
+  // "tudo que não é Adulto", senão Jovens caem junto com Kids.
+  var TIPO_OPTIONS = [
+    { v: 'Adultos', label: 'Adultos' },
+    { v: 'Jovens', label: 'Jovens' },
+    { v: 'Kids e Juvenis', label: 'Kids e Juvenis' },
+  ];
+
+  function contaTipo(pessoas, tipo) {
+    return pessoas.filter(function (p) { return p.tipo === tipo; }).length;
+  }
+
+  // "3 adultos · 1 jovem · 2 kids/juvenis" — só os tipos que aparecem.
+  function tipoResumo(pessoas) {
+    var a = contaTipo(pessoas, 'Adultos'), j = contaTipo(pessoas, 'Jovens'), k = contaTipo(pessoas, 'Kids e Juvenis');
+    var partes = [];
+    if (a) partes.push(a + (a === 1 ? ' adulto' : ' adultos'));
+    if (j) partes.push(j + (j === 1 ? ' jovem' : ' jovens'));
+    if (k) partes.push(k + ' kids/juvenis');
+    return partes.length ? partes.join(' · ') : 'ninguém na seleção';
+  }
+
+  function tipoFilterOptions(atual) {
+    return opt('', 'Todos os tipos', atual === '') + TIPO_OPTIONS.map(function (o) { return opt(o.v, o.label, atual === o.v); }).join('');
+  }
+
   function posicaoOptions() {
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
@@ -1167,7 +1193,7 @@
     var vals = computeVals();
     var label = trilhoFilterLabel(vals);
     var rows = vals.trilhoRows || [];
-    var lines = ['*Trilho do Vencedor*', label, rows.length + ' adultos', ''];
+    var lines = ['*Trilho do Vencedor*', label, rows.length + ' pessoas (adultos e jovens)', ''];
     rows.slice(0, 40).forEach(function (r) { lines.push('• ' + r.nome + ' (' + r.celulaLabel + ') — ' + r.cursosLabel); });
     if (rows.length > 40) lines.push('… e mais ' + (rows.length - 40) + ' pessoas');
     window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
@@ -1181,7 +1207,7 @@
       return '<tr><td>' + escHtml(r.nome) + '</td><td>' + escHtml(r.celulaLabel) + '</td><td>' + escHtml(r.cursosLabel) + '</td></tr>';
     }).join('');
     var body = '<table><thead><tr><th>Nome</th><th>Célula</th><th>Cursos concluídos</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
-    var subtitle = label + ' · ' + rows.length + ' adultos · gerado em ' + new Date().toLocaleString('pt-BR');
+    var subtitle = label + ' · ' + rows.length + ' pessoas (adultos e jovens) · gerado em ' + new Date().toLocaleString('pt-BR');
     openPrintable(printableShell('Trilho do Vencedor', subtitle, body));
   }
 
@@ -1206,8 +1232,8 @@
 
     var total = filtered.length;
     var pct = function (n) { return total ? Math.round(n / total * 100) : 0; };
-    var adultos = filtered.filter(function (p) { return p.tipo === 'Adultos'; }).length;
-    var kids = total - adultos;
+    var kids = contaTipo(filtered, 'Kids e Juvenis');
+    var jovens = contaTipo(filtered, 'Jovens');
     var batN = filtered.filter(function (p) { return p.batizado === 'Sim'; }).length;
     var encN = filtered.filter(function (p) { return p.encontro === 'Sim'; }).length;
     var lideranca = filtered.filter(function (p) { return POSICOES_LIDERANCA.indexOf(p.posicao) >= 0; }).length;
@@ -1219,22 +1245,17 @@
     // próprio quadro "Visitantes".
     var naoVisitante = filtered.filter(function (p) { return p.posicao !== 'Visitante'; });
     var visitantesFiltrados = filtered.filter(function (p) { return p.posicao === 'Visitante'; });
-    var adultosSV = naoVisitante.filter(function (p) { return p.tipo === 'Adultos'; }).length;
-    var kidsSV = naoVisitante.length - adultosSV;
-    var visitAdultos = visitantesFiltrados.filter(function (p) { return p.tipo === 'Adultos'; }).length;
-    var visitKids = visitantesFiltrados.length - visitAdultos;
     var faFiltrados = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; });
-    var faAdultos = faFiltrados.filter(function (p) { return p.tipo === 'Adultos'; }).length;
-    var faKids = faFiltrados.length - faAdultos;
 
     var k = {
       total: naoVisitante.length,
-      adultosKidsLabel: adultosSV + ' adultos · ' + kidsSV + ' kids/juvenis',
+      adultosKidsLabel: tipoResumo(naoVisitante),
       totalVisitantes: visitantesFiltrados.length,
-      visitantesLabel: visitAdultos + ' adultos · ' + visitKids + ' kids/juvenis',
+      visitantesLabel: tipoResumo(visitantesFiltrados),
       totalFA: faFiltrados.length,
-      faLabel: faAdultos + ' adultos · ' + faKids + ' kids/juvenis',
+      faLabel: tipoResumo(faFiltrados),
       totalKids: kids,
+      totalJovens: jovens,
       batPct: batPct, batLabel: batN + ' de ' + total + ' pessoas',
       encPct: encPct, encLabel: encN + ' de ' + total + ' pessoas',
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
@@ -1606,7 +1627,7 @@
     var conjugeQ = (nf.conjugeQuery || '').trim().toLowerCase();
     var conjugeBusca = (nf.civil === 'Casado (a)' && !nf.conjugeId && conjugeQ)
       ? allPessoas.filter(function (p) {
-        return p.id !== state.novoEditId && p.tipo === 'Adultos' && p.nome.toLowerCase().indexOf(conjugeQ) >= 0;
+        return p.id !== state.novoEditId && p.tipo !== 'Kids e Juvenis' && p.nome.toLowerCase().indexOf(conjugeQ) >= 0;
       }).slice(0, 20)
       : [];
 
@@ -1694,7 +1715,7 @@
       { key: 'seminario', label: 'Seminário Pastoral', color: '#6B3FA0' },
     ];
     var trilhoPop = all.filter(function (p) {
-      if (p.tipo !== 'Adultos') return false;
+      if (p.tipo !== 'Adultos' && p.tipo !== 'Jovens') return false;
       if (tf.celula && p.celula !== tf.celula) return false;
       if (tf.curso && p[tf.curso] !== 'Sim') return false;
       return true;
@@ -2013,7 +2034,7 @@
       '<input type="text" id="search-input" placeholder="Buscar por nome…" value="' + escHtml(vals.q) + '" ' + cb(vals.onSearch, 'input') + ' style="width:100%;padding:10px 12px 10px 36px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:14px;color:#14243a;outline:none">' +
       '</div>' +
       '<select ' + cb(vals.onTipo, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os tipos', vals.filters.tipo === '') + opt('Adultos', 'Adultos', vals.filters.tipo === 'Adultos') + opt('Kids e Juvenis', 'Kids e Juvenis', vals.filters.tipo === 'Kids e Juvenis') +
+      tipoFilterOptions(vals.filters.tipo) +
       '</select>' +
       '<select ' + cb(vals.onCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as células', vals.filters.celula === '') +
@@ -2038,6 +2059,7 @@
       kpiCard('Membros da Rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
       kpiCard('Total de Frequentadores Assíduos', vals.k.totalFA, vals.k.faLabel, { valueColor: '#149C88' }) +
       kpiCard('Total de Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { valueColor: '#8A63C9' }) +
+      kpiCard('Total de Jovens', vals.k.totalJovens, 'jovens na seleção', { valueColor: '#C2410C' }) +
       kpiCard('Total de Kids e Juvenis', vals.k.totalKids, 'crianças e adolescentes na seleção', { valueColor: '#6B3FA0' }) +
       '</div>';
 
@@ -2213,6 +2235,7 @@
     var totalFA = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; }).length;
     var totalVisitantes = filtered.filter(function (p) { return p.posicao === 'Visitante'; }).length;
     var totalKids = filtered.filter(function (p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; }).length;
+    var totalJovens = contaTipo(filtered, 'Jovens');
 
     var posCounts = {};
     filtered.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
@@ -2259,7 +2282,7 @@
       onCelula: function (e) { setAnonF('celula', e.target.value); },
       onPosicao: function (e) { setAnonF('posicao', e.target.value); },
       celulaOptions: celulaListPublica.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
-      membrosRede: membrosRede, totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids,
+      membrosRede: membrosRede, totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
       posBars: posBars, perfilBars: perfilBars, rows: rows,
       loading: state.membersPublicosStatus === 'loading' && !all.length,
     };
@@ -2273,7 +2296,7 @@
       '<input type="text" placeholder="Buscar por nome…" value="' + escHtml(vals.q) + '" ' + cb(vals.onSearch, 'input') + ' style="width:100%;padding:10px 12px 10px 36px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:14px;color:#14243a;outline:none">' +
       '</div>' +
       '<select ' + cb(vals.onTipo, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os tipos', vals.filters.tipo === '') + opt('Adultos', 'Adultos', vals.filters.tipo === 'Adultos') + opt('Kids e Juvenis', 'Kids e Juvenis', vals.filters.tipo === 'Kids e Juvenis') +
+      tipoFilterOptions(vals.filters.tipo) +
       '</select>' +
       '<select ' + cb(vals.onCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as células', vals.filters.celula === '') +
@@ -2285,10 +2308,11 @@
       '</select>' +
       '</div>';
 
-    html += '<div class="grid-kpi4" style="margin-bottom:16px">' +
+    html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
       kpiCard('Membros da Rede', vals.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
       kpiCard('Total de Frequentadores Assíduos', vals.totalFA, '', { valueColor: '#149C88' }) +
       kpiCard('Total de Visitantes', vals.totalVisitantes, '', { valueColor: '#6B3FA0' }) +
+      kpiCard('Total de Jovens', vals.totalJovens, 'jovens na seleção', { valueColor: '#C2410C' }) +
       kpiCard('Total de Kids e Juvenis', vals.totalKids, 'crianças e adolescentes na seleção', { valueColor: '#3B5FDD' }) +
       '</div>';
 
@@ -2446,8 +2470,8 @@
     var naoVisit = pessoas.filter(function (p) { return p.posicao !== 'Visitante'; });
     var fa = pessoas.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; });
     var visit = pessoas.filter(function (p) { return p.posicao === 'Visitante'; });
-    var adultosDe = function (arr) { return arr.filter(function (p) { return p.tipo === 'Adultos'; }).length; };
-    var kids = total - adultosDe(pessoas);
+    var kids = contaTipo(pessoas, 'Kids e Juvenis');
+    var jovens = contaTipo(pessoas, 'Jovens');
     var batN = conta(function (p) { return p.batizado === 'Sim'; });
     var encN = conta(function (p) { return p.encontro === 'Sim'; });
     var lideres = conta(function (p) { return p.posicao === 'Líder'; });
@@ -2544,9 +2568,9 @@
       total: total, nCelulas: listaCelulas.length, lideres: lideres,
       kpis: {
         membrosRede: membrosRede,
-        fa: fa.length, faSub: adultosDe(fa) + ' adultos · ' + (fa.length - adultosDe(fa)) + ' kids/juvenis',
-        visit: visit.length, visitSub: adultosDe(visit) + ' adultos · ' + (visit.length - adultosDe(visit)) + ' kids/juvenis',
-        kids: kids, naoVisit: naoVisit.length,
+        fa: fa.length, faSub: tipoResumo(fa),
+        visit: visit.length, visitSub: tipoResumo(visit),
+        kids: kids, jovens: jovens, naoVisit: naoVisit.length,
       },
       batPct: pct(batN, total), faltamBat: total - batN,
       encPct: pct(encN, total), faltamEnc: total - encN,
@@ -2560,6 +2584,7 @@
     rede: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"></path><circle cx="10" cy="8" r="3.5"></circle><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35"></path><path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8"></path>',
     fa: '<path d="M12 20s-7-4.35-7-10a4 4 0 0 1 7-2.65A4 4 0 0 1 19 10c0 5.65-7 10-7 10Z"></path>',
     visit: '<circle cx="10" cy="8" r="3.5"></circle><path d="M3.5 20v-1.5A3.5 3.5 0 0 1 7 15h6"></path><path d="M18 14v6"></path><path d="M15 17h6"></path>',
+    jovens: '<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z"></path>',
     kids: '<circle cx="12" cy="12" r="8.5"></circle><path d="M8.5 14a4 4 0 0 0 7 0"></path><path d="M9 9.5h.01"></path><path d="M15 9.5h.01"></path>',
   };
 
@@ -2640,6 +2665,7 @@
       homeKpi('rede', '#fff', '', v.kpis.membrosRede, 'Membros da Rede', 'membros, líderes, anfitr. e discip.', true) +
       homeKpi('fa', '#0E7A68', '#e0f4ef', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub) +
       homeKpi('visit', '#6B3FA0', '#efe8f8', v.kpis.visit, 'Visitantes', v.kpis.visitSub) +
+      homeKpi('jovens', '#C2410C', '#fdebdd', v.kpis.jovens, 'Jovens', 'jovens no recorte') +
       homeKpi('kids', '#2E4FC7', '#e6ecfb', v.kpis.kids, 'Kids e Juvenis', 'crianças e adolescentes') +
       '</div>';
 
@@ -3015,7 +3041,7 @@
       '<input type="text" id="novo-nome" value="' + escHtml(f.nome) + '" ' + cb(vals.onNF('nome'), 'input') + ' placeholder="Nome da pessoa" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
 
       '<div class="grid-form2">' +
-      selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+      selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), TIPO_OPTIONS, f.tipo) +
       (celulaObrigatoria(f.posicao)
         // Sem placeholder quando já tem uma célula válida (comportamento de sempre).
         // Com placeholder "Selecionar" (e required) quando está vazia — evita
@@ -3095,7 +3121,7 @@
         return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
           '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#6b7c93;font-weight:600">' + escHtml(k.label) + '</div>' +
           '<div style="display:flex;align-items:baseline;gap:6px;margin-top:6px"><div style="font-family:\'Spectral\',serif;font-weight:700;font-size:32px;color:' + k.color + ';line-height:1.1">' + k.pct + '</div><div style="font-size:13px;color:#6b7c93">%</div></div>' +
-          '<div style="font-size:12px;color:#6b7c93;margin-top:2px">' + k.done + ' de ' + k.total + ' adultos concluíram</div></div>';
+          '<div style="font-size:12px;color:#6b7c93;margin-top:2px">' + k.done + ' de ' + k.total + ' adultos e jovens concluíram</div></div>';
       }).join('') +
       '</div>';
 
@@ -3105,7 +3131,7 @@
       '<div style="font-size:11px;color:#6b7c93;display:flex;gap:14px">' +
       vals.trilhoCourses.map(function (tc) { return '<span><b style="color:' + tc.color + '">■</b> ' + escHtml(tc.label) + '</span>'; }).join('') +
       '</div></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Quantidade de adultos que concluíram cada curso, empilhado por célula · clique no nome para filtrar</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Quantidade de adultos e jovens que concluíram cada curso, empilhado por célula · clique no nome para filtrar</div>' +
       '<div style="display:flex;flex-direction:column;gap:13px">' +
       vals.trilhoStackedBars.map(function (c) {
         return '<div ' + cb(c.onClick) + ' style="cursor:pointer;padding:4px 5px;border-radius:8px;background:' + c.bg + '">' +
@@ -3120,7 +3146,7 @@
 
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Cursos por pessoa <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.trilhoRows.length + ' adultos</span></div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Cursos por pessoa <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.trilhoRows.length + ' adultos e jovens</span></div>' +
       '<div style="display:flex;gap:8px">' +
       '<button ' + cb(vals.shareTrilhoWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
       '<button ' + cb(vals.downloadTrilhoPdf) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1B2344" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Baixar PDF</button>' +
@@ -3347,7 +3373,7 @@
           '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
           '<input type="text" id="pub-nome" required value="' + escHtml(f.nome) + '" ' + cb(vals.onPF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
           '<div class="grid-form2">' +
-          selectField('Tipo', cb(vals.onPF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+          selectField('Tipo', cb(vals.onPF('tipo'), 'change'), TIPO_OPTIONS, f.tipo) +
           selectField('Célula que você frequenta', cb(vals.onPF('celula'), 'change'), celulaOpts, f.celula, celulaPlaceholder) +
           '</div>' +
           '<div class="grid-form2">' +
@@ -3408,7 +3434,7 @@
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
       '<input type="text" id="social-nome" required value="' + escHtml(f.nome) + '" ' + cb(vals.onSF('nome'), 'input') + ' placeholder="Seu nome" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       '<div class="grid-form2">' +
-      selectField('Tipo', cb(vals.onSF('tipo'), 'change'), [{ v: 'Adultos', label: 'Adultos' }, { v: 'Kids e Juvenis', label: 'Kids e Juvenis' }], f.tipo) +
+      selectField('Tipo', cb(vals.onSF('tipo'), 'change'), TIPO_OPTIONS, f.tipo) +
       selectField('Célula que você frequenta', cb(vals.onSF('celula'), 'change'), celulaOpts, f.celula, celulaPlaceholder) +
       '</div>' +
       '<div class="grid-form2">' +
