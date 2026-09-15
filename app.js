@@ -1194,8 +1194,6 @@
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
     };
 
-    var gaugeBat = 'conic-gradient(#149C88 ' + (batPct * 3.6) + 'deg, #e4ebf3 0)';
-    var gaugeEnc = 'conic-gradient(#3B5FDD ' + (encPct * 3.6) + 'deg, #e4ebf3 0)';
 
     // Estado civil bars
     var civilOrder = CIVIL_ORDER;
@@ -1795,7 +1793,7 @@
       sortPDataArrow: sortP.dir === 1 ? '↑' : '↓',
       q: state.q,
       filters: f,
-      k: k, gaugeBat: gaugeBat, gaugeEnc: gaugeEnc, civilBars: civilBars, posBars: posBars, celulaBars: celulaBars, perfilBars: perfilBars, people: people, visitantes: visitantes, kids3a12: kids3a12,
+      k: k, civilBars: civilBars, posBars: posBars, celulaBars: celulaBars, perfilBars: perfilBars, people: people, visitantes: visitantes, kids3a12: kids3a12,
       selected: !!s, sel: sel,
       sortNomeArrow: sort.key === 'nome' ? (sort.dir === 1 ? '↑' : '↓') : '',
       sortIdadeArrow: sort.key === 'idade' ? (sort.dir === 1 ? '↑' : '↓') : '',
@@ -1928,17 +1926,14 @@
       '</div>';
   }
 
+  // Mesmo cartão dos indicadores do Início (home-card / home-kpi).
   function kpiCard(label, value, sub, opts) {
     opts = opts || {};
-    var bg = opts.gradient ? 'background:linear-gradient(135deg,#16A394,#3B5FDD 55%,#6B3FA0);border:1px solid #1B2344' : 'background:#fff;border:1px solid #e2e9f2';
-    var labelColor = opts.gradient ? 'rgba(255,255,255,.75)' : '#6b7c93';
-    var valueColor = opts.gradient ? '#fff' : (opts.valueColor || '#1B2344');
-    var subColor = opts.gradient ? 'rgba(255,255,255,.68)' : '#6b7c93';
-    var pctSuffix = opts.pct ? '<div style="font-size:13px;color:#6b7c93">%</div>' : '';
-    return '<div style="' + bg + ';border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
-      '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:' + labelColor + ';font-weight:600">' + escHtml(label) + '</div>' +
-      '<div style="display:flex;align-items:baseline;gap:6px;margin-top:6px"><div style="font-family:\'Spectral\',serif;font-weight:700;font-size:32px;color:' + valueColor + ';line-height:1.1">' + value + '</div>' + pctSuffix + '</div>' +
-      '<div style="font-size:12px;color:' + subColor + ';margin-top:2px">' + escHtml(sub) + '</div>' +
+    var cor = !opts.gradient && opts.valueColor ? ' style="color:' + opts.valueColor + '"' : '';
+    return '<div class="home-card home-kpi ui-kpi' + (opts.gradient ? ' home-kpi-destaque' : '') + '">' +
+      '<div class="ui-kpi-label">' + escHtml(label) + '</div>' +
+      '<div class="home-kpi-value"' + cor + '>' + value + (opts.pct ? '<span class="ui-kpi-pct">%</span>' : '') + '</div>' +
+      (sub ? '<div class="home-kpi-sub">' + escHtml(sub) + '</div>' : '') +
       '</div>';
   }
 
@@ -1985,23 +1980,10 @@
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Jornada espiritual</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Batismo e Encontro com Deus na seleção atual</div>' +
-      '<div style="display:flex;gap:26px;align-items:center;justify-content:space-around">' +
-      '<div style="text-align:center">' +
-      '<div style="width:132px;height:132px;border-radius:50%;background:' + vals.gaugeBat + ';display:flex;align-items:center;justify-content:center">' +
-      '<div style="width:96px;height:96px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:28px;color:#149C88;line-height:1">' + vals.k.batPct + '%</div>' +
-      '<div style="font-size:10.5px;color:#6b7c93;letter-spacing:.04em;text-transform:uppercase;font-weight:600;margin-top:2px">Batizados</div>' +
+      '<div class="home-rings">' +
+      homeRing(vals.k.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + vals.k.faltamBat + '</b> ainda não batizados') +
+      homeRing(vals.k.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + vals.k.faltamEnc + '</b> ainda não fizeram') +
       '</div></div>' +
-      '<div style="font-size:12px;color:#6b7c93;margin-top:10px"><b style="color:#6B3FA0">' + vals.k.faltamBat + '</b> ainda não batizados</div>' +
-      '</div>' +
-      '<div style="text-align:center">' +
-      '<div style="width:132px;height:132px;border-radius:50%;background:' + vals.gaugeEnc + ';display:flex;align-items:center;justify-content:center">' +
-      '<div style="width:96px;height:96px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:28px;color:#3B5FDD;line-height:1">' + vals.k.encPct + '%</div>' +
-      '<div style="font-size:10.5px;color:#6b7c93;letter-spacing:.04em;text-transform:uppercase;font-weight:600;margin-top:2px">Encontro</div>' +
-      '</div></div>' +
-      '<div style="font-size:12px;color:#6b7c93;margin-top:10px"><b style="color:#6B3FA0">' + vals.k.faltamEnc + '</b> ainda não fizeram</div>' +
-      '</div></div></div>' +
 
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Estado civil</div>' +
@@ -2335,6 +2317,20 @@
     var primeiroNome = function (nome) { return String(nome || '').trim().split(/\s+/)[0] || ''; };
     var nomeDe = function (id) { var m = memberById(id); return m ? m.nome : ''; };
     var pct = function (n, d) { return d ? Math.round(n / d * 100) : 0; };
+    // Casal divide a mesma rede (add_rede_conjuge.sql): filtrar pela Simone
+    // mostra as células em que o André é o discipulador, e vice-versa.
+    var mesmoCasal = function (idNaCelula, idFiltro) {
+      if (!idNaCelula || !idFiltro) return false;
+      if (idNaCelula === idFiltro) return true;
+      var m = memberById(idFiltro);
+      return !!(m && m.conjuge_id === idNaCelula);
+    };
+    var nomeCasal = function (id) {
+      var m = memberById(id);
+      if (!m) return '';
+      var c = m.conjuge_id && memberById(m.conjuge_id);
+      return c ? primeiroNome(m.nome) + ' & ' + primeiroNome(c.nome) : m.nome;
+    };
 
     // Recorte: null = toda a rede; lista = só essas células.
     var celulas = null;
@@ -2342,11 +2338,11 @@
     if (vals.souFull) {
       if (hf.obreiro || hf.discipulador) {
         celulas = hier.filter(function (h) {
-          if (hf.obreiro && h.obreiro_id !== hf.obreiro) return false;
-          if (hf.discipulador && h.discipulador_id !== hf.discipulador) return false;
+          if (hf.obreiro && !mesmoCasal(h.obreiro_id, hf.obreiro)) return false;
+          if (hf.discipulador && !mesmoCasal(h.discipulador_id, hf.discipulador)) return false;
           return true;
         }).map(function (h) { return h.celula; });
-        escopoTitulo = hf.discipulador ? 'Rede de ' + nomeDe(hf.discipulador) : 'Rede de ' + nomeDe(hf.obreiro);
+        escopoTitulo = 'Rede de ' + nomeCasal(hf.discipulador || hf.obreiro);
         escopoSub = hf.discipulador && hf.obreiro ? 'Discipulador sob ' + nomeDe(hf.obreiro) : (hf.discipulador ? 'Células discipuladas' : 'Células sob esse obreiro');
       }
     } else if (meu) {
@@ -2414,7 +2410,7 @@
       return {
         label: celulaLabel(c), n: n,
         lideres: nomesLideres.length ? nomesLideres.join(' & ') : '',
-        discipulador: primeiroNome(nomeDe(hierDe(c).discipulador_id)),
+        discipulador: (function (n) { return n.indexOf(' & ') >= 0 ? n : primeiroNome(n); })(nomeCasal(hierDe(c).discipulador_id)),
         batPct: pct(ps.filter(function (p) { return p.batizado === 'Sim'; }).length, n),
         segs: [
           { n: m, color: '#1B2344', label: 'membros' },
@@ -2431,7 +2427,7 @@
     if (vals.souFull && !hf.discipulador) {
       var grupos = {};
       hier.forEach(function (h) {
-        if (hf.obreiro && h.obreiro_id !== hf.obreiro) return;
+        if (hf.obreiro && !mesmoCasal(h.obreiro_id, hf.obreiro)) return;
         var k = h.discipulador_id || '';
         (grupos[k] || (grupos[k] = [])).push(h.celula);
       });
@@ -2440,7 +2436,7 @@
         var ps = ativos.filter(function (p) { return cs.indexOf(p.celula) >= 0; });
         var nome = id ? nomeDe(id) : '';
         return {
-          id: id, nome: nome || 'Sem discipulador definido', semDiscipulador: !id,
+          id: id, nome: (id && nomeCasal(id)) || 'Sem discipulador definido', semDiscipulador: !id,
           initials: nome ? nome.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase() : '?',
           celulas: cs.length, pessoas: ps.length,
           batPct: pct(ps.filter(function (p) { return p.batizado === 'Sim'; }).length, ps.length),
@@ -2463,7 +2459,7 @@
       .sort(function (a, b) { return a.dia - b.dia; });
 
     var discipuladorOptions = hf.obreiro
-      ? vals.discipuladores.filter(function (d) { return hier.some(function (h) { return h.obreiro_id === hf.obreiro && h.discipulador_id === d.v; }); })
+      ? vals.discipuladores.filter(function (d) { return hier.some(function (h) { return mesmoCasal(h.obreiro_id, hf.obreiro) && mesmoCasal(h.discipulador_id, d.v); }); })
       : vals.discipuladores;
 
     var dataLabel = hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -2565,12 +2561,13 @@
       return html + '<div class="home-card" style="margin-top:16px;color:#7b8aa0;font-size:13px">Carregando dados da rede…</div></div>';
     }
     if (v.semRede) {
-      return html + '<div class="home-card" style="margin-top:16px">' +
+      // Avisa, mas mantém o resto da tela no lugar (zerado) em vez de sumir.
+      html += '<div class="home-card home-empty">' +
         '<div class="home-card-title">Nenhuma célula vinculada' + (v.souFull ? ' a esse filtro' : ' a você ainda') + '</div>' +
         '<div class="home-card-sub" style="margin-top:6px">' + (v.souFull
           ? 'Defina o discipulador e o obreiro de cada célula em Administração.'
           : 'Peça a um Pastor ou administrador para definir, em Administração, quais células estão sob a sua responsabilidade.') +
-        '</div></div></div>';
+        '</div></div>';
     }
 
     html += '<div class="home-kpis">' +
@@ -2632,7 +2629,9 @@
           '<span class="home-pill">' + c.batPct + '% batizados</span>' +
           (v.souFull && c.discipulador ? '<span class="home-muted">Disc. ' + escHtml(c.discipulador) + '</span>' : '') +
           '</div></button>';
-      }).join('') + '</div>';
+      }).join('') +
+      (v.cells.length ? '' : '<div class="home-card home-card-sub">Nenhuma célula neste recorte.</div>') +
+      '</div>';
 
     var temDisc = v.porDiscipulador.length > 0;
     html += '<div class="' + (temDisc ? 'home-grid2' : '') + '" style="margin-top:14px">';
@@ -2666,6 +2665,32 @@
 
     html += '</div>';
     return html;
+  }
+
+  // Cabeçalho das demais telas, no mesmo padrão do destaque do Início.
+  var PAGE_HEADERS = {
+    cadastro: ['Cadastro de Membros', 'Pessoas, indicadores e gráficos da rede'],
+    presenca: ['Presença por Célula', 'Encontros registrados pelos líderes na planilha'],
+    culto: ['Presença no Culto', 'Check-in pessoa por pessoa, por culto'],
+    trilho: ['Trilho do Vencedor', 'Ceifeiros, Maturidade, CTL e Seminário Pastoral'],
+    mov: ['Movimentações', 'Histórico de mudanças, perdidos e inativos'],
+    novo: ['Novo Cadastro', 'Preencha os dados da pessoa. Fica salvo no banco e soma aos totais e gráficos.'],
+    editar: ['Editar Cadastro', 'Mudanças de célula, posição, batismo ou encontro ficam registradas em Movimentações.'],
+    hierarquia: ['Administração', 'Células, liderança e quem responde por cada célula'],
+    anon: ['Cadastro de Membros', 'Consulta pública · entre para ver telefone, nascimento e histórico'],
+  };
+
+  function pageHeaderHtml(vals) {
+    var key = vals.anonMode ? 'anon'
+      : vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
+      : vals.isPresenca ? 'presenca' : vals.isCulto ? 'culto' : vals.isTrilho ? 'trilho'
+      : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
+    var h = PAGE_HEADERS[key];
+    return '<section class="home-hero page-hero">' +
+      '<div class="home-brand">Sistema OIKOS</div>' +
+      '<div class="page-hero-title">' + escHtml(h[0]) + '</div>' +
+      '<div class="home-sub">' + escHtml(h[1]) + '</div>' +
+      '</section>';
   }
 
   function personRow(p) {
@@ -2909,9 +2934,8 @@
   function novoHtml(vals) {
     var f = vals.novoForm;
     var editing = vals.isEditingMembro;
-    var html = '<div style="max-width:640px;margin:24px auto 60px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:19px;margin-bottom:4px">' + (editing ? 'Editar Cadastro' : 'Novo Cadastro') + '</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">' + (editing ? 'Altere os dados da pessoa. Mudanças de célula, posição, batismo ou encontro ficam registradas em Movimentações.' : 'Preencha os dados da pessoa para incluí-la neste dashboard. Fica salvo no banco de dados e soma aos totais e gráficos.') + '</div>';
+    // Título e explicação ficam no cabeçalho da página (pageHeaderHtml).
+    var html = '<div style="max-width:720px;margin:18px auto 60px">';
 
     if (vals.novoSalvo && !editing) {
       html += '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:16px">Pessoa cadastrada com sucesso.</div>';
@@ -3541,6 +3565,7 @@
         sidebarHtml(anonVals) +
         '<main class="main-content">' +
         mobileTopbarHtml(anonVals) +
+        pageHeaderHtml(anonVals) +
         anonCadastroHtml(anonVals) +
         '</main></div>';
     } else if (state.profile === null || state.profileStatus === 'loading') {
@@ -3570,7 +3595,7 @@
         sidebarHtml(vals) +
         '<main class="main-content">' +
         mobileTopbarHtml(vals) +
-        (vals.isHome ? homeHtml(homeVals(vals)) : '') +
+        (vals.isHome ? homeHtml(homeVals(vals)) : pageHeaderHtml(vals)) +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isPresenca ? presencaHtml(vals) : '') +
         (vals.isCulto ? presencaCultoHtml(vals) : '') +

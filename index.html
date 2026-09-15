@@ -34,6 +34,43 @@
   .table-scroll{overflow:auto;-webkit-overflow-scrolling:touch}
   .table-scroll table{min-width:640px}
 
+  /* ---- Padrão visual do Início aplicado a todas as telas ----
+     As telas mais antigas montam o HTML com estilo inline. Em vez de
+     reescrever cada uma, estes seletores pegam os padrões repetidos
+     (títulos, cartões, campos, botões, tabelas, barras) e aplicam o
+     visual do Início. Estilo novo: prefira as classes home-*. */
+  #app{font-family:'Plus Jakarta Sans','Libre Franklin',system-ui,sans-serif}
+  #app [style*="Spectral"]{font-family:'Plus Jakarta Sans',system-ui,sans-serif !important;font-weight:800 !important;letter-spacing:-.015em}
+  #app [style*="Libre Franklin"]{font-family:inherit !important}
+  #app [style*="border:1px solid #e2e9f2"][style*="border-radius:14px"]{border-radius:18px !important;border-color:#e6ecf4 !important;box-shadow:0 1px 2px rgba(20,36,58,.04),0 10px 26px -20px rgba(20,36,58,.25) !important}
+  #app input,#app select,#app textarea,#app button{font-family:inherit}
+  #app select[style*="border:1px solid #d4deea"],#app input[style*="border:1px solid #d4deea"],#app textarea[style*="border:1px solid #d4deea"]{border-radius:11px !important;border-color:#dbe3ee !important;outline:none;transition:border-color .15s,box-shadow .15s}
+  #app .main-content select:focus,#app .main-content input:focus,#app .main-content textarea:focus,#app input[type=email]:focus,#app input[type=password]:focus{border-color:#3B5FDD !important;box-shadow:0 0 0 3px rgba(59,95,221,.14)}
+  #app button[style*="border:1px solid #d4deea"]{border-radius:999px !important;border-color:#dbe3ee !important;transition:background .15s,border-color .15s}
+  #app button[style*="border:1px solid #d4deea"]:hover{background:#f4f7fb !important;border-color:#c9d6ea !important}
+  #app button[style*="background:#1B2344"]{border-radius:999px !important;background:linear-gradient(135deg,#1B2344,#2a4290) !important;box-shadow:0 10px 20px -12px rgba(27,35,68,.7)}
+  #app button[style*="background:#149C88"]{border-radius:999px !important}
+  #app tr[style*="background:#f5f8fc"]{background:#f7f9fc !important}
+  #app th[style*="text-transform:uppercase"]{font-size:10.5px !important;letter-spacing:.09em !important;color:#7b8aa0 !important;font-weight:700 !important}
+  #app [style*="height:16px;background:#eef2f7"]{height:10px !important;border-radius:999px !important;background:#edf1f7 !important}
+  #app [style*="height:16px;background:#eef2f7"]>div{border-radius:999px !important}
+  #app [style*="height:20px;background:#eef2f7"]{height:12px !important;border-radius:999px !important;background:#edf1f7 !important}
+  #app [style*="border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600"]{border-radius:12px !important}
+  /* legendas e linhas de título/filtro das telas antigas quebram linha em tela estreita */
+  #app .main-content [style*="display:flex"][style*="justify-content:space-between"],
+  #app .main-content [style*="display:flex"][style*="gap:14px"],
+  #app .main-content [style*="display:flex"][style*="gap:12px"],
+  #app .main-content [style*="display:flex;align-items:center;gap:10px"]{flex-wrap:wrap;row-gap:6px}
+  .ui-kpi{gap:4px !important;justify-content:space-between}
+  .ui-kpi-label{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#7b8aa0}
+  .home-kpi-destaque .ui-kpi-label{color:rgba(255,255,255,.75)}
+  .ui-kpi .home-kpi-value{margin-top:6px;overflow-wrap:anywhere}
+  .ui-kpi-pct{font-size:15px;opacity:.55;margin-left:2px}
+  .page-hero{padding:20px 24px !important;margin-bottom:4px}
+  .page-hero-title{font-size:25px;font-weight:800;letter-spacing:-.025em;margin-top:5px;line-height:1.15;position:relative;z-index:1}
+  .page-hero .home-brand,.page-hero .home-sub{position:relative;z-index:1}
+  .home-empty{margin-top:16px;border-left:4px solid #f5b82e !important}
+
   /* ---- Início (home) ---- */
   .home{font-family:'Plus Jakarta Sans','Libre Franklin',system-ui,sans-serif;color:#14243a;padding-top:4px}
   .home-hero{position:relative;overflow:hidden;border-radius:22px;padding:26px 28px 24px;color:#fff;background:radial-gradient(90% 130% at 100% 0%,rgba(107,63,160,.85) 0%,rgba(107,63,160,0) 60%),linear-gradient(135deg,#161c38 0%,#233b7d 58%,#0E7A68 135%);box-shadow:0 22px 44px -24px rgba(27,35,68,.7)}
@@ -147,7 +184,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="config.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>
