@@ -20,6 +20,9 @@
   var POSICOES_REDE = ['Membro'].concat(POSICOES_LIDERANCA);
   var POSICOES_POTENCIAIS = ['Visitante', 'Frequentador Assíduo'];
 
+  var CIVIL_ORDER = ['Casado (a)', 'Solteiro (a)', 'Viuvo (a)', 'Divorciado(a)', 'Amasiado (a)'];
+  var CIVIL_LABELS = { 'Casado (a)': 'Casado(a)', 'Solteiro (a)': 'Solteiro(a)', 'Viuvo (a)': 'Viúvo(a)', 'Divorciado(a)': 'Divorciado(a)', 'Amasiado (a)': 'Amasiado(a)' };
+
   function posicaoOptions() {
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
@@ -81,8 +84,10 @@
     filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' },
     sort: { key: 'idade', dir: 1 },
     selected: null,
-    tab: 'cadastro',
+    tab: 'home',
     sidebarOpen: false,
+    // Início: Pastor/Admin podem recortar a rede por Obreiro e Discipulador
+    homeFilters: { obreiro: '', discipulador: '' },
     trilhoFilters: { celula: '', curso: '' },
 
     // autenticação (Supabase Auth)
@@ -100,6 +105,8 @@
     // vínculo login → cadastro (profiles)
     profile: null,          // null = ainda verificando; false = sem vínculo; objeto = vinculado
     profileStatus: 'idle',
+    meuPerfil: null,        // meu_perfil(): { is_full, celula, posicao, member_id }
+    meuNome: '',
     directory: [],          // members_directory, usado só na tela de vínculo
     directoryStatus: 'idle',
     selfLinkQuery: '',
@@ -328,7 +335,7 @@
 
   function doLogout() {
     sb.auth.signOut().then(function () {
-      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, directory: [], celulaHierarquia: [], showLoginForm: false });
+      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
     });
   }
 
@@ -352,6 +359,7 @@
       if (res.data) {
         setState({ profile: res.data, profileStatus: 'ok' });
         afterLinked();
+        loadMeuPerfil(res.data.member_id);
         return;
       }
       // Sem vínculo ainda: pode ser alguém que um admin convidou por
@@ -365,6 +373,23 @@
         // não pode fazer isso — só criar o próprio cadastro novo.
         if (!isSocialSession()) loadDirectory();
       });
+    });
+  }
+
+  // Posição/célula de quem está logado, direto de meu_perfil(). Não dá
+  // pra tirar isso de `members`: a RLS esconde a própria linha de quem
+  // não tem célula (Discipulador, Obreiro), e sem ela o Início não sabe
+  // qual rede mostrar. O nome vem de members_directory, que é aberta.
+  function loadMeuPerfil(memberId) {
+    if (!sb) return;
+    sb.rpc('meu_perfil').then(function (res) {
+      var row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
+      if (res.error || !row) return;
+      setState({ meuPerfil: row });
+    });
+    if (!memberId) return;
+    sb.from('members_directory').select('id, nome').eq('id', memberId).maybeSingle().then(function (res) {
+      if (!res.error && res.data) setState({ meuNome: res.data.nome });
     });
   }
 
@@ -1167,8 +1192,8 @@
     var gaugeEnc = 'conic-gradient(#3B5FDD ' + (encPct * 3.6) + 'deg, #e4ebf3 0)';
 
     // Estado civil bars
-    var civilOrder = ['Casado (a)', 'Solteiro (a)', 'Viuvo (a)', 'Divorciado(a)', 'Amasiado (a)'];
-    var civilLabels = { 'Casado (a)': 'Casado(a)', 'Solteiro (a)': 'Solteiro(a)', 'Viuvo (a)': 'Viúvo(a)', 'Divorciado(a)': 'Divorciado(a)', 'Amasiado (a)': 'Amasiado(a)' };
+    var civilOrder = CIVIL_ORDER;
+    var civilLabels = CIVIL_LABELS;
     var civilCounts = {};
     filtered.forEach(function (p) { civilCounts[p.civil] = (civilCounts[p.civil] || 0) + 1; });
     var civilMax = Math.max(1, Object.values(civilCounts).reduce(function (a, b) { return Math.max(a, b); }, 0));
@@ -1484,6 +1509,7 @@
     };
     var syncP = syncLabelMapP[state.syncStatusP] || syncLabelMapP.idle;
 
+    var isHome = state.tab === 'home';
     var isCadastro = state.tab === 'cadastro';
     var isPresenca = state.tab === 'presenca';
     var isTrilho = state.tab === 'trilho';
@@ -1495,7 +1521,7 @@
     // ---- Acesso total (Pastor/Pastor de Rede/admin) — só reflete a UI;
     // quem garante de verdade é a RLS no Supabase. ----
     var meuMembro = (state.profile && allPessoas.filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
-    var souFull = !!(state.profile && (state.profile.is_admin || (meuMembro && ['Pastor', 'Pastor de Rede'].indexOf(meuMembro.posicao) >= 0)));
+    var souFull = !!(state.profile && (state.profile.is_admin || (state.meuPerfil && state.meuPerfil.is_full) || (meuMembro && ['Pastor', 'Pastor de Rede'].indexOf(meuMembro.posicao) >= 0)));
 
     // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
     // Quem responde por um discipulador pode ser um Obreiro, mas também
@@ -1666,6 +1692,8 @@
       tabCadastroBorder: isCadastro ? '#1B2344' : 'transparent',
       tabPresencaColor: isPresenca ? '#1B2344' : '#8a99ab',
       tabPresencaBorder: isPresenca ? '#1B2344' : 'transparent',
+      isHome: isHome,
+      goHome: function () { setState({ tab: 'home', sidebarOpen: false }); },
       goCadastro: function () { setState({ tab: 'cadastro', sidebarOpen: false }); },
       goPresenca: function () { setState({ tab: 'presenca', sidebarOpen: false }); },
       goTrilho: function () { setState({ tab: 'trilho', sidebarOpen: false }); },
@@ -1803,6 +1831,7 @@
   var googleIcon = '<svg width="16" height="16" viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24c0-1.6-.1-2.7-.4-3.9H24v7.1h12c-.2 1.8-1.5 4.6-4.4 6.4l6.7 5.2C42.2 35.2 45 30.1 45 24Z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46Z"/><path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.8-2.9-.8-4.5s.3-3.1.7-4.5l-7.1-5.5C2.8 17 2 20.4 2 24s.8 7 2.3 10l7.2-5.5Z"/><path fill="#EA4335" d="M24 10.6c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 4.4 29.9 2 24 2 15.4 2 8.1 6.9 4.3 14l7.1 5.5c1.9-5.3 6.8-8.9 12.6-8.9Z"/></svg>';
 
   var NAV_ICONS = {
+    home: '<path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"></path>',
     cadastro: '<circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7"></path>',
     presenca: '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>',
     culto: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="m9 15 2 2 4-4"></path>',
@@ -1829,6 +1858,7 @@
   function sidebarHtml(vals) {
     var items = vals.anonMode
       ? [
+        { icon: 'home', label: 'Início', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: true, onClick: function () {}, show: true, locked: false },
         { icon: 'presenca', label: 'Presença por Célula', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'culto', label: 'Presença no Culto', active: false, onClick: vals.pedirLogin, show: true, locked: true },
@@ -1837,6 +1867,7 @@
         { icon: 'novo', label: '+ Novo Cadastro', active: false, onClick: vals.pedirLogin, show: true, locked: true },
       ]
       : [
+        { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
         { icon: 'presenca', label: 'Presença por Célula', active: vals.isPresenca, onClick: vals.goPresenca, show: true },
         { icon: 'culto', label: 'Presença no Culto', active: vals.isCulto, onClick: vals.goCulto, show: true },
@@ -1872,7 +1903,7 @@
       '</div>' +
       '<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">' +
       '<div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:700">Videira SCS · Rede Oikos</div>' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:18px;color:#fff;margin-top:3px;line-height:1.25">Cadastro de Membros &amp; FAs</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;color:#fff;margin-top:3px;line-height:1.25;letter-spacing:.01em">Sistema OIKOS</div>' +
       '</div>' +
       '<nav style="display:flex;flex-direction:column;gap:3px;margin-top:22px">' +
       items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked); }).join('') +
@@ -1887,7 +1918,7 @@
   function mobileTopbarHtml(vals) {
     return '<div class="mobile-topbar">' +
       '<button ' + cb(vals.openSidebar) + ' style="border:none;background:#eef2f7;width:36px;height:36px;border-radius:9px;cursor:pointer;color:#1B2344;font-size:17px;line-height:1">☰</button>' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:15px;color:#1B2344">Cadastro de Membros &amp; FAs</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:15px;color:#1B2344">Sistema OIKOS</div>' +
       '</div>';
   }
 
@@ -2257,6 +2288,363 @@
       }).join('') +
       (vals.rows.length ? '' : '<tr><td colspan="4" style="padding:20px 22px;color:#8a99ab;font-size:12.5px">' + (vals.loading ? 'Carregando…' : 'Nada na seleção atual.') + '</td></tr>') +
       '</tbody></table></div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  // ---------------------------------------------------------------------
+  // Início — resumo da rede de quem está logado. Pastor/Admin veem tudo e
+  // podem recortar por Obreiro e Discipulador; os demais veem só as
+  // células sob a responsabilidade deles. Quem garante o limite de
+  // verdade é a RLS (pode_ver_celula); aqui só decide o recorte e os
+  // títulos da tela.
+  // ---------------------------------------------------------------------
+  function setHomeFiltro(key, val) {
+    setState(function (s) {
+      var f = Object.assign({}, s.homeFilters);
+      f[key] = val;
+      // Outro obreiro pode não ter o discipulador que estava escolhido.
+      if (key === 'obreiro') f.discipulador = '';
+      return { homeFilters: f };
+    });
+  }
+
+  function abrirCadastroDaCelula(celula) {
+    setState({ tab: 'cadastro', q: '', filters: { tipo: '', celula: celula || '', posicao: '', batizado: '', encontro: '' }, sidebarOpen: false });
+  }
+
+  function homeVals(vals) {
+    var todos = data();
+    var ativos = todos.filter(function (p) { return p.active !== false; });
+    var hier = state.celulaHierarquia || [];
+    var hf = state.homeFilters;
+    // A própria linha em `members` pode não vir (RLS), então meu_perfil()
+    // é a fonte da posição/célula; `members` só completa se estiver lá.
+    var mp = state.meuPerfil;
+    var meuRow = (state.profile && memberById(state.profile.member_id)) || null;
+    var meu = mp
+      ? { id: mp.member_id, posicao: mp.posicao, celula: mp.celula, nome: (meuRow && meuRow.nome) || state.meuNome }
+      : meuRow;
+    var primeiroNome = function (nome) { return String(nome || '').trim().split(/\s+/)[0] || ''; };
+    var nomeDe = function (id) { var m = memberById(id); return m ? m.nome : ''; };
+    var pct = function (n, d) { return d ? Math.round(n / d * 100) : 0; };
+
+    // Recorte: null = toda a rede; lista = só essas células.
+    var celulas = null;
+    var escopoTitulo = 'Toda a rede', escopoSub = 'Visão geral de todas as células';
+    if (vals.souFull) {
+      if (hf.obreiro || hf.discipulador) {
+        celulas = hier.filter(function (h) {
+          if (hf.obreiro && h.obreiro_id !== hf.obreiro) return false;
+          if (hf.discipulador && h.discipulador_id !== hf.discipulador) return false;
+          return true;
+        }).map(function (h) { return h.celula; });
+        escopoTitulo = hf.discipulador ? 'Rede de ' + nomeDe(hf.discipulador) : 'Rede de ' + nomeDe(hf.obreiro);
+        escopoSub = hf.discipulador && hf.obreiro ? 'Discipulador sob ' + nomeDe(hf.obreiro) : (hf.discipulador ? 'Células discipuladas' : 'Células sob esse obreiro');
+      }
+    } else if (meu && meu.posicao === 'Discipulador') {
+      celulas = hier.filter(function (h) { return h.discipulador_id === meu.id; }).map(function (h) { return h.celula; });
+      escopoTitulo = 'Sua rede'; escopoSub = 'Células que você discipula';
+    } else if (meu && meu.posicao === 'Obreiro') {
+      celulas = hier.filter(function (h) { return h.obreiro_id === meu.id; }).map(function (h) { return h.celula; });
+      escopoTitulo = 'Sua rede'; escopoSub = 'Células sob sua supervisão';
+    } else if (meu && meu.celula) {
+      celulas = [meu.celula];
+      escopoTitulo = 'Sua célula'; escopoSub = celulaLabel(meu.celula);
+    }
+
+    var ordemCelulas = currentCelulaList();
+    var listaCelulas = celulas
+      ? ordemCelulas.filter(function (c) { return celulas.indexOf(c) >= 0; }).concat(celulas.filter(function (c) { return ordemCelulas.indexOf(c) < 0; }))
+      : ordemCelulas;
+    var pessoas = celulas ? ativos.filter(function (p) { return celulas.indexOf(p.celula) >= 0; }) : ativos;
+    var total = pessoas.length;
+    var conta = function (fn) { return pessoas.filter(fn).length; };
+
+    var membrosRede = conta(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
+    var naoVisit = pessoas.filter(function (p) { return p.posicao !== 'Visitante'; });
+    var fa = pessoas.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; });
+    var visit = pessoas.filter(function (p) { return p.posicao === 'Visitante'; });
+    var adultosDe = function (arr) { return arr.filter(function (p) { return p.tipo === 'Adultos'; }).length; };
+    var kids = total - adultosDe(pessoas);
+    var batN = conta(function (p) { return p.batizado === 'Sim'; });
+    var encN = conta(function (p) { return p.encontro === 'Sim'; });
+    var lideres = conta(function (p) { return p.posicao === 'Líder'; });
+
+    var posCounts = {};
+    pessoas.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
+    var posicoes = posicaoOrder.concat(Object.keys(posCounts).filter(function (p) { return posicaoOrder.indexOf(p) < 0; }))
+      .filter(function (p) { return posCounts[p]; })
+      .map(function (p) { return { label: p, n: posCounts[p], pct: pct(posCounts[p], total), color: posicaoColor[p] || '#94a3b8' }; });
+
+    var civilCounts = {};
+    pessoas.forEach(function (p) { civilCounts[p.civil] = (civilCounts[p.civil] || 0) + 1; });
+    var civilMax = Math.max(1, CIVIL_ORDER.reduce(function (m, c) { return Math.max(m, civilCounts[c] || 0); }, 0));
+    var civil = CIVIL_ORDER.filter(function (c) { return civilCounts[c]; }).map(function (c) {
+      return { label: CIVIL_LABELS[c], n: civilCounts[c], w: Math.round(civilCounts[c] / civilMax * 100) + '%' };
+    });
+
+    var hierDe = function (c) { return hier.filter(function (h) { return h.celula === c; })[0] || {}; };
+    var cells = listaCelulas.map(function (c) {
+      var ps = ativos.filter(function (p) { return p.celula === c; });
+      var n = ps.length;
+      var qtd = function (pos) { return ps.filter(function (p) { return p.posicao === pos; }).length; };
+      var m = qtd('Membro'), f = qtd('Frequentador Assíduo'), v = qtd('Visitante');
+      var lid = n - m - f - v;
+      var nomesLideres = ps.filter(function (p) { return p.posicao === 'Líder'; }).map(function (p) { return primeiroNome(p.nome); });
+      return {
+        label: celulaLabel(c), n: n,
+        lideres: nomesLideres.length ? nomesLideres.join(' & ') : '',
+        discipulador: primeiroNome(nomeDe(hierDe(c).discipulador_id)),
+        batPct: pct(ps.filter(function (p) { return p.batizado === 'Sim'; }).length, n),
+        segs: [
+          { n: m, color: '#1B2344', label: 'membros' },
+          { n: lid, color: '#5B8FE0', label: 'liderança' },
+          { n: f, color: '#149C88', label: 'FA' },
+          { n: v, color: '#8A63C9', label: 'visit.' },
+        ].filter(function (s) { return s.n; }).map(function (s) { return Object.assign(s, { w: pct(s.n, n) + '%' }); }),
+        onClick: function () { abrirCadastroDaCelula(c); },
+      };
+    });
+
+    // Pastor/Admin: quanto cada discipulador carrega (clique filtra por ele).
+    var porDiscipulador = [];
+    if (vals.souFull && !hf.discipulador) {
+      var grupos = {};
+      hier.forEach(function (h) {
+        if (hf.obreiro && h.obreiro_id !== hf.obreiro) return;
+        var k = h.discipulador_id || '';
+        (grupos[k] || (grupos[k] = [])).push(h.celula);
+      });
+      porDiscipulador = Object.keys(grupos).map(function (id) {
+        var cs = grupos[id];
+        var ps = ativos.filter(function (p) { return cs.indexOf(p.celula) >= 0; });
+        var nome = id ? nomeDe(id) : '';
+        return {
+          id: id, nome: nome || 'Sem discipulador definido', semDiscipulador: !id,
+          initials: nome ? nome.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase() : '?',
+          celulas: cs.length, pessoas: ps.length,
+          batPct: pct(ps.filter(function (p) { return p.batizado === 'Sim'; }).length, ps.length),
+          onClick: id ? function () { setHomeFiltro('discipulador', id); } : null,
+        };
+      }).sort(function (a, b) { return (a.semDiscipulador - b.semDiscipulador) || (b.pessoas - a.pessoas); });
+    }
+
+    var hoje = new Date();
+    var mesAtual = hoje.getMonth() + 1;
+    var aniversariantes = pessoas.filter(function (p) { return p.nasc && Number(p.nasc.slice(5, 7)) === mesAtual; })
+      .map(function (p) {
+        var dia = Number(p.nasc.slice(8, 10));
+        return {
+          dia: dia, mes: MES_ABREV[mesAtual - 1], nome: p.nome, celulaLabel: p.celula ? celulaLabel(p.celula) : p.posicao,
+          idade: hoje.getFullYear() - Number(p.nasc.slice(0, 4)),
+          hoje: dia === hoje.getDate(), passou: dia < hoje.getDate(),
+        };
+      })
+      .sort(function (a, b) { return a.dia - b.dia; });
+
+    var discipuladorOptions = hf.obreiro
+      ? vals.discipuladores.filter(function (d) { return hier.some(function (h) { return h.obreiro_id === hf.obreiro && h.discipulador_id === d.v; }); })
+      : vals.discipuladores;
+
+    var dataLabel = hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    return {
+      saudacao: (hoje.getHours() < 12 ? 'Bom dia' : (hoje.getHours() < 18 ? 'Boa tarde' : 'Boa noite')) + (meu ? ', ' + primeiroNome(meu.nome) : ''),
+      dataLabel: dataLabel.charAt(0).toUpperCase() + dataLabel.slice(1),
+      papel: state.profile && state.profile.is_admin ? 'Administrador' : (meu ? meu.posicao : ''),
+      escopoTitulo: escopoTitulo, escopoSub: escopoSub,
+      souFull: vals.souFull, filtros: hf, filtrando: !!(hf.obreiro || hf.discipulador),
+      obreiroOptions: vals.obreiros, discipuladorOptions: discipuladorOptions,
+      onObreiro: function (e) { setHomeFiltro('obreiro', e.target.value); },
+      onDiscipulador: function (e) { setHomeFiltro('discipulador', e.target.value); },
+      limparFiltros: function () { setState({ homeFilters: { obreiro: '', discipulador: '' } }); },
+      carregando: !todos.length && state.membersStatus !== 'ok' && state.membersStatus !== 'error',
+      semRede: !!celulas && !celulas.length,
+      total: total, nCelulas: listaCelulas.length, lideres: lideres,
+      kpis: {
+        membrosRede: membrosRede,
+        fa: fa.length, faSub: adultosDe(fa) + ' adultos · ' + (fa.length - adultosDe(fa)) + ' kids/juvenis',
+        visit: visit.length, visitSub: adultosDe(visit) + ' adultos · ' + (visit.length - adultosDe(visit)) + ' kids/juvenis',
+        kids: kids, naoVisit: naoVisit.length,
+      },
+      batPct: pct(batN, total), faltamBat: total - batN,
+      encPct: pct(encN, total), faltamEnc: total - encN,
+      posicoes: posicoes, civil: civil, cells: cells,
+      porDiscipulador: porDiscipulador, aniversariantes: aniversariantes, mesLabel: MESES_PT[mesAtual - 1].toLowerCase(),
+      verCadastro: function () { abrirCadastroDaCelula(''); },
+    };
+  }
+
+  var HOME_ICONS = {
+    rede: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"></path><circle cx="10" cy="8" r="3.5"></circle><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35"></path><path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8"></path>',
+    fa: '<path d="M12 20s-7-4.35-7-10a4 4 0 0 1 7-2.65A4 4 0 0 1 19 10c0 5.65-7 10-7 10Z"></path>',
+    visit: '<circle cx="10" cy="8" r="3.5"></circle><path d="M3.5 20v-1.5A3.5 3.5 0 0 1 7 15h6"></path><path d="M18 14v6"></path><path d="M15 17h6"></path>',
+    kids: '<circle cx="12" cy="12" r="8.5"></circle><path d="M8.5 14a4 4 0 0 0 7 0"></path><path d="M9 9.5h.01"></path><path d="M15 9.5h.01"></path>',
+  };
+
+  function homeIcon(key, color, bg) {
+    return '<div class="home-kpi-icon" style="background:' + bg + ';color:' + color + '"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + HOME_ICONS[key] + '</svg></div>';
+  }
+
+  function homeKpi(icon, color, bg, value, label, sub, destaque) {
+    return '<div class="home-card home-kpi' + (destaque ? ' home-kpi-destaque' : '') + '">' +
+      homeIcon(icon, destaque ? '#fff' : color, destaque ? 'rgba(255,255,255,.16)' : bg) +
+      '<div><div class="home-kpi-value">' + value + '</div>' +
+      '<div class="home-kpi-label">' + escHtml(label) + '</div>' +
+      '<div class="home-kpi-sub">' + escHtml(sub) + '</div></div></div>';
+  }
+
+  function homeRing(pctv, color, label, sub) {
+    var r = 42, circ = 2 * Math.PI * r;
+    return '<div class="home-ring">' +
+      '<div style="position:relative;width:112px;height:112px">' +
+      '<svg width="112" height="112" viewBox="0 0 108 108" style="transform:rotate(-90deg)">' +
+      '<circle cx="54" cy="54" r="' + r + '" fill="none" stroke="#edf1f7" stroke-width="11"></circle>' +
+      (pctv > 0 ? '<circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + (circ * (1 - pctv / 100)).toFixed(1) + '"></circle>' : '') +
+      '</svg>' +
+      '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">' +
+      '<div class="home-ring-value">' + pctv + '%</div>' +
+      '<div class="home-ring-label">' + escHtml(label) + '</div></div></div>' +
+      '<div class="home-card-sub" style="text-align:center">' + sub + '</div></div>';
+  }
+
+  function homeHtml(v) {
+    var html = '<div class="home">';
+
+    // Destaque: saudação, recorte atual e (Pastor/Admin) filtros
+    html += '<section class="home-hero">' +
+      '<div class="home-hero-top">' +
+      '<div>' +
+      '<div class="home-brand">Sistema OIKOS</div>' +
+      '<div class="home-hello">' + escHtml(v.saudacao) + '</div>' +
+      '<div class="home-sub">' + escHtml(v.dataLabel) + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
+      (v.papel ? '<span class="home-chip">' + escHtml(v.papel) + '</span>' : '') +
+      '<span class="home-chip home-chip-soft">' + escHtml(v.escopoTitulo) + ' · ' + escHtml(v.escopoSub) + '</span>' +
+      '</div></div>' +
+      (v.souFull
+        ? '<div class="home-filters">' +
+          '<div class="home-filter"><label for="home-obreiro">Obreiro</label>' +
+          '<select id="home-obreiro" ' + cb(v.onObreiro, 'change') + '>' + opt('', 'Todos', !v.filtros.obreiro) +
+          v.obreiroOptions.map(function (o) { return opt(o.v, o.label, v.filtros.obreiro === o.v); }).join('') + '</select></div>' +
+          '<div class="home-filter"><label for="home-discipulador">Discipulador</label>' +
+          '<select id="home-discipulador" ' + cb(v.onDiscipulador, 'change') + '>' + opt('', 'Todos', !v.filtros.discipulador) +
+          v.discipuladorOptions.map(function (o) { return opt(o.v, o.label, v.filtros.discipulador === o.v); }).join('') + '</select></div>' +
+          (v.filtrando ? '<button class="home-clear" ' + cb(v.limparFiltros) + '>Limpar filtros</button>' : '') +
+          '</div>'
+        : '') +
+      '</div>' +
+      '<div class="home-hero-stats">' +
+      '<div class="home-hero-stat"><b>' + v.total + '</b><span>pessoas ativas</span></div>' +
+      '<div class="home-hero-stat"><b>' + v.nCelulas + '</b><span>' + (v.nCelulas === 1 ? 'célula' : 'células') + '</span></div>' +
+      '<div class="home-hero-stat"><b>' + v.lideres + '</b><span>' + (v.lideres === 1 ? 'líder' : 'líderes') + '</span></div>' +
+      '<div class="home-hero-stat"><b>' + v.batPct + '%</b><span>batizados</span></div>' +
+      '</div>' +
+      '</section>';
+
+    if (v.carregando) {
+      return html + '<div class="home-card" style="margin-top:16px;color:#7b8aa0;font-size:13px">Carregando dados da rede…</div></div>';
+    }
+    if (v.semRede) {
+      return html + '<div class="home-card" style="margin-top:16px">' +
+        '<div class="home-card-title">Nenhuma célula vinculada' + (v.souFull ? ' a esse filtro' : ' a você ainda') + '</div>' +
+        '<div class="home-card-sub" style="margin-top:6px">' + (v.souFull
+          ? 'Defina o discipulador e o obreiro de cada célula em Administração.'
+          : 'Peça a um Pastor ou administrador para definir, em Administração, quais células estão sob a sua responsabilidade.') +
+        '</div></div></div>';
+    }
+
+    html += '<div class="home-kpis">' +
+      homeKpi('rede', '#fff', '', v.kpis.membrosRede, 'Membros da Rede', 'membros, líderes, anfitr. e discip.', true) +
+      homeKpi('fa', '#0E7A68', '#e0f4ef', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub) +
+      homeKpi('visit', '#6B3FA0', '#efe8f8', v.kpis.visit, 'Visitantes', v.kpis.visitSub) +
+      homeKpi('kids', '#2E4FC7', '#e6ecfb', v.kpis.kids, 'Kids e Juvenis', 'crianças e adolescentes') +
+      '</div>';
+
+    html += '<div class="home-grid3">' +
+      '<div class="home-card">' +
+      '<div class="home-card-title">Jornada espiritual</div>' +
+      '<div class="home-card-sub">Batismo e Encontro com Deus</div>' +
+      '<div class="home-rings">' +
+      homeRing(v.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + v.faltamBat + '</b> ainda não batizados') +
+      homeRing(v.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + v.faltamEnc + '</b> ainda não fizeram') +
+      '</div></div>' +
+
+      '<div class="home-card">' +
+      '<div class="home-card-title">Composição por posição</div>' +
+      '<div class="home-card-sub">' + v.total + ' pessoas no recorte</div>' +
+      '<div class="home-stack">' + v.posicoes.map(function (p) {
+        return '<div title="' + escHtml(p.label + ': ' + p.n) + '" style="width:' + p.pct + '%;background:' + p.color + '"></div>';
+      }).join('') + '</div>' +
+      '<div class="home-legend">' + v.posicoes.map(function (p) {
+        return '<div class="home-legend-row"><span class="home-dot" style="background:' + p.color + '"></span>' +
+          '<span style="flex:1">' + escHtml(p.label) + '</span><b>' + p.n + '</b><span class="home-muted" style="width:36px;text-align:right">' + p.pct + '%</span></div>';
+      }).join('') + '</div></div>' +
+
+      '<div class="home-card">' +
+      '<div class="home-card-title">Estado civil</div>' +
+      '<div class="home-card-sub">Distribuição do recorte</div>' +
+      '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">' + v.civil.map(function (c) {
+        return '<div><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="color:#44546a">' + escHtml(c.label) + '</span><b style="color:#14243a">' + c.n + '</b></div>' +
+          '<div class="home-bar"><div style="width:' + c.w + '"></div></div></div>';
+      }).join('') + (v.civil.length ? '' : '<div class="home-card-sub">Sem dados.</div>') +
+      '</div></div>' +
+      '</div>';
+
+    html += '<div class="home-section">' +
+      '<div><div class="home-section-title">' + (v.nCelulas === 1 ? 'Célula' : 'Células') + '</div>' +
+      '<div class="home-card-sub">Clique numa célula para abrir o cadastro dela</div></div>' +
+      '<button class="home-link" ' + cb(v.verCadastro) + '>Ver cadastro completo →</button>' +
+      '</div>' +
+      '<div class="home-cells">' + v.cells.map(function (c) {
+        return '<button class="home-card home-cell" ' + cb(c.onClick) + '>' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+          '<div style="min-width:0"><div class="home-cell-name">' + escHtml(c.label) + '</div>' +
+          '<div class="home-card-sub">' + (c.lideres ? 'Líder: ' + escHtml(c.lideres) : 'Sem líder cadastrado') + '</div></div>' +
+          '<div style="text-align:right"><div class="home-cell-total">' + c.n + '</div><div class="home-muted" style="font-size:11px">' + (c.n === 1 ? 'pessoa' : 'pessoas') + '</div></div>' +
+          '</div>' +
+          '<div class="home-stack" style="margin-top:14px;height:8px">' + c.segs.map(function (s) {
+            return '<div style="width:' + s.w + ';background:' + s.color + '"></div>';
+          }).join('') + '</div>' +
+          '<div class="home-cell-legend">' + c.segs.map(function (s) {
+            return '<span><span class="home-dot" style="background:' + s.color + '"></span>' + s.n + ' ' + s.label + '</span>';
+          }).join('') + (c.segs.length ? '' : '<span>Nenhuma pessoa ativa</span>') + '</div>' +
+          '<div class="home-cell-foot">' +
+          '<span class="home-pill">' + c.batPct + '% batizados</span>' +
+          (v.souFull && c.discipulador ? '<span class="home-muted">Disc. ' + escHtml(c.discipulador) + '</span>' : '') +
+          '</div></button>';
+      }).join('') + '</div>';
+
+    var temDisc = v.porDiscipulador.length > 0;
+    html += '<div class="' + (temDisc ? 'home-grid2' : '') + '" style="margin-top:14px">';
+    if (temDisc) {
+      html += '<div class="home-card">' +
+        '<div class="home-card-title">Rede por discipulador</div>' +
+        '<div class="home-card-sub">Clique para ver só a rede de um discipulador</div>' +
+        '<div style="margin-top:10px">' + v.porDiscipulador.map(function (d) {
+          return '<div class="home-row' + (d.onClick ? '' : ' home-row-static') + '"' + (d.onClick ? ' ' + cb(d.onClick) : '') + '>' +
+            '<div style="display:flex;align-items:center;gap:12px;min-width:0">' +
+            '<div class="home-avatar' + (d.semDiscipulador ? ' home-avatar-vazio' : '') + '">' + escHtml(d.initials) + '</div>' +
+            '<div style="min-width:0"><div style="font-weight:700;font-size:13.5px;color:#14243a">' + escHtml(d.nome) + '</div>' +
+            '<div class="home-card-sub">' + d.celulas + (d.celulas === 1 ? ' célula' : ' células') + ' · ' + d.pessoas + ' pessoas</div></div></div>' +
+            '<div style="display:flex;align-items:center;gap:10px"><span class="home-pill">' + d.batPct + '% batiz.</span>' +
+            (d.onClick ? '<span class="home-muted">›</span>' : '') + '</div></div>';
+        }).join('') + '</div></div>';
+    }
+    html += '<div class="home-card">' +
+      '<div class="home-card-title">Aniversariantes de ' + escHtml(v.mesLabel) + '</div>' +
+      '<div class="home-card-sub">' + v.aniversariantes.length + (v.aniversariantes.length === 1 ? ' pessoa' : ' pessoas') + ' no recorte</div>' +
+      '<div class="home-bdays">' + v.aniversariantes.map(function (a) {
+        return '<div class="home-bday' + (a.passou ? ' home-bday-passou' : '') + '">' +
+          '<div class="home-bday-date' + (a.hoje ? ' home-bday-hoje' : '') + '"><b>' + a.dia + '</b><span>' + a.mes + '</span></div>' +
+          '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;color:#14243a">' + escHtml(a.nome) + '</div>' +
+          '<div class="home-card-sub">' + escHtml(a.celulaLabel) + '</div></div>' +
+          (a.hoje ? '<span class="home-pill home-pill-hoje">Hoje · ' + a.idade + ' anos</span>' : '<span class="home-muted" style="font-size:12px">' + a.idade + ' anos</span>') +
+          '</div>';
+      }).join('') + (v.aniversariantes.length ? '' : '<div class="home-card-sub" style="padding:8px 0">Ninguém faz aniversário neste mês.</div>') +
+      '</div></div>';
+    html += '</div>';
 
     html += '</div>';
     return html;
@@ -2810,6 +3198,7 @@
     return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
       '<div style="width:100%;max-width:360px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      '<div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#0E7A68;font-weight:800;margin-bottom:6px">Sistema OIKOS</div>' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Entrar</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Acesso restrito aos líderes da Rede Oikos.</div>' +
       (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
@@ -3163,6 +3552,7 @@
         sidebarHtml(vals) +
         '<main class="main-content">' +
         mobileTopbarHtml(vals) +
+        (vals.isHome ? homeHtml(homeVals(vals)) : '') +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isPresenca ? presencaHtml(vals) : '') +
         (vals.isCulto ? presencaCultoHtml(vals) : '') +
