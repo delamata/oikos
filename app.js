@@ -107,6 +107,7 @@
     profileStatus: 'idle',
     meuPerfil: null,        // meu_perfil(): { is_full, celula, posicao, member_id }
     meuNome: '',
+    meuConjugeId: null,     // meu_conjuge_id(): o casal divide a mesma rede
     directory: [],          // members_directory, usado só na tela de vínculo
     directoryStatus: 'idle',
     selfLinkQuery: '',
@@ -335,7 +336,7 @@
 
   function doLogout() {
     sb.auth.signOut().then(function () {
-      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
+      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
     });
   }
 
@@ -386,6 +387,11 @@
       var row = res.data && (Array.isArray(res.data) ? res.data[0] : res.data);
       if (res.error || !row) return;
       setState({ meuPerfil: row });
+    });
+    // Cônjuge enxerga a mesma rede (supabase/add_rede_conjuge.sql). Se a
+    // migração ainda não rodou, a RPC falha e o Início segue sem cônjuge.
+    sb.rpc('meu_conjuge_id').then(function (res) {
+      if (!res.error && res.data) setState({ meuConjugeId: res.data });
     });
     if (!memberId) return;
     sb.from('members_directory').select('id, nome').eq('id', memberId).maybeSingle().then(function (res) {
@@ -2343,15 +2349,27 @@
         escopoTitulo = hf.discipulador ? 'Rede de ' + nomeDe(hf.discipulador) : 'Rede de ' + nomeDe(hf.obreiro);
         escopoSub = hf.discipulador && hf.obreiro ? 'Discipulador sob ' + nomeDe(hf.obreiro) : (hf.discipulador ? 'Células discipuladas' : 'Células sob esse obreiro');
       }
-    } else if (meu && meu.posicao === 'Discipulador') {
-      celulas = hier.filter(function (h) { return h.discipulador_id === meu.id; }).map(function (h) { return h.celula; });
-      escopoTitulo = 'Sua rede'; escopoSub = 'Células que você discipula';
-    } else if (meu && meu.posicao === 'Obreiro') {
-      celulas = hier.filter(function (h) { return h.obreiro_id === meu.id; }).map(function (h) { return h.celula; });
-      escopoTitulo = 'Sua rede'; escopoSub = 'Células sob sua supervisão';
-    } else if (meu && meu.celula) {
-      celulas = [meu.celula];
-      escopoTitulo = 'Sua célula'; escopoSub = celulaLabel(meu.celula);
+    } else if (meu) {
+      // Mesma regra do pode_ver_celula(): a célula é da minha rede se eu
+      // OU meu cônjuge formos o discipulador ou obreiro dela; fora isso,
+      // vale a própria célula.
+      var casal = [meu.id, state.meuConjugeId].filter(Boolean);
+      var doCasal = function (id) { return !!id && casal.indexOf(id) >= 0; };
+      var daRede = hier.filter(function (h) { return doCasal(h.discipulador_id) || doCasal(h.obreiro_id); });
+      if (daRede.length) {
+        celulas = daRede.map(function (h) { return h.celula; });
+        if (meu.celula && celulas.indexOf(meu.celula) < 0) celulas.push(meu.celula);
+        var viaConjuge = daRede.some(function (h) { return !(h.discipulador_id === meu.id || h.obreiro_id === meu.id); });
+        var discipula = daRede.some(function (h) { return doCasal(h.discipulador_id); });
+        escopoTitulo = 'Sua rede';
+        escopoSub = viaConjuge ? 'Rede de discipulado do casal' : (discipula ? 'Células que você discipula' : 'Células sob sua supervisão');
+      } else if (meu.posicao === 'Discipulador' || meu.posicao === 'Obreiro') {
+        celulas = [];
+        escopoTitulo = 'Sua rede'; escopoSub = 'Nenhuma célula vinculada';
+      } else if (meu.celula) {
+        celulas = [meu.celula];
+        escopoTitulo = 'Sua célula'; escopoSub = celulaLabel(meu.celula);
+      }
     }
 
     var ordemCelulas = currentCelulaList();

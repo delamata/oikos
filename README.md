@@ -97,6 +97,13 @@ separada):
 - **Discipulador** — vê os líderes/células diretamente abaixo dele.
 - **Qualquer outra posição (Líder, Anfitrião, Membro, etc.)** — vê só a
   própria célula.
+- **Cônjuge** — o casal divide a mesma rede: quem é casado com um
+  discipulador ou obreiro vê as mesmas células que ele (ex: Simone
+  Delamata vê a rede de discipulado do Andre Delamata), além da própria
+  célula. Vale só para casais vinculados na ficha (Estado civil
+  "Casado (a)" → Cônjuge) — veja `supabase/add_rede_conjuge.sql`, que
+  também traz uma consulta pra achar discipuladores/obreiros ainda sem
+  cônjuge vinculado.
 
 Isso é reforçado por Row Level Security no Postgres (não é só escondido
 na tela) — veja `supabase/add_rbac.sql`. "Presença por Célula" (planilha
@@ -210,6 +217,7 @@ oferecer só o formulário de cadastro novo, sem lista de nomes).
    - Se o seu projeto já existia **antes** da situação "Inativo", rode também [`supabase/add_situacao_inativo.sql`](supabase/add_situacao_inativo.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Se o seu projeto já existia **antes** do vínculo de cônjuge, rode também [`supabase/add_conjuge.sql`](supabase/add_conjuge.sql) uma vez — projetos novos já recebem isso direto do `schema.sql`.
    - Rode [`supabase/add_acesso_conjuge.sql`](supabase/add_acesso_conjuge.sql) uma vez, depois do `add_conjuge.sql` — é a function que copia o "Admin" para o cônjuge (o app sozinho não pode mexer nisso). Sem ela, célula/posição/situação ainda são herdadas, só o Admin que não.
+   - Rode [`supabase/add_rede_conjuge.sql`](supabase/add_rede_conjuge.sql) uma vez, depois do `add_conjuge.sql` — faz o cônjuge de um discipulador/obreiro enxergar a mesma rede de discipulado.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
