@@ -12,7 +12,7 @@ dados + autenticação).
   - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro**, as células em que é o obreiro responsável; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
   - Clicar num cartão de célula abre o Cadastro de Membros já filtrado por ela.
 - **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. **Tipo** de cadastro: Adultos, Jovens ou Kids e Juvenis — cada tipo é contado pelo próprio nome nos indicadores; Jovens entram no Trilho do Vencedor junto com Adultos e podem ser vinculados como cônjuge. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
-- **Frequência** — lançamento semanal, pensado para o celular. Como a célula e o culto acontecem em **dias diferentes**, são **dois lançamentos separados**, cada um com a sua data: a chave no topo alterna entre **Encontro da célula** e **Culto**. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa), a data de hoje para a célula e o domingo mais recente para o culto; marca os presentes e salva. Dá para **apagar um lançamento** (apaga o encontro da célula, ou a presença daquela célula naquele culto — o culto em si continua, porque é da igreja toda). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Três abas: **Lançar**, **Histórico** (duas listas — encontros de célula e cultos — com filtro por período/célula/discipulador/rede, mais o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
+- **Frequência** — lançamento semanal, pensado para o celular. Como a célula e o culto acontecem em **dias diferentes**, são **dois lançamentos separados**, cada um com a sua data: a chave no topo alterna entre **Encontro da célula** e **Culto**. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa), a data de hoje para a célula e o domingo mais recente para o culto; marca os presentes e salva. Dá para **apagar um lançamento** (apaga o encontro da célula, ou a presença daquela célula naquele culto — o culto em si continua, porque é da igreja toda). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Quem não quer entrar no sistema pode lançar pelo **link da célula** (veja "Frequência por link" abaixo). Três abas: **Lançar**, **Histórico** (duas listas — encontros de célula e cultos — com filtro por período/célula/discipulador/rede, mais o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
 - **Oikos IA** — só para Pastor, Pastor de Rede e administradores. Perguntas em português sobre os dados do Oikos ("quais células estão com queda de frequência?", "quantos visitantes tivemos neste mês?"), com sugestões clicáveis na tela. Veja "Oikos IA" abaixo.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
 - **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem), **Fora da contagem** (transferidos e perdidos) e **Inativos**. Nas duas últimas listas, clicar numa linha abre a ficha da pessoa — dá pra editar o cadastro dali, inclusive reativar quem voltou.
@@ -43,11 +43,35 @@ O campo **Posição**, usado pelas telas, gráficos e regras de acesso,
 continua existindo e é preenchido sozinho pelo banco (a função quando
 existe, senão o status) — por isso nada do que já funcionava mudou.
 
+### Frequência por link (sem login)
+
+Cada célula pode ter um **link próprio** para o líder lançar a presença
+sem entrar no sistema — do mesmo jeito que o cadastro público funciona
+para visitantes. O líder abre o link no celular, marca quem veio, pode
+adicionar um visitante e salva.
+
+Para gerar: **Administração → Células cadastradas → Editar → Gerar link
+de frequência**. Dali dá para enviar por WhatsApp ou copiar. O link tem
+o formato `…/index.html?frequencia=CODIGO`.
+
+Por que o link tem um código, se o cadastro público é aberto: o cadastro
+público só **cria** um visitante, enquanto aqui se **escreve a
+frequência de uma célula que existe**. O código limita o link a uma
+única célula, e nada além da presença daquela célula pode ser feito por
+ele. Se um link vazar ou o líder mudar, clique em **Gerar link novo** —
+o antigo deixa de funcionar na hora.
+
+Por dentro (`supabase/add_frequencia_link.sql`): três funções que
+conferem o código e rodam com privilégio próprio — abrir (devolve só
+nome e status das pessoas daquela célula), salvar (cria/atualiza o
+encontro, marcado com `origem = 'link'`) e adicionar visitante. A tabela
+`members` continua fechada para quem não tem login.
+
 ### Histórico da planilha antiga
 
-Os lançamentos que os líderes faziam no formulário Google (março/2025 a
-setembro/2026, 136 encontros de Claudio e Renata, Josivan e Célia,
-Junior e Luciana e Otávio e Jô) foram importados para a tabela
+Os lançamentos que os líderes faziam no formulário Google (janeiro a
+setembro de 2026, 55 encontros de Claudio e Renata, Josivan e Célia e
+Otávio e Jô) foram importados para a tabela
 `frequencia_planilha` e aparecem na aba **Frequência**: uma tabela
 própria no **Histórico** e um resumo por célula no **Painel**.
 
@@ -61,18 +85,13 @@ com os números como foram coletados.
 
 Detalhes que valem saber:
 
-- **"Junior e Luciana"** não existe mais como célula cadastrada. O
-  histórico dela foi preservado (a tabela não tem chave estrangeira
-  para as células justamente por isso), mas só quem tem acesso total
-  enxerga, e ela não aparece no filtro de célula. Para que volte a
-  aparecer, basta recriá-la em Administração.
-- Um envio repetido (Josivan e Célia, 07/11/2025, com números
-  idênticos) foi descartado. Já 11/06/2025 de Claudio e Renata tem dois
-  envios com números diferentes (7 membros e depois 11) — os dois foram
-  mantidos, porque só você sabe se foi correção ou dois encontros.
+- Ficaram **de fora, a pedido**: tudo de 2025 (52 encontros) e a célula
+  **"Junior e Luciana"** (30 encontros), que não existe mais.
 - A importação pode ser repetida: o script limpa a tabela antes de
-  inserir, então rodar de novo não duplica. Para atualizar com o que
-  entrou na planilha depois, é só me pedir para gerar o arquivo de novo.
+  inserir, então rodar de novo não duplica — e quem já tinha importado
+  2025 ou a Junior e Luciana fica com esses registros removidos. Para
+  atualizar com o que entrar na planilha depois, é só me pedir para
+  gerar o arquivo de novo.
 
 ### Auditoria
 
@@ -350,6 +369,7 @@ sistema.
    - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
    - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
    - Rode [`supabase/add_frequencia.sql`](supabase/add_frequencia.sql) uma vez, **depois** do `add_hierarquia_status.sql` — cria o módulo de Frequência (encontros e presenças por célula), fecha `presencas_culto` por escopo de célula e atualiza `editar_celula()` para levar os encontros junto ao renomear.
+   - Rode [`supabase/add_frequencia_link.sql`](supabase/add_frequencia_link.sql) uma vez, depois do `add_frequencia.sql` — permite o lançamento de frequência por link, sem login (veja "Frequência por link" acima).
    - Rode [`supabase/add_frequencia_historico.sql`](supabase/add_frequencia_historico.sql) e depois [`supabase/importar_historico_planilha.sql`](supabase/importar_historico_planilha.sql) — criam e preenchem a tabela com o histórico da planilha Google (veja "Histórico da planilha antiga" acima).
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.

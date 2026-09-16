@@ -127,6 +127,15 @@
   // (grava um convite; a pessoa entra com Google e vincula sozinha).
   var adminLiderFormDefaults = { modo: 'novo', nome: '', posicao: 'Líder', celula: '', memberId: '', query: '', criarLogin: true, tipoLogin: 'senha', email: '', senha: '' };
 
+  // Link de frequência da célula: index.html?frequencia=CODIGO — o líder
+  // lança a presença sem login (ver supabase/add_frequencia_link.sql).
+  function urlTokenFrequencia() {
+    try {
+      var m = window.location.search.match(/[?&]frequencia=([^&]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (e) { return ''; }
+  }
+
   function urlWantsCadastroPublico() {
     try { return /[?&]cadastro(=|&|$)/.test(window.location.search); } catch (e) { return false; }
   }
@@ -186,6 +195,8 @@
     adminCelulaEditSaving: false,
     adminCelulaEditError: null,
     adminCelulaEditSalvo: null,
+    adminLinkSaving: false,
+    adminLinkCopiado: false,
 
     adminLiderForm: Object.assign({}, adminLiderFormDefaults),
     adminLiderSaving: false,
@@ -195,6 +206,20 @@
     // manda pra pessoa (o app não envia e-mail nenhum sozinho).
     adminLiderConvite: null,
     adminConviteCopiado: false,
+
+    // frequência por link (sem login)
+    fpToken: urlTokenFrequencia(),
+    fpStatus: 'idle',             // idle | loading | ok | error
+    fpErro: null,
+    fpCelula: '',
+    fpData: '',
+    fpPessoas: [],                // [{ id, nome, status, presente }]
+    fpMarcados: {},
+    fpJaLancado: false,
+    fpSaving: false,
+    fpSalvo: null,                // { presentes, total } depois de salvar
+    fpVisitante: null,            // { nome, tel } com o formulário aberto
+    fpVisitanteSaving: false,
 
     // cadastro público (sem login)
     isPublicCadastro: urlWantsCadastroPublico(),
@@ -552,6 +577,43 @@
 
   function cancelarEdicaoCelula() {
     setState({ adminCelulaEdit: null, adminCelulaEditError: null });
+  }
+
+  // ---- Link de frequência da célula (sem login) ----
+  function linkFrequenciaUrl(token) {
+    return window.location.origin + window.location.pathname + '?frequencia=' + encodeURIComponent(token);
+  }
+
+  function gerarLinkFrequencia(celula) {
+    if (!sb) return;
+    setState({ adminLinkSaving: true, adminCelulaEditError: null });
+    sb.rpc('gerar_token_frequencia', { p_celula: celula }).then(function (res) {
+      if (res.error) {
+        var msg = res.error.message || 'Não foi possível gerar o link.';
+        if (res.error.code === 'PGRST202' || /could not find the function/i.test(msg)) {
+          msg = 'Falta rodar supabase/add_frequencia_link.sql no SQL Editor do Supabase.';
+        }
+        setState({ adminLinkSaving: false, adminCelulaEditError: msg });
+        return;
+      }
+      setState({ adminLinkSaving: false, adminLinkCopiado: false });
+      loadCelulaHierarquia();
+    });
+  }
+
+  function copiarLinkFrequencia(token) {
+    var url = linkFrequenciaUrl(token);
+    try {
+      navigator.clipboard.writeText(url).then(function () { setState({ adminLinkCopiado: true }); });
+    } catch (e) {
+      window.prompt('Copie o link da frequência:', url);
+    }
+  }
+
+  function compartilharLinkFrequencia(celula, token) {
+    var texto = 'Lançamento de frequência da célula ' + celulaLabel(celula) + ':\n' + linkFrequenciaUrl(token) +
+      '\n\nAbra o link no celular, marque quem esteve no encontro e toque em Salvar. Não precisa de login — guarde o link.';
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
   }
 
   function salvarEdicaoCelula() {
@@ -1347,6 +1409,101 @@
   }
 
   // ---------------------------------------------------------------------
+  // Frequência por link (sem login) — index.html?frequencia=CODIGO
+  //
+  // Nada aqui lê ou escreve tabela direto: tudo passa pelas functions
+  // frequencia_publica_*, que conferem o código e só deixam mexer na
+  // célula daquele link.
+  // ---------------------------------------------------------------------
+  function abrirFrequenciaPublica(dataIso) {
+    if (!sb) return;
+    var token = state.fpToken;
+    var data = dataIso || state.fpData || hojeIso();
+    setState({ fpStatus: 'loading', fpErro: null, fpData: data, fpSalvo: null });
+    sb.rpc('frequencia_publica_abrir', { p_token: token, p_data: data }).then(function (res) {
+      if (res.error || !res.data) {
+        setState({ fpStatus: 'error', fpErro: erroLinkFrequencia(res.error) });
+        return;
+      }
+      var pessoas = res.data.pessoas || [];
+      var marcados = {};
+      pessoas.forEach(function (p) { if (p.presente) marcados[p.id] = true; });
+      setState({
+        fpStatus: 'ok', fpCelula: res.data.celula, fpPessoas: pessoas,
+        fpMarcados: marcados, fpJaLancado: !!res.data.ja_lancado,
+      });
+    });
+  }
+
+  function erroLinkFrequencia(err) {
+    var msg = (err && err.message) || 'Não foi possível abrir a frequência.';
+    if (/link inv/i.test(msg)) return 'Este link não vale mais. Peça um link novo ao seu pastor ou discipulador.';
+    if ((err && err.code === 'PGRST202') || /could not find the function/i.test(msg)) {
+      return 'Falta rodar supabase/add_frequencia_link.sql no Supabase.';
+    }
+    if (/data fora do per/i.test(msg)) return 'Escolha uma data de até 90 dias atrás, e não no futuro.';
+    return msg;
+  }
+
+  function toggleFrequenciaPublica(id) {
+    setState(function (s) {
+      var m = Object.assign({}, s.fpMarcados);
+      m[id] = !m[id];
+      return { fpMarcados: m, fpSalvo: null };
+    });
+  }
+
+  function marcarTodosPublico(valor) {
+    setState(function (s) {
+      var m = {};
+      if (valor) s.fpPessoas.forEach(function (p) { m[p.id] = true; });
+      return { fpMarcados: m, fpSalvo: null };
+    });
+  }
+
+  function salvarFrequenciaPublica() {
+    if (!sb) return;
+    var presentes = state.fpPessoas.filter(function (p) { return state.fpMarcados[p.id]; }).map(function (p) { return p.id; });
+    setState({ fpSaving: true, fpErro: null });
+    sb.rpc('frequencia_publica_salvar', { p_token: state.fpToken, p_data: state.fpData, p_presentes: presentes }).then(function (res) {
+      if (res.error) { setState({ fpSaving: false, fpErro: erroLinkFrequencia(res.error) }); return; }
+      setState({
+        fpSaving: false, fpJaLancado: true,
+        fpSalvo: { presentes: (res.data && res.data.presentes) || presentes.length, total: (res.data && res.data.total) || state.fpPessoas.length },
+      });
+    });
+  }
+
+  function abrirVisitantePublico() { setState({ fpVisitante: { nome: '', tel: '' }, fpErro: null }); }
+  function fecharVisitantePublico() { setState({ fpVisitante: null }); }
+  function setVisitantePublico(key, val) {
+    setState(function (s) {
+      var f = Object.assign({}, s.fpVisitante);
+      f[key] = val;
+      return { fpVisitante: f };
+    });
+  }
+
+  function salvarVisitantePublico() {
+    if (!sb) return;
+    var f = state.fpVisitante || {};
+    if (!(f.nome || '').trim()) { setState({ fpErro: 'Digite o nome do visitante.' }); return; }
+    setState({ fpVisitanteSaving: true, fpErro: null });
+    sb.rpc('frequencia_publica_visitante', {
+      p_token: state.fpToken, p_nome: f.nome, p_tel: f.tel || '', p_data: state.fpData,
+    }).then(function (res) {
+      if (res.error) { setState({ fpVisitanteSaving: false, fpErro: erroLinkFrequencia(res.error) }); return; }
+      setState(function (s) {
+        var pessoas = s.fpPessoas.concat([{ id: res.data, nome: (f.nome || '').trim(), status: 'Visitante', presente: true }])
+          .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
+        var marcados = Object.assign({}, s.fpMarcados);
+        marcados[res.data] = true;
+        return { fpPessoas: pessoas, fpMarcados: marcados, fpVisitante: null, fpVisitanteSaving: false, fpSalvo: null };
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Oikos IA — perguntas em linguagem natural sobre os dados do Oikos.
   //
   // O app só manda a pergunta. Quem calcula os números é a Edge Function
@@ -1811,6 +1968,7 @@
         celula: c, celulaLabelText: celulaLabel(c),
         pessoas: all.filter(function (p) { return p.celula === c; }).length,
         discipuladorNome: nomeMembro(row.discipulador_id), obreiroNome: nomeMembro(row.obreiro_id),
+        token: row.token_frequencia || '',
         editando: !!(state.adminCelulaEdit && state.adminCelulaEdit.original === c),
         onEditar: function () { abrirEdicaoCelula({ celula: c, discipulador_id: row.discipulador_id, obreiro_id: row.obreiro_id }); },
       };
@@ -1997,6 +2155,14 @@
       adminCelulaEdit: state.adminCelulaEdit, adminCelulaEditSaving: state.adminCelulaEditSaving,
       adminCelulaEditError: state.adminCelulaEditError, adminCelulaEditSalvo: state.adminCelulaEditSalvo,
       adminCelulaEditPessoas: state.adminCelulaEdit ? all.filter(function (p) { return p.celula === state.adminCelulaEdit.original; }).length : 0,
+      adminLinkSaving: state.adminLinkSaving, adminLinkCopiado: state.adminLinkCopiado,
+      adminLinkToken: state.adminCelulaEdit
+        ? ((state.celulaHierarquia || []).filter(function (h) { return h.celula === state.adminCelulaEdit.original; })[0] || {}).token_frequencia || ''
+        : '',
+      linkFrequenciaUrl: linkFrequenciaUrl,
+      gerarLinkFrequencia: function () { if (state.adminCelulaEdit) gerarLinkFrequencia(state.adminCelulaEdit.original); },
+      copiarLinkFrequencia: function (token) { return function () { copiarLinkFrequencia(token); }; },
+      compartilharLinkFrequencia: function (token) { return function () { compartilharLinkFrequencia(state.adminCelulaEdit.original, token); }; },
       onAdminCelulaEdit: function (key) { return function (e) { setAdminCelulaEdit(key, e.target.value); }; },
       salvarEdicaoCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); salvarEdicaoCelula(); },
       cancelarEdicaoCelula: function () { cancelarEdicaoCelula(); },
@@ -3295,7 +3461,9 @@
       kpiCard('Visitantes', k.visitantes, 'presenças lançadas na célula', { valueColor: '#6B3FA0' }) +
       '</div>';
 
-    if (v.semLancamento.length) {
+    // Cobrança de quem não lançou é assunto de quem supervisiona a rede
+    // inteira — só Pastor/Pastor de Rede/admin veem.
+    if (v.souFull && v.semLancamento.length) {
       html += '<div class="home-card home-empty" style="margin-bottom:14px">' +
         '<div class="home-card-title">Sem lançamento de célula nesta semana</div>' +
         '<div class="home-card-sub" style="margin-top:6px">' + escHtml(v.semLancamento.join(' · ')) + '</div></div>';
@@ -3928,6 +4096,72 @@
       '</div></div></div>';
   }
 
+  // Tela do link de frequência — mesmo formato do cadastro público.
+  function frequenciaPublicaHtml(vals) {
+    var cartao = function (conteudo) {
+      return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+        '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+        '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+        conteudo + '</div></div>';
+    };
+
+    if (vals.fpStatus === 'loading' || vals.fpStatus === 'idle') {
+      return cartao('<div style="font-size:13px;color:#6b7c93">Abrindo a frequência da sua célula…</div>');
+    }
+    if (vals.fpStatus === 'error') {
+      return cartao(
+        '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Não deu para abrir</div>' +
+        '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:600;margin-top:12px">' + escHtml(vals.fpErro || '') + '</div>');
+    }
+
+    var marcados = vals.fpPessoas.filter(function (p) { return vals.fpMarcados[p.id]; }).length;
+    var corpo =
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Frequência da célula</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:18px">' + escHtml(celulaLabel(vals.fpCelula)) + ' · marque quem esteve no encontro e salve.</div>' +
+      (vals.fpErro ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.fpErro) + '</div>' : '') +
+      (vals.fpSalvo
+        ? '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:12px 14px;font-size:13px;font-weight:600;margin-bottom:14px">Frequência registrada com sucesso — ' + vals.fpSalvo.presentes + ' de ' + vals.fpSalvo.total + ' presentes.</div>'
+        : '') +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data do encontro</label>' +
+      '<input type="date" id="fp-data" value="' + escHtml(vals.fpData) + '" ' + cb(vals.onFpData, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:14px 0 6px">' +
+      '<div style="font-size:12.5px;color:#4a5b70"><b style="color:#0E7A68">' + marcados + '</b> de ' + vals.fpPessoas.length + ' presentes' +
+      (vals.fpJaLancado ? ' <span style="color:#8a99ab">· já lançado, dá para corrigir</span>' : '') + '</div>' +
+      '<div style="display:flex;gap:6px">' +
+      '<button type="button" ' + cb(vals.marcarTodosFp(true)) + ' style="padding:7px 12px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12px;font-weight:600;color:#1B2344;cursor:pointer">Todos</button>' +
+      '<button type="button" ' + cb(vals.marcarTodosFp(false)) + ' style="padding:7px 12px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12px;font-weight:600;color:#6b7c93;cursor:pointer">Limpar</button>' +
+      '</div></div>' +
+      '<div style="border:1px solid #e6ecf4;border-radius:12px;padding:4px 10px;max-height:46vh;overflow:auto">' +
+      vals.fpPessoas.map(function (p) {
+        var presente = !!vals.fpMarcados[p.id];
+        return '<div class="freq-linha freq-linha-1col">' +
+          '<div style="min-width:0"><div class="freq-nome">' + escHtml(p.nome) + '</div>' +
+          (p.status && p.status !== 'Membro' ? '<div style="font-size:10.5px;color:#8a99ab;font-weight:600;margin-top:2px">' + escHtml(p.status === 'Frequentador Assíduo' ? 'FA' : p.status) + '</div>' : '') +
+          '</div>' +
+          '<div style="text-align:center">' + freqToggle(presente, presente ? 'Sim' : 'Não', cb(vals.onFpToggle(p.id))) + '</div>' +
+          '</div>';
+      }).join('') +
+      (vals.fpPessoas.length ? '' : '<div style="padding:16px 4px;font-size:12.5px;color:#8a99ab">Ninguém cadastrado nesta célula ainda.</div>') +
+      '</div>';
+
+    if (vals.fpVisitante) {
+      corpo += '<div style="border:1px solid #e6ecf4;border-radius:12px;padding:14px;margin-top:12px;background:#f7f9fc">' +
+        '<div style="font-size:13px;font-weight:700;color:#14243a;margin-bottom:10px">Novo visitante</div>' +
+        '<input type="text" id="fp-visitante-nome" value="' + escHtml(vals.fpVisitante.nome) + '" ' + cb(vals.onFpVisitante('nome'), 'input') + ' placeholder="Nome do visitante" style="width:100%;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+        '<input type="text" id="fp-visitante-tel" value="' + escHtml(vals.fpVisitante.tel) + '" ' + cb(vals.onFpVisitante('tel'), 'input') + ' placeholder="Telefone (opcional)" style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box">' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+        '<button type="button" ' + cb(vals.salvarFpVisitante) + (vals.fpVisitanteSaving ? ' disabled' : '') + ' style="padding:9px 14px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">' + (vals.fpVisitanteSaving ? 'Salvando…' : 'Adicionar') + '</button>' +
+        '<button type="button" ' + cb(vals.fecharFpVisitante) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#6b7c93;cursor:pointer">Cancelar</button>' +
+        '</div></div>';
+    } else {
+      corpo += '<button type="button" ' + cb(vals.abrirFpVisitante) + ' style="width:100%;margin-top:12px;padding:10px;border:1px dashed #c9d6ea;border-radius:12px;background:#fff;font-size:13px;font-weight:700;color:#0E7A68;cursor:pointer">+ Adicionar visitante</button>';
+    }
+
+    corpo += '<button type="button" ' + cb(vals.salvarFp) + (vals.fpSaving ? ' disabled' : '') + ' style="width:100%;margin-top:14px;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font-size:15px;font-weight:800;cursor:pointer">' +
+      (vals.fpSaving ? 'Salvando…' : 'Salvar frequência') + '</button>';
+    return cartao(corpo);
+  }
+
   function cadastroPublicoHtml(vals) {
     var f = vals.publicForm;
     var celulaOpts = (vals.celulasPublicas || []).map(function (c) { return { v: c, label: celulaLabel(c) }; });
@@ -4156,6 +4390,20 @@
       '<button type="submit"' + (vals.adminCelulaEditSaving ? ' disabled' : '') + ' style="padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminCelulaEditSaving ? 'Salvando…' : 'Salvar alterações') + '</button>' +
       '<button type="button" ' + cb(vals.cancelarEdicaoCelula) + ' style="padding:10px 16px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Cancelar</button>' +
       '</div></form>';
+    // Link que o líder usa para lançar a frequência sem login.
+    var token = vals.adminLinkToken;
+    body += '<div style="margin-top:18px;padding-top:16px;border-top:1px dashed #e6ecf4">' +
+      '<div style="font-size:13.5px;font-weight:800;color:#14243a">Link de frequência (sem login)</div>' +
+      '<div class="home-card-sub" style="margin-top:2px">O líder abre esse link no celular e lança a presença desta célula, sem precisar de conta. Gerar um link novo desativa o anterior.</div>' +
+      (token
+        ? '<div style="margin-top:10px;background:#f7f9fc;border:1px solid #e6ecf4;border-radius:10px;padding:10px 12px;font-size:11.5px;color:#4a5b70;overflow-wrap:anywhere">' + escHtml(vals.linkFrequenciaUrl(token)) + '</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+          '<button type="button" ' + cb(vals.compartilharLinkFrequencia(token)) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #149C88;border-radius:999px;background:#fff;font-size:12.5px;color:#0E7A68;font-weight:700;cursor:pointer">' + whatsappIcon + ' Enviar por WhatsApp</button>' +
+          '<button type="button" ' + cb(vals.copiarLinkFrequencia(token)) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;color:#4a5b70;font-weight:600;cursor:pointer">' + (vals.adminLinkCopiado ? 'Copiado!' : 'Copiar link') + '</button>' +
+          '<button type="button" ' + cb(vals.gerarLinkFrequencia) + (vals.adminLinkSaving ? ' disabled' : '') + ' style="padding:8px 14px;border:none;background:none;font-size:12.5px;color:#a02020;font-weight:700;cursor:pointer">Gerar link novo</button>' +
+          '</div>'
+        : '<button type="button" ' + cb(vals.gerarLinkFrequencia) + (vals.adminLinkSaving ? ' disabled' : '') + ' style="margin-top:10px;padding:9px 16px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">' + (vals.adminLinkSaving ? 'Gerando…' : 'Gerar link de frequência') + '</button>') +
+      '</div>';
     return adminCard('Editar célula · ' + celulaLabel(e.original), 'Altere o nome e quem responde por ela. As pessoas continuam na célula.', body);
   }
 
@@ -4209,7 +4457,7 @@
   // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
   // nascimento). Por isso preservamos o valor atual antes de trocar o
   // HTML e devolvemos ele depois.
-  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'culto-data-input', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
 
   function render() {
     var root = document.getElementById('app');
@@ -4229,6 +4477,22 @@
     var html;
     if (!supabaseConfigured()) {
       html = naoConfiguradoHtml();
+    } else if (state.fpToken) {
+      // Link de frequência: não passa por login nenhum.
+      html = frequenciaPublicaHtml({
+        fpStatus: state.fpStatus, fpErro: state.fpErro, fpCelula: state.fpCelula,
+        fpData: state.fpData, fpPessoas: state.fpPessoas, fpMarcados: state.fpMarcados,
+        fpJaLancado: state.fpJaLancado, fpSaving: state.fpSaving, fpSalvo: state.fpSalvo,
+        fpVisitante: state.fpVisitante, fpVisitanteSaving: state.fpVisitanteSaving,
+        onFpData: function (e) { abrirFrequenciaPublica(e.target.value); },
+        onFpToggle: function (id) { return function () { toggleFrequenciaPublica(id); }; },
+        marcarTodosFp: function (valor) { return function () { marcarTodosPublico(valor); }; },
+        salvarFp: function () { salvarFrequenciaPublica(); },
+        abrirFpVisitante: function () { abrirVisitantePublico(); },
+        fecharFpVisitante: function () { fecharVisitantePublico(); },
+        onFpVisitante: function (key) { return function (e) { setVisitantePublico(key, e.target.value); }; },
+        salvarFpVisitante: function () { salvarVisitantePublico(); },
+      });
     } else if (state.isPublicCadastro) {
       html = cadastroPublicoHtml({
         publicForm: state.publicForm, publicSaving: state.publicSaving, publicError: state.publicError, publicSalvo: state.publicSalvo,
@@ -4337,6 +4601,7 @@
     root.addEventListener('submit', handleEvt);
     if (supabaseConfigured()) {
       sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+      if (state.fpToken) { abrirFrequenciaPublica(); render(); return; }
       checkSession();
       loadCelulasPublicas();
       // Sem sessão, a tela padrão é o Cadastro de Membros público — já

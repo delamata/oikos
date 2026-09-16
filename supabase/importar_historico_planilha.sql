@@ -8,16 +8,19 @@
 -- histórico. Os lançamentos novos, feitos no Oikos, continuam pessoa a
 -- pessoa em celula_encontros / presencas_celula.
 --
+-- Ficam DE FORA desta importação, a pedido: tudo de 2025 (52 registros)
+-- e a célula "Junior e Luciana" (30 registros), que não existe mais.
+--
 -- Gerado de: gviz/tq?tqx=out:csv (planilha 1QgKeRK…QTnU, aba 792733803)
--- Registros: 136 (1 envio(s) repetido(s) descartado(s))
--- Período:   2025-03-06 a 2026-09-13
---   Claudio e Renata      35 registros
---   Josivan e Celia       65 registros
---   Junior e Luciana      30 registros
+-- Registros: 55 (0 envio(s) repetido(s) descartado(s))
+-- Período:   2026-01-15 a 2026-09-13
+--   Claudio e Renata      26 registros
+--   Josivan e Celia       23 registros
 --   Otavio e Jô            6 registros
 --
 -- Pode rodar de novo quando quiser: a tabela é limpa antes de inserir,
--- então reimportar não duplica nada. Rode depois de
+-- então reimportar não duplica nada — e quem já tinha importado 2025 ou
+-- a Junior e Luciana fica com esses registros removidos. Rode depois de
 -- add_frequencia_historico.sql.
 
 begin;
@@ -25,115 +28,34 @@ begin;
 delete from frequencia_planilha;
 
 insert into frequencia_planilha (celula, data, rodizio, membros, fas, visitantes, kids, enviado_em) values
-  ('Junior e Luciana', '2025-03-06', false, 5, 4, 0, 2, '2025-03-25 14:26:18'),
-  ('Josivan e Celia', '2025-03-07', false, 8, 0, 3, 7, '2025-03-23 21:34:46'),
-  ('Junior e Luciana', '2025-03-13', false, 5, 3, 0, 2, '2025-03-25 14:27:54'),
-  ('Josivan e Celia', '2025-03-14', false, 8, 0, 2, 4, '2025-03-23 21:37:36'),
-  ('Junior e Luciana', '2025-03-20', false, 4, 5, 0, 2, '2025-03-23 14:08:19'),
-  ('Josivan e Celia', '2025-03-21', false, 7, 0, 2, 3, '2025-03-23 14:03:20'),
-  ('Josivan e Celia', '2025-03-22', true, 5, 0, 9, 5, '2025-03-23 21:42:27'),
-  ('Josivan e Celia', '2025-03-27', false, 7, 0, 0, 2, '2025-04-02 12:00:33'),
-  ('Junior e Luciana', '2025-04-03', false, 3, 1, 0, 1, '2025-04-03 23:45:54'),
-  ('Josivan e Celia', '2025-04-04', false, 7, 1, 4, 2, '2025-04-05 15:59:13'),
-  ('Josivan e Celia', '2025-04-16', false, 8, 0, 0, 2, '2025-05-05 07:18:47'),
-  ('Junior e Luciana', '2025-04-17', false, 3, 1, 0, 1, '2025-04-21 13:01:13'),
-  ('Josivan e Celia', '2025-04-25', false, 6, 2, 1, 2, '2025-05-05 07:20:50'),
-  ('Josivan e Celia', '2025-05-02', false, 7, 2, 2, 6, '2025-05-05 07:24:32'),
-  ('Josivan e Celia', '2025-05-09', false, 6, 0, 1, 6, '2025-06-22 12:48:23'),
-  ('Junior e Luciana', '2025-05-15', false, 4, 0, 0, 2, '2025-05-16 08:24:00'),
-  ('Josivan e Celia', '2025-05-16', false, 11, 3, 0, 2, '2025-06-22 12:51:04'),
-  ('Josivan e Celia', '2025-05-23', false, 12, 1, 1, 5, '2025-06-22 12:52:17'),
-  ('Junior e Luciana', '2025-05-29', false, 5, 2, 1, 3, '2025-05-29 23:10:21'),
-  ('Josivan e Celia', '2025-05-30', false, 11, 0, 1, 2, '2025-06-22 12:55:02'),
-  ('Claudio e Renata', '2025-06-05', false, 7, 1, 0, 1, '2025-06-24 21:11:36'),
-  ('Josivan e Celia', '2025-06-05', false, 3, 0, 0, 0, '2025-06-22 12:56:09'),
-  ('Claudio e Renata', '2025-06-11', false, 7, 1, 0, 1, '2025-06-24 21:12:56'),
-  ('Claudio e Renata', '2025-06-11', false, 11, 1, 1, 3, '2026-06-12 09:36:25'),
-  ('Josivan e Celia', '2025-06-13', false, 10, 1, 2, 3, '2025-06-22 12:57:52'),
-  ('Claudio e Renata', '2025-06-19', true, 3, 0, 0, 1, '2025-06-24 21:13:53'),
-  ('Josivan e Celia', '2025-06-19', true, 6, 0, 1, 2, '2025-06-22 12:59:24'),
-  ('Claudio e Renata', '2025-06-26', false, 6, 0, 1, 2, '2025-07-02 17:06:28'),
-  ('Junior e Luciana', '2025-06-26', false, 7, 2, 1, 4, '2025-06-27 01:48:52'),
-  ('Josivan e Celia', '2025-06-27', false, 14, 0, 1, 5, '2025-07-02 15:10:33'),
-  ('Claudio e Renata', '2025-07-03', false, 6, 1, 0, 1, '2025-07-04 08:16:08'),
-  ('Junior e Luciana', '2025-07-03', false, 5, 0, 1, 1, '2025-07-10 23:02:18'),
-  ('Josivan e Celia', '2025-07-04', false, 11, 1, 0, 4, '2025-07-08 09:49:21'),
-  ('Claudio e Renata', '2025-07-10', false, 5, 1, 0, 0, '2025-07-11 17:00:08'),
-  ('Junior e Luciana', '2025-07-10', false, 3, 0, 2, 2, '2025-07-10 23:00:55'),
-  ('Josivan e Celia', '2025-07-11', false, 11, 0, 0, 2, '2025-07-19 11:38:45'),
-  ('Junior e Luciana', '2025-07-17', false, 3, 3, 1, 1, '2025-07-25 01:34:40'),
-  ('Josivan e Celia', '2025-07-18', false, 12, 1, 2, 2, '2025-07-19 11:39:35'),
-  ('Junior e Luciana', '2025-07-24', false, 5, 5, 1, 1, '2025-07-25 01:36:59'),
-  ('Josivan e Celia', '2025-07-26', false, 8, 3, 0, 2, '2025-07-26 12:59:48'),
-  ('Junior e Luciana', '2025-07-30', false, 5, 2, 1, 2, '2025-08-01 11:50:18'),
-  ('Josivan e Celia', '2025-08-01', false, 5, 1, 0, 1, '2025-08-04 17:06:48'),
-  ('Junior e Luciana', '2025-08-07', false, 3, 3, 0, 2, '2025-08-08 12:35:11'),
-  ('Josivan e Celia', '2025-08-08', true, 5, 0, 2, 0, '2025-08-09 11:36:59'),
-  ('Junior e Luciana', '2025-08-14', false, 3, 0, 1, 2, '2025-08-16 13:18:33'),
-  ('Josivan e Celia', '2025-08-15', true, 7, 0, 3, 3, '2025-08-18 09:53:56'),
-  ('Junior e Luciana', '2025-08-21', false, 4, 2, 1, 2, '2025-08-22 10:48:45'),
-  ('Josivan e Celia', '2025-08-22', true, 8, 3, 1, 3, '2025-08-25 19:24:55'),
-  ('Junior e Luciana', '2025-08-28', false, 3, 0, 0, 2, '2025-08-29 10:29:45'),
-  ('Josivan e Celia', '2025-08-29', false, 6, 1, 0, 4, '2025-09-30 11:53:33'),
-  ('Josivan e Celia', '2025-09-05', false, 7, 1, 0, 3, '2025-09-30 11:55:06'),
-  ('Josivan e Celia', '2025-09-12', false, 7, 1, 0, 3, '2025-09-30 11:56:28'),
-  ('Josivan e Celia', '2025-09-19', false, 10, 2, 2, 2, '2025-09-30 11:57:26'),
-  ('Josivan e Celia', '2025-09-26', false, 9, 1, 2, 3, '2025-09-30 11:58:26'),
-  ('Josivan e Celia', '2025-10-03', false, 7, 0, 2, 2, '2025-10-21 08:53:20'),
-  ('Josivan e Celia', '2025-10-10', false, 5, 1, 2, 2, '2025-10-21 08:54:03'),
-  ('Josivan e Celia', '2025-10-17', false, 9, 1, 0, 2, '2025-10-21 08:55:09'),
-  ('Josivan e Celia', '2025-10-24', false, 10, 2, 0, 2, '2025-11-04 11:52:47'),
-  ('Josivan e Celia', '2025-10-30', true, 5, 0, 0, 2, '2025-11-04 11:53:52'),
-  ('Claudio e Renata', '2025-11-06', false, 8, 0, 1, 2, '2025-11-07 08:25:58'),
-  ('Josivan e Celia', '2025-11-07', false, 5, 0, 0, 1, '2025-11-10 08:41:24'),
-  ('Claudio e Renata', '2025-11-14', true, 8, 0, 7, 1, '2025-11-18 16:26:01'),
-  ('Josivan e Celia', '2025-11-14', false, 7, 1, 0, 2, '2025-12-19 09:41:57'),
-  ('Josivan e Celia', '2025-11-21', false, 4, 1, 0, 0, '2025-12-19 09:44:12'),
-  ('Josivan e Celia', '2025-11-28', false, 10, 2, 0, 3, '2025-12-19 09:45:33'),
-  ('Josivan e Celia', '2025-12-05', false, 7, 0, 0, 2, '2025-12-19 09:46:39'),
-  ('Josivan e Celia', '2025-12-12', true, 14, 2, 0, 3, '2025-12-19 09:47:15'),
-  ('Josivan e Celia', '2025-12-18', false, 4, 1, 0, 1, '2025-12-19 09:47:54'),
   ('Claudio e Renata', '2026-01-15', false, 0, 0, 0, 0, '2026-01-15 21:01:25'),
   ('Josivan e Celia', '2026-01-16', false, 7, 0, 0, 1, '2026-01-23 10:42:39'),
   ('Claudio e Renata', '2026-02-05', false, 8, 0, 0, 0, '2026-02-06 16:21:11'),
   ('Josivan e Celia', '2026-02-05', false, 13, 1, 0, 3, '2026-02-07 17:31:33'),
-  ('Junior e Luciana', '2026-02-05', false, 5, 2, 1, 2, '2026-02-07 22:28:16'),
   ('Josivan e Celia', '2026-02-12', true, 10, 0, 1, 2, '2026-02-25 19:43:04'),
-  ('Junior e Luciana', '2026-02-19', false, 5, 0, 0, 3, '2026-02-19 22:48:51'),
   ('Josivan e Celia', '2026-02-20', false, 10, 1, 0, 4, '2026-02-25 19:41:25'),
-  ('Junior e Luciana', '2026-02-26', false, 3, 1, 0, 3, '2026-02-26 22:35:51'),
   ('Josivan e Celia', '2026-02-27', false, 10, 2, 0, 3, '2026-03-04 11:48:34'),
   ('Claudio e Renata', '2026-03-05', true, 10, 0, 3, 1, '2026-04-01 20:43:43'),
-  ('Junior e Luciana', '2026-03-05', false, 5, 0, 1, 3, '2026-03-05 22:32:14'),
   ('Josivan e Celia', '2026-03-06', true, 13, 0, 3, 12, '2026-03-14 10:02:21'),
   ('Claudio e Renata', '2026-03-12', false, 9, 0, 0, 0, '2026-04-01 20:42:47'),
-  ('Junior e Luciana', '2026-03-12', false, 2, 0, 0, 2, '2026-03-12 22:39:34'),
   ('Josivan e Celia', '2026-03-13', false, 11, 2, 1, 4, '2026-03-14 09:57:18'),
   ('Claudio e Renata', '2026-03-19', false, 9, 1, 0, 0, '2026-04-01 20:42:07'),
-  ('Junior e Luciana', '2026-03-19', false, 3, 0, 0, 2, '2026-03-19 23:42:22'),
   ('Josivan e Celia', '2026-03-20', false, 10, 1, 0, 3, '2026-03-30 09:47:05'),
   ('Claudio e Renata', '2026-03-26', false, 8, 0, 0, 0, '2026-04-01 20:40:37'),
-  ('Junior e Luciana', '2026-03-26', false, 4, 0, 0, 2, '2026-03-26 23:37:52'),
   ('Otavio e Jô', '2026-03-26', true, 14, 4, 6, 3, '2026-04-09 18:52:03'),
   ('Josivan e Celia', '2026-03-27', false, 11, 1, 0, 4, '2026-03-30 09:48:26'),
   ('Josivan e Celia', '2026-04-02', false, 8, 1, 0, 3, '2026-04-20 14:23:03'),
-  ('Junior e Luciana', '2026-04-02', false, 1, 0, 0, 1, '2026-04-02 23:36:46'),
   ('Otavio e Jô', '2026-04-02', true, 14, 3, 5, 1, '2026-04-09 18:44:49'),
   ('Claudio e Renata', '2026-04-09', false, 8, 0, 0, 0, '2026-04-20 08:59:46'),
-  ('Junior e Luciana', '2026-04-09', false, 3, 1, 0, 2, '2026-04-09 23:28:31'),
   ('Josivan e Celia', '2026-04-10', false, 10, 1, 0, 3, '2026-04-20 14:24:27'),
   ('Claudio e Renata', '2026-04-16', false, 8, 0, 0, 0, '2026-04-20 08:59:17'),
   ('Josivan e Celia', '2026-04-16', false, 12, 0, 0, 2, '2026-04-20 14:25:28'),
-  ('Junior e Luciana', '2026-04-16', false, 3, 1, 3, 2, '2026-04-16 22:45:37'),
   ('Otavio e Jô', '2026-04-17', false, 15, 0, 0, 1, '2026-05-14 15:01:52'),
   ('Claudio e Renata', '2026-04-23', false, 9, 0, 0, 0, '2026-05-15 08:44:14'),
-  ('Junior e Luciana', '2026-04-23', false, 4, 0, 0, 2, '2026-04-23 22:09:44'),
   ('Otavio e Jô', '2026-04-23', false, 17, 0, 2, 1, '2026-05-14 15:06:21'),
   ('Josivan e Celia', '2026-04-24', false, 13, 1, 2, 5, '2026-04-29 20:33:27'),
   ('Claudio e Renata', '2026-04-30', false, 9, 0, 0, 0, '2026-05-15 08:44:36'),
-  ('Junior e Luciana', '2026-04-30', false, 5, 2, 0, 2, '2026-04-30 23:03:33'),
   ('Claudio e Renata', '2026-05-07', false, 8, 1, 0, 1, '2026-05-13 21:22:59'),
-  ('Junior e Luciana', '2026-05-07', false, 3, 2, 0, 2, '2026-05-07 22:27:36'),
   ('Otavio e Jô', '2026-05-07', false, 16, 0, 0, 1, '2026-05-14 15:08:06'),
   ('Claudio e Renata', '2026-05-14', false, 12, 0, 2, 3, '2026-05-15 08:46:01'),
   ('Claudio e Renata', '2026-05-21', false, 16, 1, 0, 2, '2026-05-22 09:02:55'),
