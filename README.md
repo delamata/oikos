@@ -12,10 +12,8 @@ dados + autenticação).
   - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro**, as células em que é o obreiro responsável; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
   - Clicar num cartão de célula abre o Cadastro de Membros já filtrado por ela.
 - **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. **Tipo** de cadastro: Adultos, Jovens ou Kids e Juvenis — cada tipo é contado pelo próprio nome nos indicadores; Jovens entram no Trilho do Vencedor junto com Adultos e podem ser vinculados como cônjuge. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
-- **Frequência** — lançamento semanal da célula, pensado para o celular. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa) e a data de hoje; marca quem veio à **célula** e quem foi ao **culto** da semana, e salva tudo de uma vez ("Frequência registrada com sucesso"). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Três abas: **Lançar**, **Histórico** (encontros do período, com filtro por célula/discipulador/rede e o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
+- **Frequência** — lançamento semanal, pensado para o celular. Como a célula e o culto acontecem em **dias diferentes**, são **dois lançamentos separados**, cada um com a sua data: a chave no topo alterna entre **Encontro da célula** e **Culto**. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa), a data de hoje para a célula e o domingo mais recente para o culto; marca os presentes e salva. Dá para **apagar um lançamento** (apaga o encontro da célula, ou a presença daquela célula naquele culto — o culto em si continua, porque é da igreja toda). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Três abas: **Lançar**, **Histórico** (duas listas — encontros de célula e cultos — com filtro por período/célula/discipulador/rede, mais o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
 - **Oikos IA** — só para Pastor, Pastor de Rede e administradores. Perguntas em português sobre os dados do Oikos ("quais células estão com queda de frequência?", "quantos visitantes tivemos neste mês?"), com sugestões clicáveis na tela. Veja "Oikos IA" abaixo.
-- **Presença por Célula** — lida de uma planilha Google (formulário que os líderes já preenchem), somente leitura.
-- **Presença no Culto** — check-in pessoa por pessoa, por culto/data.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
 - **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem), **Fora da contagem** (transferidos e perdidos) e **Inativos**. Nas duas últimas listas, clicar numa linha abre a ficha da pessoa — dá pra editar o cadastro dali, inclusive reativar quem voltou.
 - **+ Novo Cadastro** — formulário de criação e edição de membros.
@@ -142,10 +140,8 @@ separada):
   cônjuge vinculado.
 
 Isso é reforçado por Row Level Security no Postgres (não é só escondido
-na tela) — veja `supabase/add_rbac.sql`. "Presença por Célula" (planilha
-Google) e "Presença no Culto" continuam abertos a qualquer líder logado,
-independente do nível — só o Cadastro/Trilho/Movimentações seguem a
-hierarquia.
+na tela) — veja `supabase/add_rbac.sql`. Cadastro, Frequência (célula e
+culto), Trilho e Movimentações seguem a hierarquia.
 
 Como cada login descobre quem é: no primeiro acesso, aparece uma tela
 "Qual desses é você?" — o próprio líder busca e seleciona seu nome no
@@ -163,9 +159,8 @@ Na aba **Administração** (só acesso total):
   formulário para mudar o **nome** da célula e quem responde por ela.
   Renomear leva junto todas as pessoas da célula (ativas, inativas e
   transferidas) numa operação só, feita pela function `editar_celula()`
-  (`supabase/add_editar_celula.sql`), que só aceita acesso total. A
-  Presença por Célula vem da planilha Google: se ela usa o nome antigo,
-  atualize lá também.
+  (`supabase/add_editar_celula.sql`), que só aceita acesso total — os
+  lançamentos de frequência acompanham o nome novo.
 - **Nova Liderança** — cadastra um novo Pastor, Obreiro, Discipulador ou
   Líder, escolhendo entre criar a pessoa do zero ou vincular a acesso a
   alguém já cadastrado. Regras aplicadas:
@@ -324,6 +319,7 @@ sistema.
    - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
    - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
    - Rode [`supabase/add_frequencia.sql`](supabase/add_frequencia.sql) uma vez, **depois** do `add_hierarquia_status.sql` — cria o módulo de Frequência (encontros e presenças por célula), fecha `presencas_culto` por escopo de célula e atualiza `editar_celula()` para levar os encontros junto ao renomear.
+   - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.

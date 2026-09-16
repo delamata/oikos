@@ -98,10 +98,6 @@
   ];
   var SITUACAO_LABELS = SITUACAO_OPTIONS.reduce(function (m, o) { m[o.v] = o.label; return m; }, {});
 
-  var ATT_SHEET_ID = '1QgKeRKFm_jymG5WN6C_Kx904plvd0ss6YZCcw-4QTnU';
-  var ATT_GID = '792733803';
-  var ATT_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + ATT_SHEET_ID + '/gviz/tq?tqx=out:csv&gid=' + ATT_GID;
-
   function safeGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
   }
@@ -222,32 +218,24 @@
     novoEditId: null,
     novoEditOriginal: null,
 
-    // presença por célula (planilha Google — inalterado)
-    presAtt: [],
-    pFilters: { celula: '', ano: '', mes: '', mesTop: '' },
-    syncStatusP: 'idle',
-    lastSyncP: safeGet('presenca_lastSync'),
-    sortP: { key: 'data', dir: -1 },
 
-    // presença no culto (Supabase)
-    cultos: [],
-    cultosStatus: 'idle',
-    presencasByCulto: {},     // culto_id -> { member_id: presente }
-    presencasStatus: 'idle',
-    cultoAtual: null,
-    novoCultoData: new Date().toISOString().slice(0, 10),
-    cultoFilters: { celula: '', q: '' },
 
     // frequência das células (lançamento semanal do líder)
     freqTab: 'lancar',            // lancar | historico | painel
+    // Célula e culto são lançamentos separados, cada um com a sua data.
+    freqModo: 'celula',           // celula | culto
     freqCelula: '',
-    freqData: '',
+    freqData: '',                 // data do encontro da célula
+    freqCultoData: '',            // data do culto
     freqEncontro: null,           // linha de celula_encontros da célula+data
+    freqCulto: null,              // linha de cultos da data escolhida
     freqEncontroStatus: 'idle',
     freqPresencas: {},            // member_id -> presente na célula
-    freqPresencasCulto: {},       // member_id -> presente no culto da semana
+    freqPresencasCulto: {},       // member_id -> presente no culto
     freqJaLancadas: {},           // quem já tinha linha salva (pra não sobrescrever created_by)
+    freqJaLancadasCulto: {},
     freqEncontros: [],            // view frequencia_encontros (resumo por encontro)
+    freqCultos: [],               // view frequencia_cultos (resumo por culto/célula)
     freqEncontrosStatus: 'idle',
     freqSaving: false,
     freqSalvo: false,
@@ -294,28 +282,6 @@
     if (!digits) return 0;
     var n = parseInt(digits, 10);
     return isNaN(n) ? 0 : n;
-  }
-
-  function parseCSV(text) {
-    var rows = [];
-    var row = [], field = '', inQuotes = false;
-    for (var i = 0; i < text.length; i++) {
-      var c = text[i];
-      if (inQuotes) {
-        if (c === '"') {
-          if (text[i + 1] === '"') { field += '"'; i++; }
-          else inQuotes = false;
-        } else field += c;
-      } else {
-        if (c === '"') inQuotes = true;
-        else if (c === ',') { row.push(field); field = ''; }
-        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-        else if (c === '\r') { /* skip */ }
-        else field += c;
-      }
-    }
-    if (field.length || row.length) { row.push(field); rows.push(row); }
-    return rows.filter(function (r) { return r.length && r.some(function (v) { return v !== ''; }); });
   }
 
   function celulaLabel(c) {
@@ -367,7 +333,6 @@
 
   function setF(key, val) { setState(function (s) { var f = Object.assign({}, s.filters); f[key] = val; return { filters: f }; }); }
   function setAnonF(key, val) { setState(function (s) { var f = Object.assign({}, s.anonFilters); f[key] = val; return { anonFilters: f }; }); }
-  function setPF(key, val) { setState(function (s) { var f = Object.assign({}, s.pFilters); f[key] = val; return { pFilters: f }; }); }
   function setTF(key, val) { setState(function (s) { var f = Object.assign({}, s.trilhoFilters); f[key] = val; return { trilhoFilters: f }; }); }
   function setNF(key, val) { setState(function (s) { var f = Object.assign({}, s.novoForm); f[key] = val; return { novoForm: f, novoSalvo: false }; }); }
 
@@ -426,7 +391,7 @@
 
   function doLogout() {
     sb.auth.signOut().then(function () {
-      setState({ session: false, members: [], cultos: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
+      setState({ session: false, members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
     });
   }
 
@@ -439,7 +404,7 @@
   // Vínculo login → cadastro (profiles) e hierarquia célula → discipulador/obreiro
   // ---------------------------------------------------------------------
   function afterLinked() {
-    loadMembers(); loadCultos(); loadMovimentacoes(); syncAttendance(); loadCelulaHierarquia();
+    loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia();
   }
 
   function loadProfile() {
@@ -1009,59 +974,6 @@
   }
 
   // ---------------------------------------------------------------------
-  // Presença por célula (planilha Google — inalterado)
-  // ---------------------------------------------------------------------
-  function syncAttendance() {
-    setState({ syncStatusP: 'loading' });
-    fetch(ATT_CSV_URL + '&_t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (text) {
-        var rows = parseCSV(text);
-        if (!rows.length) throw new Error('Planilha vazia');
-        var header = rows[0].map(function (h) { return h.trim(); });
-        var norm = function (s) { return s.toLowerCase().replace(/\s+/g, ' ').trim(); };
-        var findCol = function (needle) { return header.findIndex(function (h) { return norm(h).includes(norm(needle)); }); };
-        var cLider = findCol('Nome do Lider'), cData = findCol('Data da Célula'),
-          cTipo = findCol('Ponte ou'), cMembros = findCol('Qtde de membros'),
-          cFA = findCol('Qtde de FA'), cVisit = findCol('Qtde de Visitantes'),
-          cKidsVisit = findCol('Visitantes Kids'),
-          cKids = header.findIndex(function (h, i) { return norm(h).includes('kids') && i !== cKidsVisit; }),
-          cMes = findCol('Mês'), cAno = findCol('Ano');
-        var records = rows.slice(1).map(function (r) {
-          var celula = (r[cLider] || '').trim();
-          var dataStr = (r[cData] || '').trim();
-          if (!celula || !dataStr) return null;
-          var m = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          var iso = m ? (m[3] + '-' + String(+m[2]).padStart(2, '0') + '-' + String(+m[1]).padStart(2, '0')) : null;
-          var mesNome = (r[cMes] || '').trim().toUpperCase();
-          var ano = parseInt((r[cAno] || '').trim(), 10) || (m ? +m[3] : null);
-          var mesIdx = MESES_PT.indexOf(mesNome);
-          var membros = numOrZero(r[cMembros]);
-          var fa = numOrZero(r[cFA]);
-          var visit = numOrZero(r[cVisit]);
-          var kids = numOrZero(r[cKids]);
-          var kidsVisit = cKidsVisit >= 0 ? numOrZero(r[cKidsVisit]) : 0;
-          return {
-            celula: celula, dataIso: iso, dataLabel: dataStr,
-            tipoRodizio: (r[cTipo] || '').trim(),
-            membros: membros, fa: fa, visit: visit, kids: kids + kidsVisit,
-            mesIdx: mesIdx >= 0 ? mesIdx : (m ? +m[2] - 1 : null),
-            ano: ano,
-            total: membros + fa + visit + kids + kidsVisit,
-          };
-        }).filter(Boolean);
-        if (!records.length) throw new Error('Nenhum registro encontrado');
-        var now = new Date().toISOString();
-        safeSet('presenca_lastSync', now);
-        setState({ presAtt: records, syncStatusP: 'ok', lastSyncP: now });
-      })
-      .catch(function (err) {
-        console.warn('Sync de presença falhou:', err.message);
-        setState({ syncStatusP: 'error' });
-      });
-  }
-
-  // ---------------------------------------------------------------------
   // Frequência das células (supabase/add_frequencia.sql)
   //
   // Um encontro por célula/data (celula_encontros) + a presença de cada
@@ -1114,7 +1026,8 @@
   function loadFrequencia() {
     if (!sb) return;
     setState({ freqEncontrosStatus: 'loading' });
-    sb.from('frequencia_encontros').select('*').gte('data', isoMenosDias(365)).order('data', { ascending: false }).then(function (res) {
+    var desde = isoMenosDias(365);
+    sb.from('frequencia_encontros').select('*').gte('data', desde).order('data', { ascending: false }).then(function (res) {
       if (res.error) {
         console.warn('Erro ao carregar frequência:', res.error.message);
         setState({ freqEncontrosStatus: 'error', freqErro: erroFrequencia(res.error) });
@@ -1122,63 +1035,96 @@
       }
       setState({ freqEncontros: res.data || [], freqEncontrosStatus: 'ok' });
     });
+    sb.from('frequencia_cultos').select('*').gte('data', desde).order('data', { ascending: false }).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar cultos:', res.error.message); return; }
+      setState({ freqCultos: res.data || [] });
+    });
   }
 
+  // ---- Lançamento da CÉLULA (celula_encontros + presencas_celula) ----
   function abrirEncontroFrequencia(celula, data) {
-    if (!sb || !celula || !data) { setState({ freqEncontro: null, freqPresencas: {}, freqPresencasCulto: {}, freqJaLancadas: {} }); return; }
+    if (!sb || !celula || !data) { setState({ freqEncontro: null, freqPresencas: {}, freqJaLancadas: {} }); return; }
     setState({ freqEncontroStatus: 'loading', freqSalvo: false, freqErro: null });
     sb.from('celula_encontros').select('*').eq('celula', celula).eq('data', data).maybeSingle().then(function (res) {
       if (res.error) { setState({ freqEncontroStatus: 'error', freqErro: erroFrequencia(res.error) }); return; }
       var enc = res.data;
       if (!enc) {
-        setState({ freqEncontro: null, freqPresencas: {}, freqPresencasCulto: {}, freqJaLancadas: {}, freqEncontroStatus: 'ok' });
+        setState({ freqEncontro: null, freqPresencas: {}, freqJaLancadas: {}, freqEncontroStatus: 'ok' });
         return;
       }
       sb.from('presencas_celula').select('member_id, presente').eq('encontro_id', enc.id).then(function (pres) {
         var mapa = {}, existentes = {};
         (pres.data || []).forEach(function (r) { mapa[r.member_id] = r.presente; existentes[r.member_id] = true; });
-        if (!enc.culto_id) {
-          setState({ freqEncontro: enc, freqPresencas: mapa, freqJaLancadas: existentes, freqPresencasCulto: {}, freqEncontroStatus: 'ok' });
-          return;
-        }
-        sb.from('presencas_culto').select('member_id, presente').eq('culto_id', enc.culto_id).then(function (cul) {
-          var mapaCulto = {};
-          (cul.data || []).forEach(function (r) { mapaCulto[r.member_id] = r.presente; });
-          setState({ freqEncontro: enc, freqPresencas: mapa, freqJaLancadas: existentes, freqPresencasCulto: mapaCulto, freqEncontroStatus: 'ok' });
-        });
+        setState({ freqEncontro: enc, freqPresencas: mapa, freqJaLancadas: existentes, freqEncontroStatus: 'ok' });
       });
     });
   }
 
+  // ---- Lançamento do CULTO (cultos + presencas_culto), com data própria ----
+  function abrirCultoFrequencia(data) {
+    if (!sb || !data) { setState({ freqCulto: null, freqPresencasCulto: {}, freqJaLancadasCulto: {} }); return; }
+    setState({ freqEncontroStatus: 'loading', freqSalvo: false, freqErro: null });
+    sb.from('cultos').select('*').eq('data', data).eq('tipo', 'Culto').maybeSingle().then(function (res) {
+      if (res.error) { setState({ freqEncontroStatus: 'error', freqErro: erroFrequencia(res.error) }); return; }
+      var culto = res.data;
+      if (!culto) {
+        setState({ freqCulto: null, freqPresencasCulto: {}, freqJaLancadasCulto: {}, freqEncontroStatus: 'ok' });
+        return;
+      }
+      sb.from('presencas_culto').select('member_id, presente').eq('culto_id', culto.id).then(function (pres) {
+        var mapa = {}, existentes = {};
+        (pres.data || []).forEach(function (r) { mapa[r.member_id] = r.presente; existentes[r.member_id] = true; });
+        setState({ freqCulto: culto, freqPresencasCulto: mapa, freqJaLancadasCulto: existentes, freqEncontroStatus: 'ok' });
+      });
+    });
+  }
+
+  // Abre o lançamento certo para o modo atual (célula ou culto).
+  function abrirLancamentoAtual() {
+    if (state.freqModo === 'culto') abrirCultoFrequencia(state.freqCultoData);
+    else abrirEncontroFrequencia(state.freqCelula, state.freqData);
+  }
+
+  // Domingo mais recente — data provável do último culto.
+  function domingoAnterior() {
+    var d = new Date();
+    d.setDate(d.getDate() - d.getDay());
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
+  function setFreqModo(modo) {
+    var patch = { freqModo: modo, freqSalvo: false, freqErro: null };
+    if (modo === 'culto' && !state.freqCultoData) patch.freqCultoData = domingoAnterior();
+    setState(patch);
+    abrirLancamentoAtual();
+  }
+
   function setFreqCelula(celula) {
     setState({ freqCelula: celula, freqSalvo: false });
-    abrirEncontroFrequencia(celula, state.freqData);
+    abrirLancamentoAtual();
   }
 
   function setFreqData(data) {
-    setState({ freqData: data, freqSalvo: false });
-    abrirEncontroFrequencia(state.freqCelula, data);
+    var patch = { freqSalvo: false };
+    patch[state.freqModo === 'culto' ? 'freqCultoData' : 'freqData'] = data;
+    setState(patch);
+    abrirLancamentoAtual();
   }
 
   function toggleFreqPresenca(memberId) {
     setState(function (s) {
-      var m = Object.assign({}, s.freqPresencas);
+      var chave = s.freqModo === 'culto' ? 'freqPresencasCulto' : 'freqPresencas';
+      var m = Object.assign({}, s[chave]);
       m[memberId] = !m[memberId];
-      return { freqPresencas: m, freqSalvo: false };
+      var patch = { freqSalvo: false };
+      patch[chave] = m;
+      return patch;
     });
   }
 
-  function toggleFreqCulto(memberId) {
+  function marcarTodosFreq(valor, ids) {
     setState(function (s) {
-      var m = Object.assign({}, s.freqPresencasCulto);
-      m[memberId] = !m[memberId];
-      return { freqPresencasCulto: m, freqSalvo: false };
-    });
-  }
-
-  function marcarTodosFreq(campo, valor, ids) {
-    setState(function (s) {
-      var chave = campo === 'culto' ? 'freqPresencasCulto' : 'freqPresencas';
+      var chave = s.freqModo === 'culto' ? 'freqPresencasCulto' : 'freqPresencas';
       var m = Object.assign({}, s[chave]);
       ids.forEach(function (id) { m[id] = valor; });
       var patch = { freqSalvo: false };
@@ -1187,19 +1133,27 @@
     });
   }
 
-  // Cria o encontro na primeira vez que a célula lança naquela data
-  // (e amarra o culto daquela semana, pela function culto_da_semana).
+  // Cria o encontro da célula na primeira vez que se lança naquela data.
   function garantirEncontro(done) {
     if (state.freqEncontro) { done(state.freqEncontro); return; }
-    var celula = state.freqCelula, data = state.freqData;
-    sb.rpc('culto_da_semana', { p_data: data }).then(function (res) {
-      var cultoId = res.error ? null : res.data;
-      if (res.error) console.warn('Culto da semana:', res.error.message);
-      sb.from('celula_encontros').insert({
-        celula: celula, data: data, lider_id: meuMemberId(), culto_id: cultoId, created_by: meuUserId(),
-      }).select().single().then(function (ins) {
+    sb.from('celula_encontros').insert({
+      celula: state.freqCelula, data: state.freqData, lider_id: meuMemberId(), created_by: meuUserId(),
+    }).select().single().then(function (ins) {
+      if (ins.error) { setState({ freqSaving: false, freqErro: erroFrequencia(ins.error) }); return; }
+      setState({ freqEncontro: ins.data });
+      done(ins.data);
+    });
+  }
+
+  // Idem para o culto: acha o da data escolhida, ou cria.
+  function garantirCulto(done) {
+    if (state.freqCulto) { done(state.freqCulto); return; }
+    var data = state.freqCultoData;
+    sb.from('cultos').select('*').eq('data', data).eq('tipo', 'Culto').maybeSingle().then(function (res) {
+      if (res.data) { setState({ freqCulto: res.data }); done(res.data); return; }
+      sb.from('cultos').insert({ data: data, tipo: 'Culto', created_by: meuUserId() }).select().single().then(function (ins) {
         if (ins.error) { setState({ freqSaving: false, freqErro: erroFrequencia(ins.error) }); return; }
-        setState({ freqEncontro: ins.data });
+        setState({ freqCulto: ins.data });
         done(ins.data);
       });
     });
@@ -1207,6 +1161,7 @@
 
   function salvarFrequencia(ids) {
     if (!sb) return;
+    if (state.freqModo === 'culto') { salvarFrequenciaCulto(ids); return; }
     if (!state.freqCelula || !state.freqData) { setState({ freqErro: 'Escolha a célula e a data do encontro.' }); return; }
     setState({ freqSaving: true, freqErro: null, freqSalvo: false });
     garantirEncontro(function (enc) {
@@ -1223,27 +1178,67 @@
       });
       sb.from('presencas_celula').upsert(linhas, { onConflict: 'encontro_id,member_id' }).then(function (res) {
         if (res.error) { setState({ freqSaving: false, freqErro: erroFrequencia(res.error) }); return; }
-        if (!enc.culto_id) {
-          finalizarSalvarFrequencia(ids);
-          return;
-        }
-        var linhasCulto = ids.map(function (id) {
-          return { culto_id: enc.culto_id, member_id: id, presente: !!state.freqPresencasCulto[id], created_by: uid };
-        });
-        sb.from('presencas_culto').upsert(linhasCulto, { onConflict: 'culto_id,member_id' }).then(function (res2) {
-          if (res2.error) { setState({ freqSaving: false, freqErro: erroFrequencia(res2.error) }); return; }
-          finalizarSalvarFrequencia(ids);
-        });
+        finalizarSalvarFrequencia(ids, 'freqJaLancadas');
       });
     });
   }
 
-  function finalizarSalvarFrequencia(ids) {
-    var jaLancadas = Object.assign({}, state.freqJaLancadas);
+  function salvarFrequenciaCulto(ids) {
+    if (!state.freqCultoData) { setState({ freqErro: 'Escolha a data do culto.' }); return; }
+    setState({ freqSaving: true, freqErro: null, freqSalvo: false });
+    garantirCulto(function (culto) {
+      var uid = meuUserId();
+      var linhas = ids.map(function (id) {
+        var linha = { culto_id: culto.id, member_id: id, presente: !!state.freqPresencasCulto[id] };
+        if (!state.freqJaLancadasCulto[id]) linha.created_by = uid;
+        return linha;
+      });
+      sb.from('presencas_culto').upsert(linhas, { onConflict: 'culto_id,member_id' }).then(function (res) {
+        if (res.error) { setState({ freqSaving: false, freqErro: erroFrequencia(res.error) }); return; }
+        finalizarSalvarFrequencia(ids, 'freqJaLancadasCulto');
+      });
+    });
+  }
+
+  function finalizarSalvarFrequencia(ids, chave) {
+    var jaLancadas = Object.assign({}, state[chave]);
     ids.forEach(function (id) { jaLancadas[id] = true; });
-    setState({ freqSaving: false, freqSalvo: true, freqJaLancadas: jaLancadas });
+    var patch = { freqSaving: false, freqSalvo: true };
+    patch[chave] = jaLancadas;
+    setState(patch);
     loadFrequencia();
-    loadCultos();
+  }
+
+  // Apaga o lançamento aberto: o encontro inteiro da célula, ou a
+  // presença desta célula naquele culto. Some da tela e dos indicadores.
+  function excluirLancamentoFrequencia() {
+    if (!sb) return;
+    var noCulto = state.freqModo === 'culto';
+    var alvo = noCulto ? state.freqCulto : state.freqEncontro;
+    if (!alvo) return;
+    var quando = dataLabelIso(noCulto ? state.freqCultoData : state.freqData);
+    var texto = noCulto
+      ? 'Apagar a presença da célula ' + celulaLabel(state.freqCelula) + ' no culto de ' + quando + '?'
+      : 'Apagar o lançamento da célula ' + celulaLabel(state.freqCelula) + ' em ' + quando + '?';
+    if (!window.confirm(texto + ' Isso não tem volta.')) return;
+    setState({ freqSaving: true, freqErro: null });
+
+    if (!noCulto) {
+      sb.from('celula_encontros').delete().eq('id', alvo.id).then(function (res) {
+        if (res.error) { setState({ freqSaving: false, freqErro: erroFrequencia(res.error) }); return; }
+        setState({ freqSaving: false, freqEncontro: null, freqPresencas: {}, freqJaLancadas: {}, freqSalvo: false });
+        loadFrequencia();
+      });
+      return;
+    }
+    // No culto apaga só as pessoas desta célula — o culto é da igreja toda.
+    var ids = (state.members || []).filter(function (p) { return p.celula === state.freqCelula; }).map(function (p) { return p.id; });
+    sb.from('presencas_culto').delete().eq('culto_id', alvo.id).in('member_id', ids).then(function (res) {
+      if (res.error) { setState({ freqSaving: false, freqErro: erroFrequencia(res.error) }); return; }
+      setState({ freqSaving: false, freqPresencasCulto: {}, freqJaLancadasCulto: {}, freqSalvo: false });
+      abrirCultoFrequencia(state.freqCultoData);
+      loadFrequencia();
+    });
   }
 
   // ---- Visitante lançado na hora, direto da tela de frequência ----
@@ -1398,65 +1393,6 @@
   function limparConversaIA() { setState({ iaConversa: [], iaErro: null }); }
 
   // ---------------------------------------------------------------------
-  // Presença no culto (Supabase, check-in por pessoa)
-  // ---------------------------------------------------------------------
-  function loadCultos() {
-    if (!sb) return;
-    setState({ cultosStatus: 'loading' });
-    sb.from('cultos').select('*').order('data', { ascending: false }).then(function (res) {
-      if (res.error) { console.warn('Erro ao carregar cultos:', res.error.message); setState({ cultosStatus: 'error' }); return; }
-      setState({ cultos: res.data, cultosStatus: 'ok' });
-      loadTodasPresencas();
-    });
-  }
-
-  function loadTodasPresencas() {
-    if (!sb) return;
-    setState({ presencasStatus: 'loading' });
-    sb.from('presencas_culto').select('culto_id, member_id, presente').then(function (res) {
-      if (res.error) { console.warn('Erro ao carregar presenças:', res.error.message); setState({ presencasStatus: 'error' }); return; }
-      var byCulto = {};
-      res.data.forEach(function (r) {
-        var m = byCulto[r.culto_id] || (byCulto[r.culto_id] = {});
-        m[r.member_id] = r.presente;
-      });
-      setState({ presencasByCulto: byCulto, presencasStatus: 'ok' });
-    });
-  }
-
-  function setCultoData(val) { setState({ novoCultoData: val }); }
-
-  function abrirCulto(cultoId) { setState({ cultoAtual: cultoId }); }
-
-  function criarCulto() {
-    if (!sb) return;
-    var dataEl = document.getElementById('culto-data-input');
-    var data = dataEl ? dataEl.value : state.novoCultoData;
-    if (!data) return;
-    var existente = state.cultos.filter(function (c) { return c.data === data && c.tipo === 'Culto'; })[0];
-    if (existente) { setState({ cultoAtual: existente.id, novoCultoData: data }); return; }
-    sb.from('cultos').insert({ data: data }).select().single().then(function (res) {
-      if (res.error) { console.warn('Erro ao criar culto:', res.error.message); return; }
-      setState(function (s) { return { cultos: [res.data].concat(s.cultos), cultoAtual: res.data.id, novoCultoData: data }; });
-    });
-  }
-
-  function togglePresenca(cultoId, memberId, presente) {
-    setState(function (s) {
-      var byCulto = Object.assign({}, s.presencasByCulto);
-      var m = Object.assign({}, byCulto[cultoId]);
-      m[memberId] = presente;
-      byCulto[cultoId] = m;
-      return { presencasByCulto: byCulto };
-    });
-    sb.from('presencas_culto').upsert({ culto_id: cultoId, member_id: memberId, presente: presente }, { onConflict: 'culto_id,member_id' }).then(function (res) {
-      if (res.error) console.warn('Erro ao salvar presença:', res.error.message);
-    });
-  }
-
-  function setCF(key, val) { setState(function (s) { var f = Object.assign({}, s.cultoFilters); f[key] = val; return { cultoFilters: f }; }); }
-
-  // ---------------------------------------------------------------------
   // Movimentações (Supabase)
   // ---------------------------------------------------------------------
   function loadMovimentacoes() {
@@ -1515,19 +1451,6 @@
       + '</body></html>';
   }
 
-  function sharePresencaWhatsapp() {
-    var vals = computeVals();
-    var pf = vals.pFilters || {};
-    var bits = [];
-    if (pf.celula) bits.push('Célula: ' + celulaLabel(pf.celula));
-    if (pf.ano) bits.push('Ano: ' + pf.ano);
-    if (pf.mesTop !== '') bits.push('Mês: ' + MESES_PT[pf.mesTop]);
-    var filterLabel = bits.length ? bits.join(' · ') : 'Todas as células, anos e meses';
-    var lines = ['*Presença por Célula*', filterLabel, '', 'Encontros: ' + vals.pk.registros, 'Presença média: ' + vals.pk.media, 'FAs: ' + vals.pk.totalFA, 'Visitantes: ' + vals.pk.totalVisit, ''];
-    (vals.freqPorLiderRows || []).forEach(function (r) { lines.push('• ' + r.celula + ' — Membros: ' + r.membros + ' · FAs: ' + r.fa + ' · Visitantes: ' + r.visit); });
-    window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
-  }
-
   function shareListWhatsapp(title, rows, nomeKey, nascKey) {
     var lines = ['*' + title + '*', ''];
     rows.forEach(function (r) { lines.push('• ' + r[nomeKey] + ' — ' + (r[nascKey] || '—')); });
@@ -1583,14 +1506,6 @@
       lines.push('Visitantes (' + g.Visitantes.length + '): ' + (g.Visitantes.join(', ') || '—'));
       lines.push('');
     });
-    window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
-  }
-
-  function shareFreqLiderWhatsapp() {
-    var vals = computeVals();
-    var rows = vals.freqPorLiderRows || [];
-    var lines = ['*Frequência Média por Líder de Célula*', ''];
-    rows.forEach(function (r) { lines.push('• ' + r.celula + ' — Membros: ' + r.membros + ' · FAs: ' + r.fa + ' · Visitantes: ' + r.visit); });
     window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank');
   }
 
@@ -1862,151 +1777,12 @@
     };
     var sync = syncLabelMap[state.membersStatus] || syncLabelMap.idle;
 
-    // ---- Presença por célula ----
-    var att = state.presAtt || [];
-    var pf = state.pFilters;
-    var attFiltered = att.filter(function (r) {
-      if (pf.celula && r.celula !== pf.celula) return false;
-      if (pf.ano && String(r.ano) !== String(pf.ano)) return false;
-      if (pf.mesTop !== '' && String(r.mesIdx) !== String(pf.mesTop)) return false;
-      return true;
-    });
-    var pMesSet = Array.from(new Set(att.filter(function (r) { return r.mesIdx != null; }).map(function (r) { return r.mesIdx; }))).sort(function (a, b) { return a - b; });
-    var pMesOptions = pMesSet.map(function (mi) { return { v: String(mi), label: MESES_PT[mi] }; });
-
-    var celulaLabelP = celulaLabel;
-    var pCelulaSet = Array.from(new Set(att.map(function (r) { return r.celula; }))).sort(function (a, b) { return celulaLabelP(a).localeCompare(celulaLabelP(b), 'pt'); });
-    var pCelulaOptions = pCelulaSet.map(function (c) { return { v: c, label: celulaLabelP(c) }; });
-    var pAnoSet = Array.from(new Set(att.map(function (r) { return r.ano; }).filter(Boolean))).sort();
-    var pAnoOptions = pAnoSet.map(function (a) { return { v: String(a), label: String(a) }; });
-
-    var pRegistros = attFiltered.length;
-    var pTotalGeral = attFiltered.reduce(function (s2, r) { return s2 + r.total; }, 0);
-    var pMedia = pRegistros ? Math.round(pTotalGeral / pRegistros) : 0;
-    var pTotalFA = attFiltered.reduce(function (s2, r) { return s2 + r.fa; }, 0);
-    var pTotalVisit = attFiltered.reduce(function (s2, r) { return s2 + r.visit; }, 0);
-
-    var periodoLabel = 'sem dados';
-    var isoRecs = attFiltered.filter(function (r) { return r.dataIso; }).map(function (r) { return r.dataIso; }).sort();
-    if (isoRecs.length) {
-      var fmt = function (iso) { var d3 = new Date(iso + 'T00:00:00'); return d3.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }); };
-      periodoLabel = fmt(isoRecs[0]) + ' – ' + fmt(isoRecs[isoRecs.length - 1]);
-    }
-
-    var pk = { registros: pRegistros, media: pMedia, totalFA: pTotalFA, totalVisit: pTotalVisit, periodoLabel: periodoLabel };
-
-    // por célula (stacked membros/fa/visit/kids)
-    var celAttStats = {};
-    attFiltered.forEach(function (r) {
-      var c = celAttStats[r.celula] || (celAttStats[r.celula] = { membros: 0, fa: 0, visit: 0, kids: 0, total: 0, registros: 0, meses: new Set() });
-      c.membros += r.membros; c.fa += r.fa; c.visit += r.visit; c.kids += r.kids; c.total += r.total; c.registros++;
-      if (r.ano && r.mesIdx != null) c.meses.add(r.ano * 100 + r.mesIdx);
-    });
-
-    // média de frequência por líder de célula — só 2026
-    var att2026 = att.filter(function (r) {
-      if (pf.celula && r.celula !== pf.celula) return false;
-      if (r.ano !== 2026) return false;
-      if (pf.mes !== '' && String(r.mesIdx) !== String(pf.mes)) return false;
-      return true;
-    });
-
-    // Frequência da Célula (registros brutos) + Frequência Média por Mês
-    var freqCelulaRows = attFiltered.slice().sort(function (a, b) { return (b.dataIso || '').localeCompare(a.dataIso || ''); }).map(function (r) {
-      return {
-        dia: r.dataIso ? r.dataIso.slice(8, 10) : ((r.dataLabel || '').split('/')[0] || '—'),
-        mes: r.mesIdx != null ? MESES_PT[r.mesIdx] : '—',
-        membros: r.membros, fa: r.fa, visit: r.visit,
-      };
-    });
-    var freqMesStats = {};
-    attFiltered.forEach(function (r) {
-      if (r.mesIdx == null) return;
-      var c = freqMesStats[r.mesIdx] || (freqMesStats[r.mesIdx] = { membros: 0, fa: 0, visit: 0, n: 0 });
-      c.membros += r.membros; c.fa += r.fa; c.visit += r.visit; c.n++;
-    });
-    var freqMediaMesRows = Object.keys(freqMesStats).map(Number).sort(function (a, b) { return a - b; }).map(function (mi) {
-      var st = freqMesStats[mi];
-      return { mes: MESES_PT[mi], membros: Math.round(st.membros / st.n), fa: Math.round(st.fa / st.n), visit: Math.round(st.visit / st.n) };
-    });
-    var freqLiderStats = {};
-    attFiltered.forEach(function (r) {
-      var c = freqLiderStats[r.celula] || (freqLiderStats[r.celula] = { membros: 0, fa: 0, visit: 0, n: 0 });
-      c.membros += r.membros; c.fa += r.fa; c.visit += r.visit; c.n++;
-    });
-    var freqPorLiderRows = currentCelulaList().filter(function (cel) { return freqLiderStats[cel]; }).map(function (cel) {
-      var st = freqLiderStats[cel];
-      return { celula: celulaLabelP(cel), membros: Math.round(st.membros / st.n), fa: Math.round(st.fa / st.n), visit: Math.round(st.visit / st.n) };
-    });
-
-    var mesesComDados2026 = Array.from(new Set(att.filter(function (r) { return r.ano === 2026 && r.mesIdx != null; }).map(function (r) { return r.mesIdx; }))).sort(function (a, b) { return a - b; });
-    var mesOptions = mesesComDados2026.map(function (mi) { return { v: String(mi), label: MES_ABREV[mi] }; });
-
-    var celAtt2026 = {};
-    att2026.forEach(function (r) {
-      var c = celAtt2026[r.celula] || (celAtt2026[r.celula] = { membros: 0, fa: 0, visit: 0, total: 0, registros: 0, meses: new Set() });
-      c.membros += r.membros; c.fa += r.fa; c.visit += r.visit; c.total += (r.membros + r.fa + r.visit); c.registros++;
-      if (r.mesIdx != null) c.meses.add(r.mesIdx);
-    });
-    var mediaCatColor = { membros: '#1B2344', fa: '#149C88', visit: '#8A63C9' };
-    var mediaCatLabel = { membros: 'Membros', fa: 'FAs', visit: 'Visitantes' };
-    var mediaMax = Math.max(1, Object.values(celAtt2026).map(function (c) { return Math.round(c.total / (c.meses.size || 1)); }).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var mediaLiderBars = Object.keys(celAtt2026)
-      .map(function (cel) {
-        var st = celAtt2026[cel];
-        var mesesAtivos = st.meses.size || 1;
-        var mediaMensal = Math.round(st.total / mesesAtivos);
-        var cats = ['membros', 'fa', 'visit'].filter(function (k2) { return st[k2] > 0; });
-        var segs = cats.map(function (k2) {
-          var catMedia = Math.round(st[k2] / mesesAtivos);
-          return { w: Math.round(catMedia / mediaMax * 100) + '%', color: mediaCatColor[k2], title: catMedia + ' ' + mediaCatLabel[k2] + '/mês' };
-        });
-        return { cel: cel, mediaMensal: mediaMensal, mesesAtivos: mesesAtivos, registros: st.registros, segs: segs, totalW: Math.round(mediaMensal / mediaMax * 100) + '%' };
-      })
-      .sort(function (a, b) { return b.mediaMensal - a.mediaMensal; })
-      .map(function (x) {
-        var active = pf.celula === x.cel;
-        return {
-          label: celulaLabelP(x.cel), mediaMensal: x.mediaMensal, mesesAtivos: x.mesesAtivos, registros: x.registros,
-          mesLabel: x.mesesAtivos === 1 ? 'mês' : 'meses',
-          segs: x.segs, totalW: x.totalW,
-          bg: active ? '#eaf1fa' : 'transparent', weight: active ? 700 : 500,
-          onClick: function () { setPF('celula', active ? '' : x.cel); },
-        };
-      });
-
-    // tabela de registros
-    var sortP = state.sortP;
-    var sortedAtt = attFiltered.slice().sort(function (a, b) {
-      var av = a.dataIso || '0000-00-00', bv = b.dataIso || '0000-00-00';
-      return av < bv ? -sortP.dir : (av > bv ? sortP.dir : 0);
-    });
-    var pRows = sortedAtt.map(function (r) {
-      var isRodizio = /sim/i.test(r.tipoRodizio);
-      return {
-        dataLabel: r.dataLabel, celulaLabel: celulaLabelP(r.celula),
-        membros: r.membros, fa: r.fa, visit: r.visit, kids: r.kids, total: r.total,
-        tipo: isRodizio ? 'Ponte/Rodízio' : 'Célula',
-        tipoBg: isRodizio ? '#faf1de' : '#eef2f7', tipoFg: isRodizio ? '#a1780f' : '#5a6b80',
-      };
-    });
-
-    var syncLabelMapP = {
-      idle: { text: 'Sincronizando…', color: '#6b7c93', dot: '#c3cfde' },
-      loading: { text: 'Sincronizando…', color: '#6b7c93', dot: '#5B8FE0' },
-      ok: { text: state.lastSyncP ? 'Atualizado ' + new Date(state.lastSyncP).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Atualizado', color: '#0E7A68', dot: '#149C88' },
-      error: { text: state.lastSyncP ? 'Offline · última sinc. ' + new Date(state.lastSyncP).toLocaleDateString('pt-BR') : 'Não foi possível sincronizar', color: '#6B3FA0', dot: '#6B3FA0' },
-    };
-    var syncP = syncLabelMapP[state.syncStatusP] || syncLabelMapP.idle;
-
     var isHome = state.tab === 'home';
+    var isCadastro = state.tab === 'cadastro';
     var isFreq = state.tab === 'freq';
     var isIa = state.tab === 'ia';
-    var isCadastro = state.tab === 'cadastro';
-    var isPresenca = state.tab === 'presenca';
     var isTrilho = state.tab === 'trilho';
     var isNovo = state.tab === 'novo';
-    var isCulto = state.tab === 'culto';
     var isMov = state.tab === 'mov';
     var isHierarquia = state.tab === 'hierarquia';
 
@@ -2049,37 +1825,6 @@
         return p.id !== state.novoEditId && p.tipo !== 'Kids e Juvenis' && p.nome.toLowerCase().indexOf(conjugeQ) >= 0;
       }).slice(0, 20)
       : [];
-
-    // ---- Presença no culto ----
-    var todosAtivos = all.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
-    var cf = state.cultoFilters;
-    var cultoQ = (cf.q || '').trim().toLowerCase();
-    var membrosCulto = todosAtivos.filter(function (p) {
-      if (cf.celula && p.celula !== cf.celula) return false;
-      if (cultoQ && !p.nome.toLowerCase().includes(cultoQ)) return false;
-      return true;
-    });
-    var cultoAtualId = state.cultoAtual;
-    var presencasAtual = (cultoAtualId && state.presencasByCulto[cultoAtualId]) || {};
-    var presentesCount = Object.keys(presencasAtual).filter(function (id) { return presencasAtual[id]; }).length;
-    var cultoRows = membrosCulto.map(function (p) {
-      var presente = !!presencasAtual[p.id];
-      return {
-        id: p.id, nome: p.nome, celulaLabel: celulaLabel(p.celula), presente: presente,
-        onToggle: function () { togglePresenca(cultoAtualId, p.id, !presente); },
-      };
-    });
-    var cultoAtualObj = state.cultos.filter(function (c) { return c.id === cultoAtualId; })[0] || null;
-    var historicoCultos = state.cultos.map(function (c) {
-      var pres = state.presencasByCulto[c.id] || {};
-      var n = Object.keys(pres).filter(function (id) { return pres[id]; }).length;
-      return {
-        id: c.id, dataLabel: new Date(c.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-        presentes: n, active: c.id === cultoAtualId,
-        onClick: function () { abrirCulto(c.id); },
-      };
-    });
-    var cultoCelulaOptions = currentCelulaList().filter(function (c) { return all.some(function (p) { return p.celula === c; }); }).map(function (c) { return { v: c, label: celulaLabel(c) }; });
 
     // ---- Movimentações ----
     var mf = state.movFilters;
@@ -2181,11 +1926,9 @@
       totalAll: all.length,
       sync: sync,
       onRefresh: function () { loadMembers(); },
-      isCadastro: isCadastro, isPresenca: isPresenca,
+      isCadastro: isCadastro,
       tabCadastroColor: isCadastro ? '#1B2344' : '#8a99ab',
       tabCadastroBorder: isCadastro ? '#1B2344' : 'transparent',
-      tabPresencaColor: isPresenca ? '#1B2344' : '#8a99ab',
-      tabPresencaBorder: isPresenca ? '#1B2344' : 'transparent',
       isHome: isHome,
       goHome: function () { setState({ tab: 'home', sidebarOpen: false }); },
       isIa: isIa,
@@ -2201,13 +1944,16 @@
       isFreq: isFreq,
       goFreq: function () {
         var celula = state.freqCelula || celulaPadraoFrequencia();
-        var data = state.freqData || hojeIso();
-        setState({ tab: 'freq', sidebarOpen: false, freqCelula: celula, freqData: data, freqSalvo: false, freqErro: null });
+        setState({
+          tab: 'freq', sidebarOpen: false, freqCelula: celula,
+          freqData: state.freqData || hojeIso(),
+          freqCultoData: state.freqCultoData || domingoAnterior(),
+          freqSalvo: false, freqErro: null,
+        });
         if (state.freqEncontrosStatus === 'idle') loadFrequencia();
-        abrirEncontroFrequencia(celula, data);
+        abrirLancamentoAtual();
       },
       goCadastro: function () { setState({ tab: 'cadastro', sidebarOpen: false }); },
-      goPresenca: function () { setState({ tab: 'presenca', sidebarOpen: false }); },
       goTrilho: function () { setState({ tab: 'trilho', sidebarOpen: false }); },
       goNovo: function () {
         setState(function (s) {
@@ -2220,20 +1966,17 @@
           return patch;
         });
       },
-      goCulto: function () { setState({ tab: 'culto', sidebarOpen: false }); },
       goMov: function () { setState({ tab: 'mov', sidebarOpen: false }); },
       goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
       sidebarOpen: state.sidebarOpen,
       openSidebar: function () { setState({ sidebarOpen: true }); },
       closeSidebar: function () { setState({ sidebarOpen: false }); },
-      isTrilho: isTrilho, isNovo: isNovo, isCulto: isCulto, isMov: isMov, isHierarquia: isHierarquia,
+      isTrilho: isTrilho, isNovo: isNovo, isMov: isMov, isHierarquia: isHierarquia,
       souFull: souFull,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
       tabTrilhoBorder: isTrilho ? '#1B2344' : 'transparent',
       tabNovoColor: isNovo ? '#1B2344' : '#8a99ab',
       tabNovoBorder: isNovo ? '#1B2344' : 'transparent',
-      tabCultoColor: isCulto ? '#1B2344' : '#8a99ab',
-      tabCultoBorder: isCulto ? '#1B2344' : 'transparent',
       tabMovColor: isMov ? '#1B2344' : '#8a99ab',
       tabMovBorder: isMov ? '#1B2344' : 'transparent',
       tabHierarquiaColor: isHierarquia ? '#1B2344' : '#8a99ab',
@@ -2279,16 +2022,6 @@
         return p.active !== false && p.id !== state.novoEditId && FUNCOES_MINISTERIAIS.indexOf(funcaoDeMembro(p)) >= 3;
       }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); })
         .map(function (p) { return { v: p.id, label: p.nome + ' (' + funcaoDeMembro(p) + ')' }; }),
-      cultos: historicoCultos, cultosStatus: state.cultosStatus,
-      novoCultoData: state.novoCultoData,
-      onCultoData: function (e) { setCultoData(e.target.value); },
-      criarCulto: function () { criarCulto(); },
-      cultoAtual: cultoAtualObj ? Object.assign({}, cultoAtualObj, { dataLabel: new Date(cultoAtualObj.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) }) : null,
-      cultoRows: cultoRows, cultoTotal: membrosCulto.length, cultoPresentes: presentesCount,
-      cultoPct: membrosCulto.length ? Math.round(presentesCount / membrosCulto.length * 100) : 0,
-      cultoFilters: cf, cultoCelulaOptions: cultoCelulaOptions,
-      onCFCelula: function (e) { setCF('celula', e.target.value); },
-      onCFQ: function (e) { setCF('q', e.target.value); },
       movRows: movRows, movStatus: state.movStatus, movFilters: mf, movCelulaOptions: movCelulaOptions,
       perdidosRows: perdidosRows, totalPerdidos: totalPerdidos, sairamRows: sairamRows, inativosRows: inativosRows,
       onMFCelula: function (e) { setMF('celula', e.target.value); },
@@ -2305,22 +2038,6 @@
         var done = trilhoCourses.filter(function (c) { return p[c.key] === 'Sim'; }).map(function (c) { return c.label; });
         return { nome: p.nome, celulaLabel: celulaLabel(p.celula), cursosLabel: done.length ? done.join(', ') : '—' };
       }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }),
-      pFilters: Object.assign({}, pf, { celulaLabel: pf.celula ? celulaLabelP(pf.celula) : 'Todas as células' }),
-      pCelulaOptions: pCelulaOptions, pAnoOptions: pAnoOptions, mesOptions: mesOptions,
-      pMesOptions: pMesOptions,
-      onPCelula: function (e) { setPF('celula', e.target.value); },
-      onPAno: function (e) { setPF('ano', e.target.value); },
-      onPMesTop: function (e) { setPF('mesTop', e.target.value); },
-      onPMes: function (e) { setPF('mes', e.target.value); },
-      clearPFilters: function () { setState({ pFilters: { celula: '', ano: '', mes: '', mesTop: '' } }); },
-      onRefreshP: function () { syncAttendance(); },
-      sharePresencaWhatsapp: function () { sharePresencaWhatsapp(); },
-      syncP: syncP,
-      pk: pk, mediaLiderBars: mediaLiderBars, pRows: pRows,
-      freqCelulaRows: freqCelulaRows, freqMediaMesRows: freqMediaMesRows, freqPorLiderRows: freqPorLiderRows,
-      shareFreqLiderWhatsapp: function () { shareFreqLiderWhatsapp(); },
-      sortPData: function () { setState(function (st) { return { sortP: { key: 'data', dir: -st.sortP.dir } }; }); },
-      sortPDataArrow: sortP.dir === 1 ? '↑' : '↓',
       q: state.q,
       filters: f,
       k: k, civilBars: civilBars, posBars: posBars, celulaBars: celulaBars, perfilBars: perfilBars, people: people, visitantes: visitantes, kids3a12: kids3a12,
@@ -2368,8 +2085,6 @@
     home: '<path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"></path>',
     cadastro: '<circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7"></path>',
     freq: '<path d="M9 11.5 11 13.5 15.5 9"></path><rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect><path d="M8 2.5v4"></path><path d="M16 2.5v4"></path>',
-    presenca: '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>',
-    culto: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="m9 15 2 2 4-4"></path>',
     trilho: '<path d="M5 3v18"></path><path d="M5 4h11l-2 4 2 4H5"></path>',
     mov: '<path d="M4 7h4l3 10h6"></path><path d="M4 17h4l3-10h6"></path><path d="m17 4 3 3-3 3"></path><path d="m17 14 3 3-3 3"></path>',
     novo: '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
@@ -2397,8 +2112,6 @@
         { icon: 'home', label: 'Início', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: true, onClick: function () {}, show: true, locked: false },
         { icon: 'freq', label: 'Frequência', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'presenca', label: 'Presença por Célula', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'culto', label: 'Presença no Culto', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'mov', label: 'Movimentações', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'novo', label: '+ Novo Cadastro', active: false, onClick: vals.pedirLogin, show: true, locked: true },
@@ -2407,8 +2120,6 @@
         { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
-        { icon: 'presenca', label: 'Presença por Célula', active: vals.isPresenca, onClick: vals.goPresenca, show: true },
-        { icon: 'culto', label: 'Presença no Culto', active: vals.isCulto, onClick: vals.goCulto, show: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
@@ -3247,11 +2958,13 @@
     var celulas = celulasDoUsuario(vals.souFull);
     var celulaAtual = state.freqCelula;
     var busca = (state.freqBusca || '').trim().toLowerCase();
+    var noCulto = state.freqModo === 'culto';
 
     var daCelula = ativos.filter(function (p) { return p.celula === celulaAtual; })
       .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
     var ids = daCelula.map(function (p) { return p.id; });
     var visiveis = busca ? daCelula.filter(function (p) { return p.nome.toLowerCase().indexOf(busca) >= 0; }) : daCelula;
+    var marcados = noCulto ? state.freqPresencasCulto : state.freqPresencas;
 
     var statusCor = {
       'Visitante': ['#f1e8f7', '#6B3FA0'],
@@ -3259,96 +2972,122 @@
       'Membro': ['#e4eefa', '#2E4FC7'],
     };
     var pessoas = visiveis.map(function (p) {
-      var st = p.status_pessoa || (p.posicao === 'Visitante' || p.posicao === 'Frequentador Assíduo' ? p.posicao : 'Membro');
+      var st = statusDeMembro(p);
       var cor = statusCor[st] || ['#eef2f7', '#5a6b80'];
       return {
         id: p.id, nome: p.nome,
         status: st === 'Frequentador Assíduo' ? 'FA' : st, statusBg: cor[0], statusFg: cor[1],
-        funcao: p.funcao || (p.posicao !== st ? p.posicao : ''),
-        presente: !!state.freqPresencas[p.id],
-        culto: !!state.freqPresencasCulto[p.id],
-        onCelula: function () { toggleFreqPresenca(p.id); },
-        onCulto: function () { toggleFreqCulto(p.id); },
+        funcao: funcaoDeMembro(p),
+        presente: !!marcados[p.id],
+        onToggle: function () { toggleFreqPresenca(p.id); },
       };
     });
+    var presentes = ids.filter(function (id) { return marcados[id]; }).length;
 
-    var presentes = ids.filter(function (id) { return state.freqPresencas[id]; }).length;
-    var presentesCulto = ids.filter(function (id) { return state.freqPresencasCulto[id]; }).length;
-
-    // ---- Painel / histórico: encontros filtrados ----
+    // ---- Painel / histórico ----
     var pf = state.freqPainel;
     var desde = isoMenosDias(Number(pf.periodo || 8) * 7);
     var hierDe = function (c) { return hier.filter(function (h) { return h.celula === c; })[0] || {}; };
-    var encontros = (state.freqEncontros || []).filter(function (e) {
-      if (e.data < desde) return false;
-      if (pf.celula && e.celula !== pf.celula) return false;
-      if (pf.obreiro && !mesmoResponsavel(hierDe(e.celula).obreiro_id, pf.obreiro)) return false;
-      if (pf.discipulador && !mesmoResponsavel(hierDe(e.celula).discipulador_id, pf.discipulador)) return false;
+    var noFiltro = function (celula, dataIso) {
+      if (dataIso < desde) return false;
+      if (pf.celula && celula !== pf.celula) return false;
+      if (pf.obreiro && !mesmoResponsavel(hierDe(celula).obreiro_id, pf.obreiro)) return false;
+      if (pf.discipulador && !mesmoResponsavel(hierDe(celula).discipulador_id, pf.discipulador)) return false;
       return true;
-    });
-
-    var soma = function (campo) {
-      return encontros.reduce(function (acc, e) { return acc + Number(e[campo] || 0); }, 0);
     };
-    var totalPessoas = soma('pessoas'), totalPresentes = soma('presentes');
-    var totalCulto = soma('presentes_culto');
-    var pctCelula = totalPessoas ? Math.round(totalPresentes / totalPessoas * 100) : 0;
-    var pctCulto = totalPessoas ? Math.round(totalCulto / totalPessoas * 100) : 0;
+    var encontros = (state.freqEncontros || []).filter(function (e) { return noFiltro(e.celula, e.data); });
+    var cultos = (state.freqCultos || []).filter(function (c) { return noFiltro(c.celula, c.data); });
+
+    var soma = function (lista, campo) {
+      return lista.reduce(function (acc, r) { return acc + Number(r[campo] || 0); }, 0);
+    };
+    var totalPessoas = soma(encontros, 'pessoas'), totalPresentes = soma(encontros, 'presentes');
+    var cultoPessoas = soma(cultos, 'pessoas'), cultoPresentes = soma(cultos, 'presentes');
 
     var porCelula = {};
+    var linhaDe = function (c) {
+      return porCelula[c] || (porCelula[c] = { celula: c, encontros: 0, pessoas: 0, presentes: 0, visitantes: 0, cultos: 0, cultoPessoas: 0, cultoPresentes: 0 });
+    };
     encontros.forEach(function (e) {
-      var c = porCelula[e.celula] || (porCelula[e.celula] = { celula: e.celula, encontros: 0, pessoas: 0, presentes: 0, culto: 0, visitantes: 0 });
-      c.encontros++; c.pessoas += Number(e.pessoas || 0); c.presentes += Number(e.presentes || 0);
-      c.culto += Number(e.presentes_culto || 0); c.visitantes += Number(e.visitantes || 0);
+      var r = linhaDe(e.celula);
+      r.encontros++; r.pessoas += Number(e.pessoas || 0); r.presentes += Number(e.presentes || 0);
+      r.visitantes += Number(e.visitantes || 0);
+    });
+    cultos.forEach(function (c) {
+      var r = linhaDe(c.celula);
+      r.cultos++; r.cultoPessoas += Number(c.pessoas || 0); r.cultoPresentes += Number(c.presentes || 0);
     });
     var painelCelulas = Object.keys(porCelula).map(function (c) {
       var r = porCelula[c];
       return {
         celulaLabel: celulaLabel(c), encontros: r.encontros, pessoas: r.pessoas,
-        presentes: r.presentes, ausentes: r.pessoas - r.presentes, culto: r.culto, visitantes: r.visitantes,
+        presentes: r.presentes, ausentes: r.pessoas - r.presentes, visitantes: r.visitantes,
+        culto: r.cultoPresentes,
         pctCelula: r.pessoas ? Math.round(r.presentes / r.pessoas * 100) : 0,
-        pctCulto: r.pessoas ? Math.round(r.culto / r.pessoas * 100) : 0,
+        pctCulto: r.cultoPessoas ? Math.round(r.cultoPresentes / r.cultoPessoas * 100) : 0,
       };
     }).sort(function (a, b) { return b.pessoas - a.pessoas; });
 
-    // Células que ainda não lançaram a semana atual
+    // Células que ainda não lançaram a célula desta semana
     var inicioSemana = isoMenosDias(7);
     var semLancamento = celulas.filter(function (c) {
       return !(state.freqEncontros || []).some(function (e) { return e.celula === c && e.data >= inicioSemana; });
     }).map(celulaLabel);
 
+    var abrirCelula = function (celula, dataIso) {
+      return function () {
+        setState({ freqTab: 'lancar', freqModo: 'celula', freqCelula: celula, freqData: dataIso });
+        abrirEncontroFrequencia(celula, dataIso);
+      };
+    };
+    var abrirCulto = function (celula, dataIso) {
+      return function () {
+        setState({ freqTab: 'lancar', freqModo: 'culto', freqCelula: celula, freqCultoData: dataIso });
+        abrirCultoFrequencia(dataIso);
+      };
+    };
+
     var historico = encontros.slice().sort(function (a, b) { return b.data.localeCompare(a.data); }).map(function (e) {
       return {
         dataLabel: dataLabelIso(e.data), celulaLabel: celulaLabel(e.celula),
-        pessoas: Number(e.pessoas || 0), presentes: Number(e.presentes || 0),
-        culto: Number(e.presentes_culto || 0), visitantes: Number(e.visitantes || 0),
+        pessoas: Number(e.pessoas || 0), presentes: Number(e.presentes || 0), visitantes: Number(e.visitantes || 0),
         pct: Number(e.pessoas) ? Math.round(Number(e.presentes) / Number(e.pessoas) * 100) : 0,
-        onClick: function () {
-          setState({ freqTab: 'lancar', freqCelula: e.celula, freqData: e.data });
-          abrirEncontroFrequencia(e.celula, e.data);
-        },
+        onClick: abrirCelula(e.celula, e.data),
+      };
+    });
+    var historicoCultos = cultos.slice().sort(function (a, b) { return b.data.localeCompare(a.data); }).map(function (c) {
+      return {
+        dataLabel: dataLabelIso(c.data), celulaLabel: celulaLabel(c.celula),
+        pessoas: Number(c.pessoas || 0), presentes: Number(c.presentes || 0),
+        pct: Number(c.pessoas) ? Math.round(Number(c.presentes) / Number(c.pessoas) * 100) : 0,
+        onClick: abrirCulto(c.celula, c.data),
       };
     });
 
     var histPessoa = state.freqHistoricoPessoa;
+    var lancamentoExiste = noCulto ? !!state.freqCulto : !!state.freqEncontro;
     return {
       souFull: vals.souFull,
       tab: state.freqTab,
       setTab: function (t) { return function () { setFreqTab(t); }; },
+      modo: state.freqModo,
+      setModo: function (m) { return function () { setFreqModo(m); }; },
       celula: celulaAtual, celulaLabelText: celulaLabel(celulaAtual),
       celulaOptions: celulas.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
       travadoNaCelula: celulas.length === 1,
-      data: state.freqData, dataLabel: dataLabelIso(state.freqData),
+      data: noCulto ? state.freqCultoData : state.freqData,
+      dataLabel: dataLabelIso(noCulto ? state.freqCultoData : state.freqData),
       onCelula: function (e) { setFreqCelula(e.target.value); },
       onData: function (e) { setFreqData(e.target.value); },
       busca: state.freqBusca,
       onBusca: function (e) { setState({ freqBusca: e.target.value }); },
-      pessoas: pessoas, totalPessoas: daCelula.length, presentes: presentes, presentesCulto: presentesCulto,
-      encontroExiste: !!state.freqEncontro,
+      pessoas: pessoas, totalPessoas: daCelula.length, presentes: presentes,
+      lancamentoExiste: lancamentoExiste,
       carregando: state.freqEncontroStatus === 'loading',
       salvando: state.freqSaving, salvo: state.freqSalvo, erro: state.freqErro,
       salvar: function () { salvarFrequencia(ids); },
-      marcarTodos: function (campo, valor) { return function () { marcarTodosFreq(campo, valor, ids); }; },
+      excluir: function () { excluirLancamentoFrequencia(); },
+      marcarTodos: function (valor) { return function () { marcarTodosFreq(valor, ids); }; },
       visitante: state.freqVisitante, visitanteSaving: state.freqVisitanteSaving,
       visitanteErro: state.freqVisitanteErro, visitanteDuplicado: state.freqVisitanteDuplicado,
       abrirVisitante: function () { abrirVisitanteFrequencia(); },
@@ -3364,11 +3103,13 @@
       painelCelulas: painelCelulas, semLancamento: semLancamento,
       kpis: {
         encontros: encontros.length, pessoas: totalPessoas, presentes: totalPresentes,
-        ausentes: totalPessoas - totalPresentes, culto: totalCulto,
-        pctCelula: pctCelula, pctCulto: pctCulto,
-        visitantes: soma('visitantes'), fas: soma('fas'), membros: soma('membros'),
+        ausentes: totalPessoas - totalPresentes,
+        pctCelula: totalPessoas ? Math.round(totalPresentes / totalPessoas * 100) : 0,
+        cultos: cultos.length, culto: cultoPresentes,
+        pctCulto: cultoPessoas ? Math.round(cultoPresentes / cultoPessoas * 100) : 0,
+        visitantes: soma(encontros, 'visitantes'), fas: soma(encontros, 'fas'), membros: soma(encontros, 'membros'),
       },
-      historico: historico,
+      historico: historico, historicoCultos: historicoCultos,
       historicoStatus: state.freqEncontrosStatus,
       pessoaOptions: ativos.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }).map(function (p) { return { v: p.id, label: p.nome }; }),
       pessoaId: state.freqHistoricoPessoaId,
@@ -3383,7 +3124,7 @@
   function freqToggle(ativo, label, cbAttr) {
     var bg = ativo ? '#149C88' : '#eef2f7';
     var fg = ativo ? '#fff' : '#8a99ab';
-    return '<button type="button" ' + cbAttr + ' aria-pressed="' + (ativo ? 'true' : 'false') + '" style="min-width:64px;padding:9px 12px;border:none;border-radius:999px;background:' + bg + ';color:' + fg + ';font-size:12.5px;font-weight:700;cursor:pointer">' + label + '</button>';
+    return '<button type="button" ' + cbAttr + ' aria-pressed="' + (ativo ? 'true' : 'false') + '" style="min-width:76px;padding:10px 12px;border:none;border-radius:999px;background:' + bg + ';color:' + fg + ';font-size:12.5px;font-weight:700;cursor:pointer">' + label + '</button>';
   }
 
   function freqVisitanteHtml(v) {
@@ -3419,6 +3160,7 @@
   }
 
   function freqLancarHtml(v) {
+    var noCulto = v.modo === 'culto';
     var html = '';
     if (!v.celulaOptions.length) {
       return '<div class="home-card home-empty">' +
@@ -3426,9 +3168,18 @@
         '<div class="home-card-sub" style="margin-top:6px">Peça a um Pastor ou administrador para definir sua célula em Administração.</div></div>';
     }
 
+    // Célula e culto acontecem em dias diferentes: cada um tem a sua data
+    // e o seu lançamento.
+    var botaoModo = function (modo, label) {
+      var ativo = v.modo === modo;
+      return '<button type="button" ' + cb(v.setModo(modo)) + ' style="flex:1;padding:11px 12px;border:none;border-radius:11px;background:' + (ativo ? '#fff' : 'transparent') + ';color:' + (ativo ? '#14243a' : '#6b7c93') + ';font-size:13.5px;font-weight:700;cursor:pointer;box-shadow:' + (ativo ? '0 2px 8px rgba(20,36,58,.12)' : 'none') + '">' + label + '</button>';
+    };
+    html += '<div style="display:flex;gap:4px;padding:4px;background:#e6ecf4;border-radius:14px;margin-bottom:14px">' +
+      botaoModo('celula', 'Encontro da célula') + botaoModo('culto', 'Culto') + '</div>';
+
     html += '<div class="home-card" style="margin-bottom:14px">' +
       '<div class="grid-form2">' +
-      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data do encontro</label>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">' + (noCulto ? 'Data do culto' : 'Data do encontro') + '</label>' +
       '<input type="date" id="freq-data" value="' + escHtml(v.data) + '" ' + cb(v.onData, 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
       (v.travadoNaCelula
         ? '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Célula</label>' +
@@ -3436,44 +3187,48 @@
         : selectField('Célula', cb(v.onCelula, 'change'), v.celulaOptions, v.celula)) +
       '</div>' +
       '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:#4a5b70">' +
-      '<span><b style="color:#0E7A68">' + v.presentes + '</b> de ' + v.totalPessoas + ' na célula</span>' +
-      '<span><b style="color:#2E4FC7">' + v.presentesCulto + '</b> no culto</span>' +
-      '<span class="home-muted">' + (v.encontroExiste ? 'Encontro já registrado — dá para corrigir e salvar de novo' : 'Encontro ainda não lançado') + '</span>' +
-      '</div></div>';
+      '<span><b style="color:#0E7A68">' + v.presentes + '</b> de ' + v.totalPessoas + (noCulto ? ' no culto' : ' na célula') + '</span>' +
+      '<span class="home-muted">' + (v.lancamentoExiste ? 'Já registrado — dá para corrigir e salvar de novo' : 'Ainda não lançado') + '</span>' +
+      '</div>' +
+      (noCulto ? '<div class="home-card-sub" style="margin-top:8px">Marque quem da célula ' + escHtml(v.celulaLabelText) + ' esteve no culto desta data.</div>' : '') +
+      '</div>';
 
     if (v.erro) html += adminBanner('error', v.erro);
-    if (v.salvo) html += adminBanner('ok', 'Frequência registrada com sucesso.');
+    if (v.salvo) html += adminBanner('ok', noCulto ? 'Presença no culto registrada com sucesso.' : 'Frequência registrada com sucesso.');
 
     if (v.visitante) html += freqVisitanteHtml(v);
 
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
       '<input type="text" id="freq-busca" value="' + escHtml(v.busca) + '" ' + cb(v.onBusca, 'input') + ' placeholder="Buscar pessoa…" style="flex:1;min-width:180px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:14px">' +
-      '<button type="button" ' + cb(v.marcarTodos('celula', true)) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#1B2344;cursor:pointer">Todos na célula</button>' +
-      '<button type="button" ' + cb(v.marcarTodos('celula', false)) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#6b7c93;cursor:pointer">Limpar</button>' +
-      '<button type="button" ' + cb(v.abrirVisitante) + ' style="padding:9px 14px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">+ Visitante</button>' +
+      '<button type="button" ' + cb(v.marcarTodos(true)) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#1B2344;cursor:pointer">Marcar todos</button>' +
+      '<button type="button" ' + cb(v.marcarTodos(false)) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#6b7c93;cursor:pointer">Limpar</button>' +
+      (noCulto ? '' : '<button type="button" ' + cb(v.abrirVisitante) + ' style="padding:9px 14px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">+ Visitante</button>') +
       '</div>';
 
     html += '<div class="home-card" style="padding:6px 10px">' +
-      '<div class="freq-linha freq-cab">' +
-      '<div>Pessoa</div><div style="text-align:center">Célula</div><div style="text-align:center">Culto</div>' +
+      '<div class="freq-linha freq-cab freq-linha-1col">' +
+      '<div>Pessoa</div><div style="text-align:center">' + (noCulto ? 'Culto' : 'Presente') + '</div>' +
       '</div>' +
       v.pessoas.map(function (p) {
-        return '<div class="freq-linha">' +
+        return '<div class="freq-linha freq-linha-1col">' +
           '<div style="min-width:0"><div class="freq-nome">' + escHtml(p.nome) + '</div>' +
           '<div style="display:flex;gap:6px;align-items:center;margin-top:3px">' +
           '<span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:' + p.statusBg + ';color:' + p.statusFg + '">' + escHtml(p.status) + '</span>' +
           (p.funcao ? '<span style="font-size:10.5px;color:#8a99ab;font-weight:600">' + escHtml(p.funcao) + '</span>' : '') +
           '</div></div>' +
-          '<div style="text-align:center">' + freqToggle(p.presente, p.presente ? 'Sim' : 'Não', cb(p.onCelula)) + '</div>' +
-          '<div style="text-align:center">' + freqToggle(p.culto, p.culto ? 'Sim' : 'Não', cb(p.onCulto)) + '</div>' +
+          '<div style="text-align:center">' + freqToggle(p.presente, p.presente ? 'Sim' : 'Não', cb(p.onToggle)) + '</div>' +
           '</div>';
       }).join('') +
-      (v.pessoas.length ? '' : '<div style="padding:18px 8px;font-size:12.5px;color:#8a99ab">' + (v.carregando ? 'Carregando…' : 'Ninguém nesta célula ainda. Use "+ Visitante" para incluir alguém agora.') + '</div>') +
+      (v.pessoas.length ? '' : '<div style="padding:18px 8px;font-size:12.5px;color:#8a99ab">' + (v.carregando ? 'Carregando…' : 'Ninguém nesta célula ainda.') + '</div>') +
       '</div>';
 
     html += '<div class="freq-salvar">' +
       '<button type="button" ' + cb(v.salvar) + (v.salvando ? ' disabled' : '') + ' style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 10px 24px -12px rgba(27,35,68,.8)">' +
-      (v.salvando ? 'Salvando…' : 'Salvar frequência') + '</button></div>';
+      (v.salvando ? 'Salvando…' : (noCulto ? 'Salvar presença no culto' : 'Salvar frequência da célula')) + '</button>' +
+      (v.lancamentoExiste
+        ? '<button type="button" ' + cb(v.excluir) + ' style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:#a02020;font-size:12.5px;font-weight:700;cursor:pointer">Apagar este lançamento</button>'
+        : '') +
+      '</div>';
     return html;
   }
 
@@ -3497,18 +3252,18 @@
     html += '<div class="home-kpis" style="margin-top:0;margin-bottom:14px">' +
       kpiCard('Presentes na célula', k.presentes, k.pctCelula + '% de ' + k.pessoas + ' lançamentos', { gradient: true }) +
       kpiCard('Ausentes na célula', k.ausentes, 'no período', { valueColor: '#B0281E' }) +
-      kpiCard('Presentes no culto', k.culto, k.pctCulto + '% dos lançados', { valueColor: '#2E4FC7' }) +
-      kpiCard('Encontros lançados', k.encontros, 'reuniões de célula', { valueColor: '#0E7A68' }) +
+      kpiCard('Presentes no culto', k.culto, k.pctCulto + '% dos lançados no culto', { valueColor: '#2E4FC7' }) +
+      kpiCard('Encontros lançados', k.encontros, k.cultos + ' cultos lançados', { valueColor: '#0E7A68' }) +
       '</div>';
     html += '<div class="home-kpis" style="margin-top:0;margin-bottom:14px">' +
-      kpiCard('Membros', k.membros, 'presenças lançadas', { valueColor: '#1B2344' }) +
-      kpiCard('Frequentadores Assíduos', k.fas, 'presenças lançadas', { valueColor: '#149C88' }) +
-      kpiCard('Visitantes', k.visitantes, 'presenças lançadas', { valueColor: '#6B3FA0' }) +
+      kpiCard('Membros', k.membros, 'presenças lançadas na célula', { valueColor: '#1B2344' }) +
+      kpiCard('Frequentadores Assíduos', k.fas, 'presenças lançadas na célula', { valueColor: '#149C88' }) +
+      kpiCard('Visitantes', k.visitantes, 'presenças lançadas na célula', { valueColor: '#6B3FA0' }) +
       '</div>';
 
     if (v.semLancamento.length) {
       html += '<div class="home-card home-empty" style="margin-bottom:14px">' +
-        '<div class="home-card-title">Sem lançamento nesta semana</div>' +
+        '<div class="home-card-title">Sem lançamento de célula nesta semana</div>' +
         '<div class="home-card-sub" style="margin-top:6px">' + escHtml(v.semLancamento.join(' · ')) + '</div></div>';
     }
 
@@ -3535,34 +3290,42 @@
     return html;
   }
 
-  function freqHistoricoHtml(v) {
-    var html = freqFiltrosHtml(v);
+  function freqTabelaHistorico(titulo, subtitulo, linhas, colunaExtra, vazio) {
     var th = function (label, align) {
       return '<th style="text-align:' + align + ';padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
     };
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:14px">' +
+    return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:14px">' +
       '<div style="padding:18px 22px 6px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Encontros lançados</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-top:2px">Clique numa linha para abrir o lançamento daquele encontro.</div></div>' +
-      '<div class="table-scroll" style="max-height:420px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">' + escHtml(titulo) + '</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-top:2px">' + escHtml(subtitulo) + '</div></div>' +
+      '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      th('Data', 'left') + th('Célula', 'left') + th('Presentes', 'right') + th('Pessoas', 'right') +
-      th('% célula', 'right') + th('Culto', 'right') + th('Visitantes', 'right') +
+      th('Data', 'left') + th('Célula', 'left') + th('Presentes', 'right') + th('Pessoas', 'right') + th('%', 'right') +
+      (colunaExtra ? th(colunaExtra, 'right') : '') +
       '</tr></thead><tbody>' +
-      v.historico.map(function (r) {
+      linhas.map(function (r) {
         var td = function (val) { return '<td style="padding:11px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + val + '</td>'; };
         return '<tr ' + cb(r.onClick) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
           '<td style="padding:11px 12px;font-weight:700;color:#14243a">' + escHtml(r.dataLabel) + '</td>' +
           '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
-          td(r.presentes) + td(r.pessoas) + td(r.pct + '%') + td(r.culto) + td(r.visitantes) +
+          td(r.presentes) + td(r.pessoas) + td(r.pct + '%') + (colunaExtra ? td(r.visitantes) : '') +
           '</tr>';
       }).join('') +
-      (v.historico.length ? '' : '<tr><td colspan="7" style="padding:18px 22px;color:#8a99ab;font-size:12.5px">' + (v.historicoStatus === 'loading' ? 'Carregando…' : 'Nenhum encontro lançado no período escolhido.') + '</td></tr>') +
+      (linhas.length ? '' : '<tr><td colspan="' + (colunaExtra ? 6 : 5) + '" style="padding:18px 22px;color:#8a99ab;font-size:12.5px">' + escHtml(vazio) + '</td></tr>') +
       '</tbody></table></div></div>';
+  }
+
+  function freqHistoricoHtml(v) {
+    var carregando = v.historicoStatus === 'loading';
+    var html = freqFiltrosHtml(v);
+    html += freqTabelaHistorico('Encontros de célula', 'Clique numa linha para abrir aquele lançamento.', v.historico, 'Visitantes',
+      carregando ? 'Carregando…' : 'Nenhum encontro de célula no período escolhido.');
+    html += freqTabelaHistorico('Cultos', 'Presença da célula no culto, por data de culto.', v.historicoCultos, '',
+      carregando ? 'Carregando…' : 'Nenhuma presença de culto lançada no período escolhido.');
 
     html += '<div class="home-card">' +
       '<div class="home-card-title">Histórico de uma pessoa</div>' +
-      '<div class="home-card-sub">Todas as presenças registradas para ela.</div>' +
+      '<div class="home-card-sub">Todas as presenças de célula registradas para ela.</div>' +
       '<div style="margin-top:12px;max-width:340px">' +
       optionalSelectField('Pessoa', cb(v.onPessoa, 'change'), v.pessoaOptions, v.pessoaId, 'Escolha uma pessoa') +
       '</div>' +
@@ -3694,8 +3457,6 @@
     cadastro: ['Cadastro de Membros', 'Pessoas, indicadores e gráficos da rede'],
     freq: ['Frequência', 'Lançamento semanal da célula e do culto'],
     ia: ['Oikos IA', 'Pergunte em português sobre os dados da rede'],
-    presenca: ['Presença por Célula', 'Encontros registrados pelos líderes na planilha'],
-    culto: ['Presença no Culto', 'Check-in pessoa por pessoa, por culto'],
     trilho: ['Trilho do Vencedor', 'Ceifeiros, Maturidade, CTL e Seminário Pastoral'],
     mov: ['Movimentações', 'Histórico de mudanças, perdidos e inativos'],
     novo: ['Novo Cadastro', 'Preencha os dados da pessoa. Fica salvo no banco e soma aos totais e gráficos.'],
@@ -3708,7 +3469,7 @@
     var key = vals.anonMode ? 'anon'
       : vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
       : vals.isFreq ? 'freq' : vals.isIa ? 'ia'
-      : vals.isPresenca ? 'presenca' : vals.isCulto ? 'culto' : vals.isTrilho ? 'trilho'
+      : vals.isTrilho ? 'trilho'
       : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
     var h = PAGE_HEADERS[key];
     return '<section class="home-hero page-hero">' +
@@ -3763,152 +3524,6 @@
       '<button ' + cb(sel.registrarNota) + ' style="padding:9px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">Adicionar</button>' +
       '</div>' +
       '</div></div>';
-  }
-
-  function presencaHtml(vals) {
-    var html = '<div>';
-
-    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<select ' + cb(vals.onPCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todas as células', vals.pFilters.celula === '') +
-      vals.pCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.pFilters.celula === o.v); }).join('') +
-      '</select>' +
-      '<select ' + cb(vals.onPAno, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os anos', vals.pFilters.ano === '') +
-      vals.pAnoOptions.map(function (o) { return opt(o.v, o.label, vals.pFilters.ano === o.v); }).join('') +
-      '</select>' +
-      '<select ' + cb(vals.onPMesTop, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os meses', vals.pFilters.mesTop === '') +
-      vals.pMesOptions.map(function (o) { return opt(o.v, o.label, vals.pFilters.mesTop === o.v); }).join('') +
-      '</select>' +
-      '<button ' + cb(vals.clearPFilters) + ' style="padding:10px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Limpar</button>' +
-      '<div style="flex:1"></div>' +
-      '<button ' + cb(vals.sharePresencaWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' Enviar resumo via WhatsApp</button>' +
-      '<button ' + cb(vals.onRefreshP) + ' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid #e2e9f2;background:#fff;border-radius:20px;padding:6px 12px 6px 10px;cursor:pointer">' +
-      '<span style="width:7px;height:7px;border-radius:50%;background:' + vals.syncP.dot + '"></span>' +
-      '<span style="font-size:11.5px;color:' + vals.syncP.color + ';font-weight:600">' + escHtml(vals.syncP.text) + '</span></button>' +
-      '</div>';
-
-    html += '<div class="grid-kpi4" style="margin-bottom:16px">' +
-      kpiCard('Encontros registrados', vals.pk.registros, vals.pk.periodoLabel) +
-      kpiCard('Presença média', vals.pk.media, 'pessoas por encontro', { gradient: true }) +
-      kpiCard('Frequentadores presentes', vals.pk.totalFA, 'soma de presenças de FAs', { valueColor: '#149C88' }) +
-      kpiCard('Visitantes recebidos', vals.pk.totalVisit, 'soma de presenças de visitantes', { valueColor: '#8A63C9' }) +
-      '</div>';
-
-    function simpleTable(title, headers, rows, rowFn) {
-      return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-        '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">' + title + '</div></div>' +
-        '<div class="table-scroll" style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
-        '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' + headers + '</tr></thead><tbody>' +
-        rows.map(rowFn).join('') +
-        '</tbody></table></div></div>';
-    }
-
-    html += '<div class="grid-2c" style="margin-bottom:16px">' +
-      simpleTable('Frequência da Célula',
-        '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Dia</th>' +
-        '<th style="text-align:left;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Mês</th>' +
-        '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Membros</th>' +
-        '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">FAs</th>' +
-        '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Visitantes</th>',
-        vals.freqCelulaRows,
-        function (r) {
-          return '<tr style="border-bottom:1px solid #f0f4f9">' +
-            '<td style="padding:8px 22px;color:#4a5b70;font-variant-numeric:tabular-nums">' + escHtml(r.dia) + '</td>' +
-            '<td style="padding:8px 12px;font-weight:600;color:#14243a">' + escHtml(r.mes) + '</td>' +
-            '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.membros + '</td>' +
-            '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.fa + '</td>' +
-            '<td style="padding:8px 22px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.visit + '</td></tr>';
-        }) +
-      simpleTable('Frequência Média por Mês',
-        '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Mês</th>' +
-        '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Membros</th>' +
-        '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">FAs</th>' +
-        '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Visitantes</th>',
-        vals.freqMediaMesRows,
-        function (m) {
-          return '<tr style="border-bottom:1px solid #f0f4f9">' +
-            '<td style="padding:8px 22px;font-weight:600;color:#14243a">' + escHtml(m.mes) + '</td>' +
-            '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + m.membros + '</td>' +
-            '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + m.fa + '</td>' +
-            '<td style="padding:8px 22px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + m.visit + '</td></tr>';
-        }) +
-      '</div>';
-
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
-      '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Frequência por Líder de Célula</div>' +
-      '<button ' + cb(vals.shareFreqLiderWhatsapp) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">' + whatsappIcon + ' WhatsApp</button>' +
-      '</div>' +
-      '<div class="table-scroll" style="max-height:360px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead>' +
-      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Líder / Célula</th>' +
-      '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Membros</th>' +
-      '<th style="text-align:right;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">FAs</th>' +
-      '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Visitantes</th>' +
-      '</tr></thead><tbody>' +
-      vals.freqPorLiderRows.map(function (r) {
-        return '<tr style="border-bottom:1px solid #f0f4f9">' +
-          '<td style="padding:8px 22px;font-weight:600;color:#14243a">' + escHtml(r.celula) + '</td>' +
-          '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.membros + '</td>' +
-          '<td style="padding:8px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.fa + '</td>' +
-          '<td style="padding:8px 22px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + r.visit + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div></div>';
-
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04);margin-bottom:16px">' +
-      '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:10px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Média de frequência por líder de célula</div>' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-      '<div style="font-size:11px;color:#6b7c93;display:flex;gap:12px"><span><b style="color:#1B2344">■</b> Membros</span><span><b style="color:#149C88">■</b> FAs</span><span><b style="color:#8A63C9">■</b> Visitantes</span></div>' +
-      '<select ' + cb(vals.onPMes, 'change') + ' style="padding:6px 10px;border:1px solid #d4deea;border-radius:8px;background:#fff;font-size:12.5px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os meses (2026)', vals.pFilters.mes === '') +
-      vals.mesOptions.map(function (o) { return opt(o.v, o.label + '/26', vals.pFilters.mes === o.v); }).join('') +
-      '</select></div></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Dados de 2026 · presença média por mês (ou total do mês selecionado), por membros/FAs/visitantes · clique para filtrar por célula</div>' +
-      '<div style="display:flex;flex-direction:column;gap:13px">' +
-      vals.mediaLiderBars.map(function (c) {
-        return '<div ' + cb(c.onClick) + ' style="cursor:pointer;padding:4px 5px;border-radius:8px;background:' + c.bg + '">' +
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">' +
-          '<div style="font-size:13px;color:#14243a;font-weight:' + c.weight + '">' + escHtml(c.label) + '</div>' +
-          '<div style="font-size:12px;color:#6b7c93"><b style="color:#1B2344">' + c.registros + '</b> encontros em ' + c.mesesAtivos + ' ' + c.mesLabel + '</div></div>' +
-          '<div style="display:grid;grid-template-columns:1fr 56px;align-items:center;gap:10px">' +
-          '<div style="height:20px;background:#eef2f7;border-radius:6px;overflow:hidden;display:flex;width:' + c.totalW + '">' +
-          c.segs.map(function (s) { return '<div title="' + escHtml(s.title) + '" style="height:100%;width:' + s.w + ';background:' + s.color + '"></div>'; }).join('') +
-          '</div><div style="font-size:12.5px;font-weight:700;color:#1B2344;text-align:right">' + c.mediaMensal + '/mês</div></div></div>';
-      }).join('') +
-      '</div></div>';
-
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Registros <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.pk.registros + ' na seleção</span></div></div>' +
-      '<div class="table-scroll" style="max-height:400px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th ' + cb(vals.sortPData) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Data ' + vals.sortPDataArrow + '</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-      '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Membros</th>' +
-      '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">FAs</th>' +
-      '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Visitantes</th>' +
-      '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Kids</th>' +
-      '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Tipo</th>' +
-      '<th style="text-align:right;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Total</th>' +
-      '</tr></thead><tbody>' +
-      vals.pRows.map(function (r) {
-        return '<tr style="border-bottom:1px solid #f0f4f9">' +
-          '<td style="padding:10px 22px;color:#4a5b70;font-variant-numeric:tabular-nums">' + escHtml(r.dataLabel) + '</td>' +
-          '<td style="padding:10px 12px;font-weight:600;color:#14243a">' + escHtml(r.celulaLabel) + '</td>' +
-          '<td style="padding:10px 12px;text-align:center;color:#4a5b70">' + r.membros + '</td>' +
-          '<td style="padding:10px 12px;text-align:center;color:#4a5b70">' + r.fa + '</td>' +
-          '<td style="padding:10px 12px;text-align:center;color:#4a5b70">' + r.visit + '</td>' +
-          '<td style="padding:10px 12px;text-align:center;color:#4a5b70">' + r.kids + '</td>' +
-          '<td style="padding:10px 12px;text-align:center"><span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:' + r.tipoBg + ';color:' + r.tipoFg + '">' + escHtml(r.tipo) + '</span></td>' +
-          '<td style="padding:10px 22px;text-align:right;font-weight:700;color:#1B2344;font-variant-numeric:tabular-nums">' + r.total + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div></div>';
-
-    html += '</div>';
-    return html;
   }
 
   function selectField(label, cbAttr, options, current, placeholder) {
@@ -4104,67 +3719,6 @@
           '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(t.nome) + '</td>' +
           '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(t.celulaLabel) + '</td>' +
           '<td style="padding:11px 22px;color:#4a5b70">' + escHtml(t.cursosLabel) + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div></div>';
-
-    html += '</div>';
-    return html;
-  }
-
-  function presencaCultoHtml(vals) {
-    var html = '<div>';
-
-    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<input type="date" id="culto-data-input" value="' + escHtml(vals.novoCultoData) + '" style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a">' +
-      '<button ' + cb(vals.criarCulto) + ' style="padding:10px 14px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Selecionar / criar culto</button>' +
-      '</div>';
-
-    if (!vals.cultoAtual) {
-      html += '<div style="font-size:13px;color:#6b7c93;margin-bottom:16px">Escolha uma data acima para abrir o check-in, ou clique num culto já registrado na lista abaixo.</div>';
-    } else {
-      html += '<div class="grid-kpi3" style="margin-bottom:16px">' +
-        kpiCard('Culto selecionado', vals.cultoAtual.dataLabel, 'check-in em andamento') +
-        kpiCard('Presentes', vals.cultoPresentes, 'de ' + vals.cultoTotal + ' na seleção', { gradient: true }) +
-        kpiCard('Presença', vals.cultoPct, '% da seleção', { pct: true, valueColor: '#149C88' }) +
-        '</div>';
-
-      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
-        '<input type="text" id="culto-busca-input" value="' + escHtml(vals.cultoFilters.q) + '" ' + cb(vals.onCFQ, 'input') + ' placeholder="Buscar por nome…" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px">' +
-        '<select ' + cb(vals.onCFCelula, 'change') + ' style="padding:9px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-        opt('', 'Todas as células', vals.cultoFilters.celula === '') +
-        vals.cultoCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.cultoFilters.celula === o.v); }).join('') +
-        '</select>' +
-        '</div>';
-
-      html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
-        '<div class="table-scroll" style="max-height:520px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-        '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-        '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
-        '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-        '<th style="text-align:right;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Presente</th>' +
-        '</tr></thead><tbody>' +
-        vals.cultoRows.map(function (r) {
-          return '<tr ' + cb(r.onToggle) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9">' +
-            '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(r.nome) + '</td>' +
-            '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
-            '<td style="padding:11px 22px;text-align:right">' +
-            '<span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:11.5px;font-weight:600;background:' + (r.presente ? '#dcf3ef' : '#eef2f7') + ';color:' + (r.presente ? '#0E7A68' : '#8a99ab') + '">' + (r.presente ? 'Presente' : 'Ausente') + '</span>' +
-            '</td></tr>';
-        }).join('') +
-        '</tbody></table></div></div>';
-    }
-
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Cultos registrados</div></div>' +
-      '<div class="table-scroll" style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
-      '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Presentes</th>' +
-      '</tr></thead><tbody>' +
-      vals.cultos.map(function (c) {
-        return '<tr ' + cb(c.onClick) + ' data-hover style="cursor:pointer;border-bottom:1px solid #f0f4f9;background:' + (c.active ? '#eaf1fa' : 'transparent') + '">' +
-          '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(c.dataLabel) + '</td>' +
-          '<td style="padding:9px 22px;text-align:right;color:#4a5b70">' + c.presentes + '</td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
 
@@ -4667,8 +4221,6 @@
           : '<div class="home-card home-empty">' +
             '<div class="home-card-title">Oikos IA é restrito</div>' +
             '<div class="home-card-sub" style="margin-top:6px">Disponível para Pastor, Pastor de Rede e administradores.</div></div>') : '') +
-        (vals.isPresenca ? presencaHtml(vals) : '') +
-        (vals.isCulto ? presencaCultoHtml(vals) : '') +
         (vals.isTrilho ? trilhoHtml(vals) : '') +
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
