@@ -49,6 +49,36 @@
     return opt('', 'Todos os tipos', atual === '') + TIPO_OPTIONS.map(function (o) { return opt(o.v, o.label, atual === o.v); }).join('');
   }
 
+  // Jornada da pessoa na igreja (members.status_pessoa) — separada da
+  // função ministerial (members.funcao). Ver add_hierarquia_status.sql.
+  var STATUS_OPTIONS = [
+    { v: 'Visitante', label: 'Visitante' },
+    { v: 'Frequentador Assíduo', label: 'Frequentador Assíduo (FA)' },
+    { v: 'Membro', label: 'Membro' },
+  ];
+  // Uma pessoa ocupa uma função por vez; subir de Líder para
+  // Discipulador troca a função, não acumula.
+  var FUNCOES_MINISTERIAIS = ['Anfitrião', 'Líder em Treinamento', 'Anjo da Guarda', 'Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  var FUNCAO_OPTIONS = FUNCOES_MINISTERIAIS.map(function (f) { return { v: f, label: f }; });
+
+  // `posicao` continua sendo o rótulo único usado por telas, gráficos e
+  // RLS: a função quando existe, senão o status (igual ao gatilho do banco).
+  function posicaoDe(status, funcao) {
+    return funcao || status || 'Visitante';
+  }
+
+  function statusDeMembro(p) {
+    if (!p) return 'Visitante';
+    if (p.status_pessoa) return p.status_pessoa;
+    return (p.posicao === 'Visitante' || p.posicao === 'Frequentador Assíduo') ? p.posicao : 'Membro';
+  }
+
+  function funcaoDeMembro(p) {
+    if (!p) return '';
+    if (p.funcao) return p.funcao;
+    return ['Visitante', 'Frequentador Assíduo', 'Membro'].indexOf(p.posicao) < 0 ? p.posicao : '';
+  }
+
   function posicaoOptions() {
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
@@ -89,12 +119,12 @@
     return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
-  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', posicao: 'Visitante', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', status: 'Visitante', funcao: '', supervisorId: '', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
   // Campos que o cônjuge herda de quem foi salvo: onde a pessoa é
   // contada (célula), se é contada (situação) e o nível de acesso
   // (posição). O "Admin" mora em profiles.is_admin e é espelhado à
   // parte, pela function sincronizar_acesso_conjuge().
-  var CAMPOS_HERDADOS_CONJUGE = ['celula', 'posicao', 'situacao_saida', 'active'];
+  var CAMPOS_HERDADOS_CONJUGE = ['celula', 'posicao', 'funcao', 'status_pessoa', 'situacao_saida', 'active'];
   var publicFormDefaults = { nome: '', tipo: 'Adultos', celula: '', nasc: '', tel: '' };
   // modo: 'novo' (cadastra a pessoa agora) ou 'existente' (já cadastrada, só recebe posição/login)
   // tipoLogin: 'senha' (Edge Function cria o usuário) ou 'google'
@@ -230,6 +260,12 @@
     freqPainel: { periodo: '8', celula: '', discipulador: '', obreiro: '' },
     freqHistoricoPessoaId: '',
     freqHistoricoPessoa: null,
+
+    // Oikos IA (só para acesso total)
+    iaPergunta: '',
+    iaConversa: [],
+    iaCarregando: false,
+    iaErro: null,
 
     // movimentações (Supabase)
     movimentacoes: [],
@@ -725,13 +761,17 @@
     };
 
     if (f.modo === 'existente') {
-      sb.from('members').update({ posicao: f.posicao, celula: precisaCelula ? (f.celula || null) : null }).eq('id', f.memberId).then(function (res) {
+      sb.from('members').update({
+        posicao: f.posicao, funcao: f.posicao, status_pessoa: 'Membro',
+        celula: precisaCelula ? (f.celula || null) : null,
+      }).eq('id', f.memberId).then(function (res) {
         if (res.error) { setState({ adminLiderSaving: false, adminLiderError: friendlyMemberInsertError(res.error) }); return; }
         afterMember(f.memberId);
       });
     } else {
       var row = {
         nome: f.nome.trim(), tipo: 'Adultos', posicao: f.posicao,
+        funcao: f.posicao, status_pessoa: 'Membro',
         celula: precisaCelula ? (f.celula || null) : null,
         batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
         nasc: null, tel: '',
@@ -816,8 +856,11 @@
   }
 
   function novoFormToRow(f) {
+    var posicao = posicaoDe(f.status, f.funcao);
     return {
-      nome: f.nome.trim(), tipo: f.tipo, celula: celulaObrigatoria(f.posicao) ? (f.celula || null) : null, posicao: f.posicao,
+      nome: f.nome.trim(), tipo: f.tipo, celula: celulaObrigatoria(posicao) ? (f.celula || null) : null,
+      posicao: posicao, status_pessoa: f.status, funcao: f.funcao || null,
+      supervisor_id: f.supervisorId || null,
       batizado: f.batizado, encontro: f.encontro, civil: f.civil,
       nasc: f.nasc || null, tel: f.tel.trim(),
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
@@ -828,14 +871,20 @@
     };
   }
 
-  var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'batizado', 'encontro', 'situacao_saida'];
+  var MOVIMENTACAO_CAMPOS = ['celula', 'posicao', 'status_pessoa', 'funcao', 'batizado', 'encontro', 'situacao_saida'];
+
+  var MOVIMENTACAO_LABELS = {
+    celula: 'Célula', posicao: 'Posição', status_pessoa: 'Status', funcao: 'Função',
+    batizado: 'Batismo', encontro: 'Encontro com Deus', situacao_saida: 'Situação', nota: 'Nota',
+  };
 
   function startEditMembro(p) {
     var conjuge = p.conjuge_id ? memberById(p.conjuge_id) : null;
     setState({
       tab: 'novo', selected: null,
       novoForm: {
-        nome: p.nome, tipo: p.tipo, celula: p.celula, posicao: p.posicao,
+        nome: p.nome, tipo: p.tipo, celula: p.celula,
+        status: statusDeMembro(p), funcao: funcaoDeMembro(p), supervisorId: p.supervisor_id || '',
         batizado: p.batizado, encontro: p.encontro, civil: p.civil,
         nasc: p.nasc || '', tel: p.tel || '',
         maturidade: p.maturidade, ctl: p.ctl, seminario: p.seminario, ceifeiros: p.ceifeiros,
@@ -919,6 +968,12 @@
   function submitNovoMembro() {
     var f = state.novoForm;
     if (!f.nome.trim() || !sb) return;
+    // Regra da hierarquia: Anfitrião é sempre um Membro com célula
+    // (o banco também barra, aqui é só pra avisar antes de enviar).
+    if (f.funcao === 'Anfitrião' && f.status !== 'Membro') {
+      setState({ novoError: 'Anfitrião precisa estar como Membro. Ajuste o status antes de salvar.' });
+      return;
+    }
     setState({ novoSaving: true, novoError: null });
     var nascEl = document.getElementById('novo-nasc');
     var row = novoFormToRow(Object.assign({}, f, { nasc: nascEl ? nascEl.value : f.nasc }));
@@ -1288,6 +1343,59 @@
   function setFreqTab(tab) {
     setState({ freqTab: tab, freqSalvo: false });
   }
+
+  // ---------------------------------------------------------------------
+  // Oikos IA — perguntas em linguagem natural sobre os dados do Oikos.
+  //
+  // O app só manda a pergunta. Quem calcula os números é a Edge Function
+  // oikos-ia, usando o token de quem perguntou (a RLS continua valendo),
+  // e só os números agregados vão para o modelo — nunca o banco.
+  // ---------------------------------------------------------------------
+  var IA_SUGESTOES = [
+    'Frequência das células esta semana',
+    'Visitantes do mês',
+    'Células com queda de frequência',
+    'Crescimento de membros',
+    'Pessoas sem frequência recente',
+    'Células que ainda não lançaram presença',
+  ];
+
+  function setIaPergunta(v) { setState({ iaPergunta: v }); }
+
+  function perguntarIA(texto) {
+    if (!sb) return;
+    var pergunta = String(texto == null ? state.iaPergunta : texto).trim();
+    if (!pergunta || state.iaCarregando) return;
+    setState({ iaCarregando: true, iaPergunta: '', iaErro: null });
+    sb.functions.invoke('oikos-ia', { body: { pergunta: pergunta } }).then(function (res) {
+      var erro = null, resposta = null;
+      if (res.error) {
+        erro = 'Não consegui falar com o Oikos IA. Publique a Edge Function "oikos-ia" no seu projeto Supabase (veja o README).';
+        if (res.error.context && typeof res.error.context.json === 'function') {
+          res.error.context.json().then(function (body) {
+            registrarRespostaIA(pergunta, null, (body && body.error) || erro);
+          }).catch(function () { registrarRespostaIA(pergunta, null, erro); });
+          return;
+        }
+      } else if (res.data && res.data.error) {
+        erro = res.data.error;
+      } else {
+        resposta = (res.data && res.data.resposta) || 'Não existem informações suficientes no Oikos para responder essa pergunta.';
+      }
+      registrarRespostaIA(pergunta, resposta, erro);
+    });
+  }
+
+  function registrarRespostaIA(pergunta, resposta, erro) {
+    setState(function (s) {
+      return {
+        iaCarregando: false,
+        iaConversa: s.iaConversa.concat([{ pergunta: pergunta, resposta: resposta, erro: erro }]),
+      };
+    });
+  }
+
+  function limparConversaIA() { setState({ iaConversa: [], iaErro: null }); }
 
   // ---------------------------------------------------------------------
   // Presença no culto (Supabase, check-in por pessoa)
@@ -1719,7 +1827,7 @@
       var nascLabelSel = '—';
       if (s.nasc) { var d2 = new Date(s.nasc); nascLabelSel = d2.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }); }
       var historico = (state.movimentacoes || []).filter(function (m) { return m.member_id === s.id; }).map(function (m) {
-        var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', situacao_saida: 'Situação', nota: 'Nota' }[m.campo] || m.campo;
+        var campoLabel = MOVIMENTACAO_LABELS[m.campo] || m.campo;
         var desc = m.campo === 'nota' ? m.observacao : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
         return { data: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }), campoLabel: campoLabel, desc: desc };
       });
@@ -1727,6 +1835,9 @@
         id: s.id, nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, fields: [
           { label: 'Nº de matrícula', value: s.numero != null ? String(s.numero) : '—' },
           { label: 'Célula', value: celulaLabel(s.celula) },
+          { label: 'Status', value: statusDeMembro(s) },
+          { label: 'Função ministerial', value: funcaoDeMembro(s) || '—' },
+          { label: 'Supervisor', value: (s.supervisor_id && memberById(s.supervisor_id) ? memberById(s.supervisor_id).nome : '—') },
           { label: 'Idade', value: s.idade != null ? s.idade + ' anos' : '—' },
           { label: 'Nascimento', value: nascLabelSel },
           { label: 'Estado civil', value: s.civil },
@@ -1890,6 +2001,7 @@
 
     var isHome = state.tab === 'home';
     var isFreq = state.tab === 'freq';
+    var isIa = state.tab === 'ia';
     var isCadastro = state.tab === 'cadastro';
     var isPresenca = state.tab === 'presenca';
     var isTrilho = state.tab === 'trilho';
@@ -1976,7 +2088,7 @@
       if (mf.campo && m.campo !== mf.campo) return false;
       return true;
     }).map(function (m) {
-      var campoLabel = { celula: 'Célula', posicao: 'Posição', batizado: 'Batismo', encontro: 'Encontro com Deus', situacao_saida: 'Situação', nota: 'Nota' }[m.campo] || m.campo;
+      var campoLabel = MOVIMENTACAO_LABELS[m.campo] || m.campo;
       var desc = m.campo === 'nota' ? (m.observacao || '') : (celulaLabelOrRaw(m.campo, m.valor_anterior) + ' → ' + celulaLabelOrRaw(m.campo, m.valor_novo));
       return {
         dataLabel: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -2076,6 +2188,16 @@
       tabPresencaBorder: isPresenca ? '#1B2344' : 'transparent',
       isHome: isHome,
       goHome: function () { setState({ tab: 'home', sidebarOpen: false }); },
+      isIa: isIa,
+      goIa: function () { setState({ tab: 'ia', sidebarOpen: false }); },
+      iaPergunta: state.iaPergunta,
+      iaConversa: state.iaConversa,
+      iaCarregando: state.iaCarregando,
+      iaSugestoes: IA_SUGESTOES,
+      onIaPergunta: function (e) { setIaPergunta(e.target.value); },
+      enviarIa: function (e) { if (e && e.preventDefault) e.preventDefault(); perguntarIA(); },
+      perguntarSugestao: function (texto) { return function () { perguntarIA(texto); }; },
+      limparIa: function () { limparConversaIA(); },
       isFreq: isFreq,
       goFreq: function () {
         var celula = state.freqCelula || celulaPadraoFrequencia();
@@ -2151,6 +2273,12 @@
       pickConjuge: function (m) { return function () { pickConjuge(m); }; },
       limparConjuge: function () { limparConjuge(); },
       celulaOptionsForm: currentCelulaList().map(function (c) { return { v: c, label: celulaLabel(c) }; }),
+      // Quem pode ser supervisor: quem tem função ministerial (menos a
+      // própria pessoa, que não supervisiona a si mesma).
+      supervisorOptions: allPessoas.filter(function (p) {
+        return p.active !== false && p.id !== state.novoEditId && FUNCOES_MINISTERIAIS.indexOf(funcaoDeMembro(p)) >= 3;
+      }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); })
+        .map(function (p) { return { v: p.id, label: p.nome + ' (' + funcaoDeMembro(p) + ')' }; }),
       cultos: historicoCultos, cultosStatus: state.cultosStatus,
       novoCultoData: state.novoCultoData,
       onCultoData: function (e) { setCultoData(e.target.value); },
@@ -2245,6 +2373,7 @@
     trilho: '<path d="M5 3v18"></path><path d="M5 4h11l-2 4 2 4H5"></path>',
     mov: '<path d="M4 7h4l3 10h6"></path><path d="M4 17h4l3-10h6"></path><path d="m17 4 3 3-3 3"></path><path d="m17 14 3 3-3 3"></path>',
     novo: '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
+    ia: '<path d="M12 3.5 13.6 8 18 9.6 13.6 11.2 12 15.6 10.4 11.2 6 9.6 10.4 8 12 3.5Z"></path><path d="M18 15.5 18.8 18l2.2.8-2.2.8-.8 2.4-.8-2.4-2.2-.8 2.2-.8.8-2.5Z"></path><path d="M5.5 14 6 16l2 .7-2 .7-.5 2-.5-2-2-.7 2-.7.5-2Z"></path>',
     hierarquia: '<circle cx="12" cy="4.5" r="2"></circle><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="18" r="2"></circle><path d="M12 6.5v4"></path><path d="M12 10.5 6 16"></path><path d="M12 10.5 18 16"></path>',
   };
 
@@ -2282,6 +2411,7 @@
         { icon: 'culto', label: 'Presença no Culto', active: vals.isCulto, onClick: vals.goCulto, show: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
+        { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
         { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull },
       ];
@@ -3466,10 +3596,104 @@
     return html + '</div>';
   }
 
+  // ---------------------------------------------------------------------
+  // Oikos IA — tela
+  // ---------------------------------------------------------------------
+
+  // Markdown mínimo (negrito, listas, tabelas e títulos) — o suficiente
+  // pra resposta ficar legível sem trazer biblioteca nenhuma.
+  function iaTextoHtml(texto) {
+    var linhas = String(texto || '').split('\n');
+    var html = '', lista = null, tabela = null;
+    var inline = function (t) {
+      return escHtml(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*]+)\*/g, '$1<i>$2</i>');
+    };
+    var fecharLista = function () {
+      if (!lista) return;
+      html += '<ul style="margin:8px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:5px">' +
+        lista.map(function (i) { return '<li style="font-size:13.5px;line-height:1.55">' + inline(i) + '</li>'; }).join('') + '</ul>';
+      lista = null;
+    };
+    var fecharTabela = function () {
+      if (!tabela || !tabela.length) { tabela = null; return; }
+      var cabecalho = tabela[0];
+      var corpo = tabela.slice(1);
+      html += '<div class="table-scroll" style="margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
+        '<thead><tr style="background:#f7f9fc">' +
+        cabecalho.map(function (c) { return '<th style="text-align:left;padding:8px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#7b8aa0;font-weight:700;border-bottom:1px solid #e6ecf4">' + inline(c) + '</th>'; }).join('') +
+        '</tr></thead><tbody>' +
+        corpo.map(function (linha) {
+          return '<tr style="border-bottom:1px solid #f0f4f9">' +
+            linha.map(function (c) { return '<td style="padding:9px 12px;color:#14243a">' + inline(c) + '</td>'; }).join('') + '</tr>';
+        }).join('') +
+        '</tbody></table></div>';
+      tabela = null;
+    };
+
+    linhas.forEach(function (linha) {
+      var t = linha.trim();
+      if (/^\|/.test(t)) {
+        var celulas = t.replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+        if (celulas.every(function (c) { return /^:?-{2,}:?$/.test(c); })) return;  // separador
+        (tabela || (tabela = [])).push(celulas);
+        return;
+      }
+      fecharTabela();
+      if (!t) { fecharLista(); return; }
+      if (/^[-*•]\s+/.test(t)) { (lista || (lista = [])).push(t.replace(/^[-*•]\s+/, '')); return; }
+      fecharLista();
+      if (/^#{1,6}\s+/.test(t)) {
+        html += '<div style="font-size:14.5px;font-weight:800;margin:12px 0 4px;color:#14243a">' + inline(t.replace(/^#{1,6}\s+/, '')) + '</div>';
+        return;
+      }
+      html += '<p style="margin:8px 0;font-size:13.5px;line-height:1.6;color:#14243a">' + inline(t) + '</p>';
+    });
+    fecharLista(); fecharTabela();
+    return html;
+  }
+
+  function oikosIaHtml(vals) {
+    var html = '<div class="home">';
+
+    html += '<div class="home-card" style="margin-top:16px">' +
+      '<div class="home-card-title">Pergunte sobre a rede</div>' +
+      '<div class="home-card-sub">As respostas saem só dos dados lançados no Oikos, dentro do que a sua permissão alcança. Sem dado, o Oikos IA diz que não sabe — não inventa.</div>' +
+      '<form ' + cb(vals.enviarIa, 'submit') + ' style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
+      '<input type="text" id="ia-pergunta" value="' + escHtml(vals.iaPergunta) + '" ' + cb(vals.onIaPergunta, 'input') + ' placeholder="Ex: quais células caíram de frequência no último mês?" style="flex:1;min-width:220px;padding:12px 14px;border:1px solid #d4deea;border-radius:12px;font-size:14px;background:#fff">' +
+      '<button type="submit"' + (vals.iaCarregando ? ' disabled' : '') + ' style="padding:12px 20px;border:none;border-radius:999px;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.iaCarregando ? 'Consultando…' : 'Perguntar') + '</button>' +
+      '</form>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+      vals.iaSugestoes.map(function (s) {
+        return '<button type="button" ' + cb(vals.perguntarSugestao(s)) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#2E4FC7;cursor:pointer">' + escHtml(s) + '</button>';
+      }).join('') +
+      '</div></div>';
+
+    if (vals.iaConversa.length) {
+      html += '<div style="display:flex;justify-content:flex-end;margin:14px 0 0">' +
+        '<button type="button" ' + cb(vals.limparIa) + ' style="border:none;background:none;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Limpar conversa</button></div>';
+    }
+
+    html += vals.iaConversa.slice().reverse().map(function (item) {
+      return '<div class="home-card" style="margin-top:12px">' +
+        '<div style="font-size:13.5px;font-weight:800;color:#2E4FC7;margin-bottom:8px">' + escHtml(item.pergunta) + '</div>' +
+        (item.erro
+          ? '<div style="background:#f7e2e2;color:#a02020;border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:600">' + escHtml(item.erro) + '</div>'
+          : iaTextoHtml(item.resposta)) +
+        '</div>';
+    }).join('');
+
+    if (vals.iaCarregando) {
+      html += '<div class="home-card" style="margin-top:12px;color:#7b8aa0;font-size:13px">Consultando os dados do Oikos…</div>';
+    }
+
+    return html + '</div>';
+  }
+
   // Cabeçalho das demais telas, no mesmo padrão do destaque do Início.
   var PAGE_HEADERS = {
     cadastro: ['Cadastro de Membros', 'Pessoas, indicadores e gráficos da rede'],
     freq: ['Frequência', 'Lançamento semanal da célula e do culto'],
+    ia: ['Oikos IA', 'Pergunte em português sobre os dados da rede'],
     presenca: ['Presença por Célula', 'Encontros registrados pelos líderes na planilha'],
     culto: ['Presença no Culto', 'Check-in pessoa por pessoa, por culto'],
     trilho: ['Trilho do Vencedor', 'Ceifeiros, Maturidade, CTL e Seminário Pastoral'],
@@ -3483,7 +3707,7 @@
   function pageHeaderHtml(vals) {
     var key = vals.anonMode ? 'anon'
       : vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
-      : vals.isFreq ? 'freq'
+      : vals.isFreq ? 'freq' : vals.isIa ? 'ia'
       : vals.isPresenca ? 'presenca' : vals.isCulto ? 'culto' : vals.isTrilho ? 'trilho'
       : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
     var h = PAGE_HEADERS[key];
@@ -3751,7 +3975,7 @@
 
       '<div class="grid-form2">' +
       selectField('Tipo de cadastro', cb(vals.onNF('tipo'), 'change'), TIPO_OPTIONS, f.tipo) +
-      (celulaObrigatoria(f.posicao)
+      (celulaObrigatoria(posicaoDe(f.status, f.funcao))
         // Sem placeholder quando já tem uma célula válida (comportamento de sempre).
         // Com placeholder "Selecionar" (e required) quando está vazia — evita
         // salvar sem célula ao trocar a posição de liderança sênior pra uma
@@ -3761,8 +3985,17 @@
           '<div style="margin-top:5px;padding:10px 12px;border:1px dashed #d4deea;border-radius:9px;font-size:12.5px;color:#8a99ab">Não se aplica a esta posição</div></div>') +
       '</div>' +
 
+      // Jornada e função são coisas diferentes: a pessoa anda
+      // Visitante → FA → Membro, e sobre isso pode receber uma função.
       '<div class="grid-form2">' +
-      selectField('Posição', cb(vals.onNF('posicao'), 'change'), posicaoOptions(), f.posicao) +
+      selectField('Status na igreja', cb(vals.onNF('status'), 'change'), STATUS_OPTIONS, f.status) +
+      optionalSelectField('Função ministerial', cb(vals.onNF('funcao'), 'change'), FUNCAO_OPTIONS, f.funcao, 'Nenhuma') +
+      '</div>' +
+      (f.funcao === 'Anfitrião' && f.status !== 'Membro'
+        ? '<div style="background:#faf1de;color:#a1780f;border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:600">Anfitrião precisa estar como Membro.</div>'
+        : '') +
+      '<div class="grid-form2">' +
+      optionalSelectField('Supervisor direto (opcional)', cb(vals.onNF('supervisorId'), 'change'), vals.supervisorOptions, f.supervisorId, 'Nenhum') +
       selectField('Estado civil', cb(vals.onNF('civil'), 'change'), [
         { v: 'Solteiro (a)', label: 'Solteiro(a)' }, { v: 'Casado (a)', label: 'Casado(a)' }, { v: 'Amasiado (a)', label: 'Amasiado(a)' },
         { v: 'Divorciado(a)', label: 'Divorciado(a)' }, { v: 'Viuvo (a)', label: 'Viúvo(a)' }
@@ -3963,7 +4196,7 @@
   }
 
   function movimentacoesHtml(vals) {
-    var campoOptions = [{ v: 'celula', label: 'Célula' }, { v: 'posicao', label: 'Posição' }, { v: 'batizado', label: 'Batismo' }, { v: 'encontro', label: 'Encontro com Deus' }, { v: 'situacao_saida', label: 'Situação' }, { v: 'nota', label: 'Nota' }];
+    var campoOptions = Object.keys(MOVIMENTACAO_LABELS).map(function (k) { return { v: k, label: MOVIMENTACAO_LABELS[k] }; });
     var html = '<div>';
 
     html += '<div class="grid-form2" style="margin:18px 0 16px">' +
@@ -4430,6 +4663,10 @@
         (vals.isHome ? homeHtml(homeVals(vals)) : pageHeaderHtml(vals)) +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isFreq ? frequenciaHtml(frequenciaVals(vals)) : '') +
+        (vals.isIa ? (vals.souFull ? oikosIaHtml(vals)
+          : '<div class="home-card home-empty">' +
+            '<div class="home-card-title">Oikos IA é restrito</div>' +
+            '<div class="home-card-sub" style="margin-top:6px">Disponível para Pastor, Pastor de Rede e administradores.</div></div>') : '') +
         (vals.isPresenca ? presencaHtml(vals) : '') +
         (vals.isCulto ? presencaCultoHtml(vals) : '') +
         (vals.isTrilho ? trilhoHtml(vals) : '') +

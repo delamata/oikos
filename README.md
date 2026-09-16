@@ -12,12 +12,48 @@ dados + autenticação).
   - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro**, as células em que é o obreiro responsável; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
   - Clicar num cartão de célula abre o Cadastro de Membros já filtrado por ela.
 - **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. **Tipo** de cadastro: Adultos, Jovens ou Kids e Juvenis — cada tipo é contado pelo próprio nome nos indicadores; Jovens entram no Trilho do Vencedor junto com Adultos e podem ser vinculados como cônjuge. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
+- **Frequência** — lançamento semanal da célula, pensado para o celular. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa) e a data de hoje; marca quem veio à **célula** e quem foi ao **culto** da semana, e salva tudo de uma vez ("Frequência registrada com sucesso"). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Três abas: **Lançar**, **Histórico** (encontros do período, com filtro por célula/discipulador/rede e o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
+- **Oikos IA** — só para Pastor, Pastor de Rede e administradores. Perguntas em português sobre os dados do Oikos ("quais células estão com queda de frequência?", "quantos visitantes tivemos neste mês?"), com sugestões clicáveis na tela. Veja "Oikos IA" abaixo.
 - **Presença por Célula** — lida de uma planilha Google (formulário que os líderes já preenchem), somente leitura.
 - **Presença no Culto** — check-in pessoa por pessoa, por culto/data.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
 - **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem), **Fora da contagem** (transferidos e perdidos) e **Inativos**. Nas duas últimas listas, clicar numa linha abre a ficha da pessoa — dá pra editar o cadastro dali, inclusive reativar quem voltou.
 - **+ Novo Cadastro** — formulário de criação e edição de membros.
 - **Administração** — só aparece para quem tem acesso total (Pastor/Pastor de Rede/admin). Cadastra novas células e nova liderança (Pastor, Obreiro, Discipulador, Líder), com opção de já criar o login da pessoa; e define qual discipulador e qual obreiro são responsáveis por cada célula — isso controla o que cada líder enxerga (veja "Acesso por nível" abaixo). Detalhes em "Administração: novas células e liderança".
+
+### Hierarquia: status, função e supervisão
+
+O cadastro separa duas coisas que antes ficavam juntas no campo Posição:
+
+- **Status na igreja** — a jornada da pessoa: **Visitante → Frequentador
+  Assíduo (FA) → Membro**. Mudar o status **não apaga nada**: célula,
+  presenças, trilho e histórico continuam, e a mudança fica registrada
+  em Movimentações e na auditoria.
+- **Função ministerial** — Anfitrião, Líder em Treinamento, Anjo da
+  Guarda, Líder, Discipulador, Obreiro, Pastor de Rede ou Pastor. É
+  **uma por vez**: quando um Líder é levantado Discipulador, a função
+  muda (não acumula). Quem não tem função fica só com o status.
+- **Supervisor direto** — monta a corrente Pastor → Obreiro / Pastor de
+  Rede → Discipulador → Líder → célula. É preenchido automaticamente na
+  migração, a partir do discipulador/obreiro já cadastrado em cada
+  célula, e pode ser ajustado na ficha.
+
+Regras aplicadas: **Anfitrião é sempre Membro e tem célula**;
+Discipulador, Obreiro, Pastor de Rede e Pastor não têm célula.
+
+O campo **Posição**, usado pelas telas, gráficos e regras de acesso,
+continua existindo e é preenchido sozinho pelo banco (a função quando
+existe, senão o status) — por isso nada do que já funcionava mudou.
+
+### Auditoria
+
+Mudanças importantes ficam gravadas na tabela `auditoria` por gatilho no
+banco (não dá para burlar pelo navegador): quem alterou, quando, qual
+registro, valor anterior e novo. Cobre função, status, célula,
+supervisor, situação e cônjuge de cada pessoa, a hierarquia das células
+e as correções de presença (célula e culto). Só quem tem acesso total
+consegue ler. O histórico por pessoa continua aparecendo na ficha, em
+Movimentações.
 
 ### Situação da pessoa
 
@@ -213,6 +249,38 @@ Administração e entre com o Google desse e-mail (deve vincular
 sozinho); depois entre com um Google diferente, sem convite (deve
 oferecer só o formulário de cadastro novo, sem lista de nomes).
 
+## Oikos IA
+
+Aba visível só para Pastor, Pastor de Rede e administradores. O Pastor
+pergunta em português ("quais células caíram de frequência nas últimas
+quatro semanas?") e recebe a resposta com os números usados.
+
+**Como a segurança funciona** (importante, e vale conferir):
+
+1. O app manda **só a pergunta** para a Edge Function `oikos-ia`.
+2. A function consulta o banco **com o token de quem perguntou**, nunca
+   com a chave de administrador. Ou seja, a RLS continua valendo: a IA
+   não alcança nada que a pessoa já não pudesse ver na tela.
+3. A function calcula um **painel de indicadores** (números agregados e
+   listas curtas) e envia **apenas esse painel** ao modelo. O banco não
+   é enviado, e o modelo não escreve nem executa consultas.
+4. O modelo é instruído a responder **só com esses dados**; sem dado
+   suficiente, responde "Não existem informações suficientes no Oikos
+   para responder essa pergunta." em vez de inventar.
+
+**Publicar (uma vez só):**
+
+1. Crie uma chave em <https://console.anthropic.com> (é um serviço pago,
+   cobrado por uso — cada pergunta custa centavos).
+2. Guarde a chave no Supabase:
+   `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
+   (ou em Edge Functions → Secrets, no painel).
+3. Publique: `supabase functions deploy oikos-ia`.
+
+Enquanto isso não for feito, a aba abre normalmente e cada pergunta
+responde explicando o que falta configurar — nada quebra no resto do
+sistema.
+
 ## Configuração inicial (uma vez só)
 
 1. Crie um projeto gratuito em [supabase.com](https://supabase.com).
@@ -227,6 +295,8 @@ oferecer só o formulário de cadastro novo, sem lista de nomes).
    - Rode [`supabase/add_acesso_conjuge.sql`](supabase/add_acesso_conjuge.sql) uma vez, depois do `add_conjuge.sql` — é a function que copia o "Admin" para o cônjuge (o app sozinho não pode mexer nisso). Sem ela, célula/posição/situação ainda são herdadas, só o Admin que não.
    - Rode [`supabase/add_rede_conjuge.sql`](supabase/add_rede_conjuge.sql) uma vez, depois do `add_conjuge.sql` — faz o cônjuge de um discipulador/obreiro enxergar a mesma rede de discipulado.
    - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
+   - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
+   - Rode [`supabase/add_frequencia.sql`](supabase/add_frequencia.sql) uma vez, **depois** do `add_hierarquia_status.sql` — cria o módulo de Frequência (encontros e presenças por célula), fecha `presencas_culto` por escopo de célula e atualiza `editar_celula()` para levar os encontros junto ao renomear.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
