@@ -43,6 +43,37 @@ O campo **Posição**, usado pelas telas, gráficos e regras de acesso,
 continua existindo e é preenchido sozinho pelo banco (a função quando
 existe, senão o status) — por isso nada do que já funcionava mudou.
 
+### Histórico da planilha antiga
+
+Os lançamentos que os líderes faziam no formulário Google (março/2025 a
+setembro/2026, 136 encontros de Claudio e Renata, Josivan e Célia,
+Junior e Luciana e Otávio e Jô) foram importados para a tabela
+`frequencia_planilha` e aparecem na aba **Frequência**: uma tabela
+própria no **Histórico** e um resumo por célula no **Painel**.
+
+Ficam **separados** dos lançamentos novos por um motivo: a planilha
+registrava só **totais** por encontro (quantos membros, FAs, visitantes
+e kids), não quem esteve presente. Juntar as duas coisas exigiria
+inventar nomes para completar os totais antigos. Por isso os
+percentuais de presença do Painel usam só os lançamentos feitos no
+Oikos, que são pessoa a pessoa, e o histórico antigo aparece ao lado,
+com os números como foram coletados.
+
+Detalhes que valem saber:
+
+- **"Junior e Luciana"** não existe mais como célula cadastrada. O
+  histórico dela foi preservado (a tabela não tem chave estrangeira
+  para as células justamente por isso), mas só quem tem acesso total
+  enxerga, e ela não aparece no filtro de célula. Para que volte a
+  aparecer, basta recriá-la em Administração.
+- Um envio repetido (Josivan e Célia, 07/11/2025, com números
+  idênticos) foi descartado. Já 11/06/2025 de Claudio e Renata tem dois
+  envios com números diferentes (7 membros e depois 11) — os dois foram
+  mantidos, porque só você sabe se foi correção ou dois encontros.
+- A importação pode ser repetida: o script limpa a tabela antes de
+  inserir, então rodar de novo não duplica. Para atualizar com o que
+  entrou na planilha depois, é só me pedir para gerar o arquivo de novo.
+
 ### Auditoria
 
 Mudanças importantes ficam gravadas na tabela `auditoria` por gatilho no
@@ -319,6 +350,7 @@ sistema.
    - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
    - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
    - Rode [`supabase/add_frequencia.sql`](supabase/add_frequencia.sql) uma vez, **depois** do `add_hierarquia_status.sql` — cria o módulo de Frequência (encontros e presenças por célula), fecha `presencas_culto` por escopo de célula e atualiza `editar_celula()` para levar os encontros junto ao renomear.
+   - Rode [`supabase/add_frequencia_historico.sql`](supabase/add_frequencia_historico.sql) e depois [`supabase/importar_historico_planilha.sql`](supabase/importar_historico_planilha.sql) — criam e preenchem a tabela com o histórico da planilha Google (veja "Histórico da planilha antiga" acima).
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.

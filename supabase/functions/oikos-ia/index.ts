@@ -94,12 +94,15 @@ Deno.serve(async (req) => {
     const hoje = new Date().toISOString().slice(0, 10);
     const d7 = diasAtras(7), d28 = diasAtras(28), d56 = diasAtras(56), d30 = diasAtras(30), d90 = diasAtras(90), d180 = diasAtras(180);
 
-    const [encRes, membrosRes, hierRes, movRes, presRes] = await Promise.all([
+    const [encRes, membrosRes, hierRes, movRes, presRes, planilhaRes] = await Promise.all([
       sb.from('frequencia_encontros').select('*').gte('data', d180).order('data', { ascending: false }),
       sb.from('members').select('id, nome, celula, posicao, status_pessoa, funcao, active, primeira_visita, created_at'),
       sb.from('celula_hierarquia').select('*'),
       sb.from('movimentacoes').select('member_id, campo, valor_anterior, valor_novo, data').gte('data', d180),
       sb.from('presencas_celula').select('member_id, presente, celula_encontros(data, celula)').limit(5000),
+      // Histórico da planilha antiga: totais por célula/data, sem pessoa
+      // a pessoa. É o que existe antes do módulo de Frequência.
+      sb.from('frequencia_planilha').select('celula, data, membros, fas, visitantes, kids, total'),
     ]);
 
     const encontros: Encontro[] = (encRes.data || []) as Encontro[];
@@ -198,6 +201,20 @@ Deno.serve(async (req) => {
       pessoas_ativas: ativos.filter((m: any) => m.celula === h.celula).length,
     }));
 
+    // Planilha antiga, resumida por célula (e o período que ela cobre).
+    const planilha = (planilhaRes.data || []) as any[];
+    const planilhaPorCelula: Record<string, { celula: string; registros: number; pessoas: number; primeiro: string; ultimo: string }> = {};
+    for (const r of planilha) {
+      const c = (planilhaPorCelula[r.celula] ||= { celula: r.celula, registros: 0, pessoas: 0, primeiro: r.data, ultimo: r.data });
+      c.registros++;
+      c.pessoas += Number(r.total ?? (r.membros + r.fas + r.visitantes + r.kids));
+      if (r.data < c.primeiro) c.primeiro = r.data;
+      if (r.data > c.ultimo) c.ultimo = r.data;
+    }
+    const planilhaResumo = Object.values(planilhaPorCelula).map((c) => ({
+      ...c, media_por_encontro: c.registros ? Math.round(c.pessoas / c.registros) : 0,
+    }));
+
     const painel = {
       hoje,
       escopo_do_usuario: perfil.is_full ? 'acesso total (todas as células que a permissão dele alcança)' : 'escopo restrito',
@@ -214,6 +231,11 @@ Deno.serve(async (req) => {
       pessoas_sem_presenca_ha_mais_de_4_semanas: semPresencaRecente,
       mudancas_de_status_ultimos_6_meses: mudancasStatus,
       celulas_e_responsaveis: redes,
+      historico_da_planilha_antiga: {
+        observacao: 'Vem do formulário que os líderes preenchiam antes do módulo de Frequência. Só tem TOTAIS por encontro (quantos membros, FAs, visitantes e kids) — não dá para dizer quem esteve presente, nem cruzar com pessoas.',
+        por_celula: planilhaResumo,
+        encontros_registrados: planilha.length,
+      },
     };
 
     const system = [

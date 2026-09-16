@@ -236,6 +236,7 @@
     freqJaLancadasCulto: {},
     freqEncontros: [],            // view frequencia_encontros (resumo por encontro)
     freqCultos: [],               // view frequencia_cultos (resumo por culto/célula)
+    freqPlanilha: [],             // histórico importado da planilha (totais por célula/data)
     freqEncontrosStatus: 'idle',
     freqSaving: false,
     freqSalvo: false,
@@ -1038,6 +1039,12 @@
     sb.from('frequencia_cultos').select('*').gte('data', desde).order('data', { ascending: false }).then(function (res) {
       if (res.error) { console.warn('Erro ao carregar cultos:', res.error.message); return; }
       setState({ freqCultos: res.data || [] });
+    });
+    // Histórico da planilha antiga (totais por célula/data). Não recebe
+    // lançamentos novos, então carrega inteiro — são poucas linhas.
+    sb.from('frequencia_planilha').select('*').order('data', { ascending: false }).then(function (res) {
+      if (res.error) { console.warn('Histórico da planilha indisponível:', res.error.message); return; }
+      setState({ freqPlanilha: res.data || [] });
     });
   }
 
@@ -2997,6 +3004,7 @@
     };
     var encontros = (state.freqEncontros || []).filter(function (e) { return noFiltro(e.celula, e.data); });
     var cultos = (state.freqCultos || []).filter(function (c) { return noFiltro(c.celula, c.data); });
+    var planilha = (state.freqPlanilha || []).filter(function (r) { return noFiltro(r.celula, r.data); });
 
     var soma = function (lista, campo) {
       return lista.reduce(function (acc, r) { return acc + Number(r[campo] || 0); }, 0);
@@ -3064,6 +3072,31 @@
       };
     });
 
+    // Histórico da planilha: totais, sem pessoa a pessoa. Fica separado
+    // para não se misturar com os lançamentos feitos no Oikos.
+    var planilhaLinhas = planilha.slice().sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); }).map(function (r) {
+      return {
+        dataLabel: dataLabelIso(r.data), celulaLabel: celulaLabel(r.celula),
+        membros: Number(r.membros || 0), fas: Number(r.fas || 0),
+        visitantes: Number(r.visitantes || 0), kids: Number(r.kids || 0),
+        total: Number(r.total != null ? r.total : (r.membros + r.fas + r.visitantes + r.kids)),
+        rodizio: !!r.rodizio,
+      };
+    });
+    var planilhaPorCelula = {};
+    planilha.forEach(function (r) {
+      var c = planilhaPorCelula[r.celula] || (planilhaPorCelula[r.celula] = { celula: r.celula, registros: 0, pessoas: 0 });
+      c.registros++;
+      c.pessoas += Number(r.total != null ? r.total : (r.membros + r.fas + r.visitantes + r.kids));
+    });
+    var planilhaResumo = Object.keys(planilhaPorCelula).map(function (c) {
+      var r = planilhaPorCelula[c];
+      return {
+        celulaLabel: celulaLabel(c), registros: r.registros, pessoas: r.pessoas,
+        media: r.registros ? Math.round(r.pessoas / r.registros) : 0,
+      };
+    }).sort(function (a, b) { return b.pessoas - a.pessoas; });
+
     var histPessoa = state.freqHistoricoPessoa;
     var lancamentoExiste = noCulto ? !!state.freqCulto : !!state.freqEncontro;
     return {
@@ -3110,6 +3143,7 @@
         visitantes: soma(encontros, 'visitantes'), fas: soma(encontros, 'fas'), membros: soma(encontros, 'membros'),
       },
       historico: historico, historicoCultos: historicoCultos,
+      planilhaLinhas: planilhaLinhas, planilhaResumo: planilhaResumo,
       historicoStatus: state.freqEncontrosStatus,
       pessoaOptions: ativos.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }).map(function (p) { return { v: p.id, label: p.nome }; }),
       pessoaId: state.freqHistoricoPessoaId,
@@ -3267,6 +3301,20 @@
         '<div class="home-card-sub" style="margin-top:6px">' + escHtml(v.semLancamento.join(' · ')) + '</div></div>';
     }
 
+    if (v.planilhaResumo.length) {
+      html += '<div class="home-card" style="margin-bottom:14px">' +
+        '<div class="home-card-title">Histórico da planilha, no mesmo período</div>' +
+        '<div class="home-card-sub">Totais do formulário antigo. Ficam à parte porque não têm presença pessoa a pessoa, então não entram nos percentuais acima.</div>' +
+        '<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">' +
+        v.planilhaResumo.map(function (r) {
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:#f7f9fc">' +
+            '<span style="font-size:13px;font-weight:700;color:#14243a">' + escHtml(r.celulaLabel) + '</span>' +
+            '<span style="font-size:12px;color:#6b7c93">' + r.registros + ' encontros · <b style="color:#14243a">' + r.pessoas + '</b> pessoas · média ' + r.media + '</span>' +
+            '</div>';
+        }).join('') +
+        '</div></div>';
+    }
+
     var th = function (label, align) {
       return '<th style="text-align:' + align + ';padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
     };
@@ -3322,6 +3370,34 @@
       carregando ? 'Carregando…' : 'Nenhum encontro de célula no período escolhido.');
     html += freqTabelaHistorico('Cultos', 'Presença da célula no culto, por data de culto.', v.historicoCultos, '',
       carregando ? 'Carregando…' : 'Nenhuma presença de culto lançada no período escolhido.');
+
+    // Histórico da planilha antiga: totais por encontro, sem pessoa a
+    // pessoa (era assim que o formulário coletava).
+    if (v.planilhaLinhas.length) {
+      var thP = function (label, align) {
+        return '<th style="text-align:' + align + ';padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
+      };
+      html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:14px">' +
+        '<div style="padding:18px 22px 6px">' +
+        '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Histórico da planilha <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + v.planilhaLinhas.length + ' encontros</span></div>' +
+        '<div style="font-size:12.5px;color:#6b7c93;margin-top:2px">Lançamentos feitos no formulário antigo, antes da aba Frequência. São totais por encontro — a planilha não registrava quem esteve presente.</div></div>' +
+        '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+        '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+        thP('Data', 'left') + thP('Célula', 'left') + thP('Membros', 'right') + thP('FAs', 'right') +
+        thP('Visitantes', 'right') + thP('Kids', 'right') + thP('Total', 'right') + thP('Tipo', 'right') +
+        '</tr></thead><tbody>' +
+        v.planilhaLinhas.map(function (r) {
+          var td = function (val) { return '<td style="padding:11px 12px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + val + '</td>'; };
+          return '<tr style="border-bottom:1px solid #f0f4f9">' +
+            '<td style="padding:11px 12px;font-weight:700;color:#14243a">' + escHtml(r.dataLabel) + '</td>' +
+            '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
+            td(r.membros) + td(r.fas) + td(r.visitantes) + td(r.kids) +
+            '<td style="padding:11px 12px;text-align:right;font-weight:700;color:#1B2344;font-variant-numeric:tabular-nums">' + r.total + '</td>' +
+            '<td style="padding:11px 12px;text-align:right"><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:' + (r.rodizio ? '#faf1de' : '#eef2f7') + ';color:' + (r.rodizio ? '#a1780f' : '#5a6b80') + '">' + (r.rodizio ? 'Ponte/Rodízio' : 'Célula') + '</span></td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table></div></div>';
+    }
 
     html += '<div class="home-card">' +
       '<div class="home-card-title">Histórico de uma pessoa</div>' +
