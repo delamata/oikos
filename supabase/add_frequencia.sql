@@ -122,12 +122,12 @@ create policy "presencas_culto_scope" on presencas_culto
 drop trigger if exists presencas_celula_auditoria on presencas_celula;
 create trigger presencas_celula_auditoria
   after update on presencas_celula
-  for each row execute function auditar_mudancas('{presente}');
+  for each row execute function auditar_mudancas('{presente}', 'id');
 
 drop trigger if exists presencas_culto_auditoria on presencas_culto;
 create trigger presencas_culto_auditoria
   after update on presencas_culto
-  for each row execute function auditar_mudancas('{presente}');
+  for each row execute function auditar_mudancas('{presente}', 'id');
 
 -- ---------------------------------------------------------------------
 -- 7. Resumo por encontro, para o dashboard não baixar linha por linha.

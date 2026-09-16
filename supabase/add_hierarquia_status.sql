@@ -178,25 +178,23 @@ create table if not exists auditoria (
 create index if not exists auditoria_registro_idx on auditoria (tabela, registro_id);
 create index if not exists auditoria_criado_em_idx on auditoria (criado_em desc);
 
+-- Lê os campos por JSON: cada tabela tem a sua chave (members usa id,
+-- celula_hierarquia usa o nome da célula), e um campo que não existe
+-- vira nulo em vez de derrubar o UPDATE.
 create or replace function auditar_mudancas() returns trigger
 language plpgsql security definer as $$
 declare
   v_campos text[] := tg_argv[0]::text[];
-  v_id text;
+  v_chave text := coalesce(nullif(tg_argv[1], ''), 'id');
+  v_novo jsonb := coalesce(to_jsonb(new), '{}'::jsonb);
+  v_velho jsonb := coalesce(to_jsonb(old), '{}'::jsonb);
+  v_id text := coalesce(v_novo ->> v_chave, v_velho ->> v_chave);
   v_campo text;
-  v_antes text;
-  v_depois text;
 begin
-  v_id := case tg_table_name
-    when 'celula_hierarquia' then coalesce(new.celula, old.celula)
-    else coalesce(new.id::text, old.id::text) end;
-
   foreach v_campo in array v_campos loop
-    execute format('select ($1).%I::text, ($2).%I::text', v_campo, v_campo)
-      into v_antes, v_depois using old, new;
-    if v_antes is distinct from v_depois then
+    if (v_velho ->> v_campo) is distinct from (v_novo ->> v_campo) then
       insert into auditoria (tabela, registro_id, campo, valor_anterior, valor_novo, operacao, user_id)
-        values (tg_table_name, v_id, v_campo, v_antes, v_depois, tg_op, auth.uid());
+        values (tg_table_name, v_id, v_campo, v_velho ->> v_campo, v_novo ->> v_campo, tg_op, auth.uid());
     end if;
   end loop;
   return new;
@@ -206,12 +204,14 @@ $$;
 drop trigger if exists members_auditoria on members;
 create trigger members_auditoria
   after update on members
-  for each row execute function auditar_mudancas('{posicao,funcao,status_pessoa,celula,supervisor_id,active,situacao_saida,conjuge_id}');
+  for each row execute function auditar_mudancas(
+    '{posicao,funcao,status_pessoa,celula,supervisor_id,active,situacao_saida,conjuge_id}', 'id');
 
 drop trigger if exists hierarquia_auditoria on celula_hierarquia;
 create trigger hierarquia_auditoria
   after update on celula_hierarquia
-  for each row execute function auditar_mudancas('{celula,discipulador_id,obreiro_id}');
+  for each row execute function auditar_mudancas(
+    '{celula,discipulador_id,obreiro_id}', 'celula');
 
 alter table auditoria enable row level security;
 
