@@ -235,7 +235,10 @@ Deno.serve(async (req) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        // Dá pra trocar por um modelo mais barato sem mexer no código:
+        // basta criar o segredo OIKOS_IA_MODEL no Supabase (ex:
+        // claude-haiku-4-5-20251001).
+        model: Deno.env.get('OIKOS_IA_MODEL') || 'claude-sonnet-5',
         max_tokens: 1200,
         system,
         messages: [

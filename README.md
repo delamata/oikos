@@ -268,14 +268,41 @@ quatro semanas?") e recebe a resposta com os números usados.
    suficiente, responde "Não existem informações suficientes no Oikos
    para responder essa pergunta." em vez de inventar.
 
-**Publicar (uma vez só):**
+### Publicar o Oikos IA (uma vez só)
 
-1. Crie uma chave em <https://console.anthropic.com> (é um serviço pago,
-   cobrado por uso — cada pergunta custa centavos).
-2. Guarde a chave no Supabase:
-   `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
-   (ou em Edge Functions → Secrets, no painel).
-3. Publique: `supabase functions deploy oikos-ia`.
+**1. Criar a chave da Anthropic.** Em <https://console.anthropic.com>:
+crie a conta, adicione crédito em **Billing** (é pré-pago; sem crédito a
+API recusa) e vá em **Settings → API keys → Create Key**. Copie a chave
+na hora — ela só aparece uma vez. Atenção: **a assinatura do Claude.ai
+não vale aqui**; o uso por API é cobrado à parte, por uso.
+
+**2. Guardar a chave no Supabase** (ela nunca vai para o navegador; não
+coloque em `config.js`, que é público). No painel:
+**Edge Functions → Secrets → Add new secret**, com o nome exatamente
+`ANTHROPIC_API_KEY` e o valor da chave. Pela CLI seria
+`supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`.
+
+**3. Publicar a function.** **Edge Functions → Deploy a new function**,
+nome exatamente `oikos-ia` (é esse nome que o app chama — nome diferente
+faz a tela dizer que não encontrou a function), e cole o conteúdo de
+[`supabase/functions/oikos-ia/index.ts`](supabase/functions/oikos-ia/index.ts).
+Deixe **Verify JWT ligado** (padrão): é o que garante que só quem está
+logado chega até ela. Pela CLI: `supabase functions deploy oikos-ia`.
+Se criar o segredo depois de publicar, publique de novo para a function
+enxergar a chave.
+
+**4. Testar.** Entre como Pastor/admin, abra **Oikos IA** e clique em
+"Frequência das células esta semana". Se algo faltar, a própria tela diz
+o quê: chave não configurada, function não encontrada, acesso não
+autorizado, ou serviço de IA indisponível (código 502 costuma ser chave
+inválida ou conta sem crédito).
+
+**Custo e modelo.** Cada pergunta envia o painel de indicadores (poucos
+KB) e recebe uma resposta curta — a ordem de grandeza é de centavos por
+pergunta; acompanhe em **Usage** no console da Anthropic e defina um
+limite de gasto em Billing. Para usar um modelo mais barato, crie o
+segredo `OIKOS_IA_MODEL` (ex: `claude-haiku-4-5-20251001`) — não precisa
+mexer no código.
 
 Enquanto isso não for feito, a aba abre normalmente e cada pergunta
 responde explicando o que falta configurar — nada quebra no resto do
