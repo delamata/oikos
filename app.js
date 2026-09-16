@@ -1626,7 +1626,7 @@
   function textoConviteAcesso(nome, email) {
     var link = window.location.origin + window.location.pathname;
     return [
-      'Oi' + (nome ? ' ' + nome.split(/\s+/)[0] : '') + '! Liberei seu acesso ao sistema da Rede Oikos.',
+      'Oi' + (nome ? ' ' + nome.split(/\s+/)[0] : '') + '! Liberei seu acesso ao Sistema OIKOS.',
       '',
       'Para entrar:',
       '1. Abra ' + link,
@@ -2325,8 +2325,8 @@
       '<button ' + cb(vals.closeSidebar) + ' class="sidebar-close-btn" style="border:none;background:rgba(255,255,255,.1);color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1">✕</button>' +
       '</div>' +
       '<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">' +
-      '<div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55);font-weight:700">Videira SCS · Rede Oikos</div>' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;color:#fff;margin-top:3px;line-height:1.25;letter-spacing:.01em">Sistema OIKOS</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;color:#fff;line-height:1.25;letter-spacing:.01em">Sistema OIKOS</div>' +
+      '<div style="font-size:11px;color:rgba(255,255,255,.55);font-weight:600;margin-top:2px">Videira SCS</div>' +
       '</div>' +
       '<nav style="display:flex;flex-direction:column;gap:3px;margin-top:22px">' +
       items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked); }).join('') +
@@ -4074,7 +4074,7 @@
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
       '<div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#0E7A68;font-weight:800;margin-bottom:6px">Sistema OIKOS</div>' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Entrar</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Acesso restrito aos líderes da Rede Oikos.</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Acesso restrito aos líderes da Videira SCS.</div>' +
       (vals.loginError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.loginError) + '</div>' : '') +
       '<form ' + cb(vals.doLogin, 'submit') + ' style="display:flex;flex-direction:column;gap:12px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
@@ -4170,7 +4170,7 @@
       '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Seja bem-vindo(a)!</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Preencha seus dados para se cadastrar na Rede Oikos.</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Preencha seus dados para se cadastrar na Videira SCS.</div>' +
       (vals.publicSalvo
         ? '<div style="background:#e2f2ea;color:#237a5a;border-radius:9px;padding:14px;font-size:13.5px;font-weight:600">Cadastro recebido, obrigado! Em breve alguém da célula vai entrar em contato.</div>'
         : (
@@ -4234,7 +4234,7 @@
       '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
       '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Complete seu cadastro</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Entrou como <b>' + escHtml(vals.userEmail) + '</b>. Preencha seus dados para concluir o cadastro na Rede Oikos. Se você já é líder e deveria ter acesso, peça para um administrador convidar esse e-mail.</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Entrou como <b>' + escHtml(vals.userEmail) + '</b>. Preencha seus dados para concluir o seu cadastro. Se você já é líder e deveria ter acesso, peça para um administrador convidar esse e-mail.</div>' +
       (vals.socialError ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">Erro: ' + escHtml(vals.socialError) + '</div>' : '') +
       '<form ' + cb(vals.submitSocial, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +

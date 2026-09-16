@@ -17,7 +17,9 @@
 
   /* ---- layout: menu lateral + conteúdo ---- */
   .app-shell{display:flex;align-items:stretch;min-height:100vh}
-  .sidebar{flex:0 0 252px;width:252px;background:linear-gradient(180deg,#1B2344,#161c38);color:#fff;display:flex;flex-direction:column;padding:20px 16px 22px;position:sticky;top:0;height:100vh;overflow-y:auto}
+  /* cursor de seta e sem seleção de texto: o menu é para clicar, não para ler/copiar */
+  .sidebar{flex:0 0 252px;width:252px;background:linear-gradient(180deg,#1B2344,#161c38);color:#fff;display:flex;flex-direction:column;padding:20px 16px 22px;position:sticky;top:0;height:100vh;overflow-y:auto;cursor:default;user-select:none;-webkit-user-select:none}
+  .sidebar button{cursor:pointer}
   .sidebar-close-btn{display:none}
   .sidebar-backdrop{display:none}
   .main-content{flex:1;min-width:0;padding:26px 30px 56px;max-width:1160px}
@@ -197,7 +199,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="config.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
