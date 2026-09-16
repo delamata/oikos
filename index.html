@@ -71,6 +71,17 @@
   .page-hero .home-brand,.page-hero .home-sub{position:relative;z-index:1}
   .home-empty{margin-top:16px;border-left:4px solid #f5b82e !important}
 
+  /* ---- Frequência: lista de lançamento pensada pro celular ---- */
+  .freq-linha{display:grid;grid-template-columns:1fr 84px 84px;gap:8px;align-items:center;padding:10px 8px;border-bottom:1px solid #f0f4f9}
+  .freq-linha:last-child{border-bottom:none}
+  .freq-cab{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#7b8aa0;font-weight:700;border-bottom:1px solid #e6ecf4}
+  .freq-nome{font-size:14px;font-weight:700;color:#14243a;overflow-wrap:anywhere}
+  .freq-salvar{position:sticky;bottom:0;z-index:5;padding:12px 0 6px;margin-top:14px;background:linear-gradient(180deg,rgba(238,242,247,0),#eef2f7 45%)}
+  @media (max-width:430px){
+    .freq-linha{grid-template-columns:1fr 62px 62px;gap:6px}
+    .freq-linha button{min-width:0 !important;width:100%;padding:9px 4px !important}
+  }
+
   /* ---- Início (home) ---- */
   .home{font-family:'Plus Jakarta Sans','Libre Franklin',system-ui,sans-serif;color:#14243a;padding-top:4px}
   .home-hero{position:relative;overflow:hidden;border-radius:22px;padding:26px 28px 24px;color:#fff;background:radial-gradient(90% 130% at 100% 0%,rgba(107,63,160,.85) 0%,rgba(107,63,160,0) 60%),linear-gradient(135deg,#161c38 0%,#233b7d 58%,#0E7A68 135%);box-shadow:0 22px 44px -24px rgba(27,35,68,.7)}
