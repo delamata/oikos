@@ -1731,7 +1731,8 @@
     var encN = filtered.filter(function (p) { return p.encontro === 'Sim'; }).length;
     var lideranca = filtered.filter(function (p) { return POSICOES_LIDERANCA.indexOf(p.posicao) >= 0; }).length;
     var potenciais = filtered.filter(function (p) { return POSICOES_POTENCIAIS.indexOf(p.posicao) >= 0; }).length;
-    var membrosRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; }).length;
+    var pessoasRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
+    var membrosRede = pessoasRede.length;
     var batPct = pct(batN), encPct = pct(encN);
 
     // "Total" = todo mundo na seleção menos os visitantes; estes têm o
@@ -1752,6 +1753,7 @@
       batPct: batPct, batLabel: batN + ' de ' + total + ' pessoas',
       encPct: encPct, encLabel: encN + ' de ' + total + ' pessoas',
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
+      membrosRedeLabel: tipoResumo(pessoasRede),
       faltamBat: filtered.filter(function (p) { return p.batizado === 'Não'; }).length,
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
     };
@@ -2388,7 +2390,7 @@
 
     // KPI row
     html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
-      kpiCard('Membros da Rede', vals.k.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
+      kpiCard('Total de Membros - Adultos e Kids', vals.k.membrosRede, vals.k.membrosRedeLabel, { gradient: true }) +
       kpiCard('Total de Frequentadores Assíduos', vals.k.totalFA, vals.k.faLabel, { valueColor: '#149C88' }) +
       kpiCard('Total de Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { valueColor: '#8A63C9' }) +
       kpiCard('Total de Jovens', vals.k.totalJovens, 'jovens na seleção', { valueColor: '#C2410C' }) +
@@ -2563,7 +2565,8 @@
       return true;
     });
 
-    var membrosRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; }).length;
+    var pessoasRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
+    var membrosRede = pessoasRede.length;
     var totalFA = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; }).length;
     var totalVisitantes = filtered.filter(function (p) { return p.posicao === 'Visitante'; }).length;
     var totalKids = filtered.filter(function (p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; }).length;
@@ -2614,7 +2617,8 @@
       onCelula: function (e) { setAnonF('celula', e.target.value); },
       onPosicao: function (e) { setAnonF('posicao', e.target.value); },
       celulaOptions: celulaListPublica.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
-      membrosRede: membrosRede, totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
+      membrosRede: membrosRede, membrosRedeLabel: tipoResumo(pessoasRede),
+      totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
       posBars: posBars, perfilBars: perfilBars, rows: rows,
       loading: state.membersPublicosStatus === 'loading' && !all.length,
     };
@@ -2641,7 +2645,7 @@
       '</div>';
 
     html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
-      kpiCard('Membros da Rede', vals.membrosRede, 'membros, líderes, anfitr. e discip.', { gradient: true }) +
+      kpiCard('Total de Membros - Adultos e Kids', vals.membrosRede, vals.membrosRedeLabel, { gradient: true }) +
       kpiCard('Total de Frequentadores Assíduos', vals.totalFA, '', { valueColor: '#149C88' }) +
       kpiCard('Total de Visitantes', vals.totalVisitantes, '', { valueColor: '#6B3FA0' }) +
       kpiCard('Total de Jovens', vals.totalJovens, 'jovens na seleção', { valueColor: '#C2410C' }) +
@@ -2798,7 +2802,8 @@
     var total = pessoas.length;
     var conta = function (fn) { return pessoas.filter(fn).length; };
 
-    var membrosRede = conta(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
+    var pessoasRede = pessoas.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
+    var membrosRede = pessoasRede.length;
     var naoVisit = pessoas.filter(function (p) { return p.posicao !== 'Visitante'; });
     var fa = pessoas.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; });
     var visit = pessoas.filter(function (p) { return p.posicao === 'Visitante'; });
@@ -2899,7 +2904,7 @@
       semRede: !!celulas && !celulas.length,
       total: total, nCelulas: listaCelulas.length, lideres: lideres,
       kpis: {
-        membrosRede: membrosRede,
+        membrosRede: membrosRede, membrosRedeSub: tipoResumo(pessoasRede),
         fa: fa.length, faSub: tipoResumo(fa),
         visit: visit.length, visitSub: tipoResumo(visit),
         kids: kids, jovens: jovens, naoVisit: naoVisit.length,
@@ -2994,7 +2999,7 @@
     }
 
     html += '<div class="home-kpis">' +
-      homeKpi('rede', '#fff', '', v.kpis.membrosRede, 'Membros da Rede', 'membros, líderes, anfitr. e discip.', true) +
+      homeKpi('rede', '#fff', '', v.kpis.membrosRede, 'Total de Membros - Adultos e Kids', v.kpis.membrosRedeSub, true) +
       homeKpi('fa', '#0E7A68', '#e0f4ef', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub) +
       homeKpi('visit', '#6B3FA0', '#efe8f8', v.kpis.visit, 'Visitantes', v.kpis.visitSub) +
       homeKpi('jovens', '#C2410C', '#fdebdd', v.kpis.jovens, 'Jovens', 'jovens no recorte') +
