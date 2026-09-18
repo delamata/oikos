@@ -285,6 +285,7 @@
     movimentacoes: [],
     movStatus: 'idle',
     movFilters: { celula: '', campo: '' },
+    movLista: 'fora',             // qual lista está aberta: fora da contagem | inativos
     novaNota: '',
   };
 
@@ -2008,7 +2009,7 @@
         dataLabel: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
         nome: (m.members && m.members.nome) || '—',
         celulaLabel: (m.members && m.members.celula) ? celulaLabel(m.members.celula) : '—',
-        campoLabel: campoLabel, desc: desc,
+        campo: m.campo, campoLabel: campoLabel, desc: desc,
       };
     });
     var movCelulaOptions = currentCelulaList().map(function (c) { return { v: c, label: celulaLabel(c) }; });
@@ -2200,6 +2201,9 @@
       }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); })
         .map(function (p) { return { v: p.id, label: p.nome + ' (' + funcaoDeMembro(p) + ')' }; }),
       movRows: movRows, movStatus: state.movStatus, movFilters: mf, movCelulaOptions: movCelulaOptions,
+      movLista: state.movLista,
+      setMovLista: function (lista) { return function () { setState({ movLista: lista }); }; },
+      limparMovFiltros: function () { setState({ movFilters: { celula: '', campo: '' } }); },
       perdidosRows: perdidosRows, totalPerdidos: totalPerdidos, sairamRows: sairamRows, inativosRows: inativosRows,
       onMFCelula: function (e) { setMF('celula', e.target.value); },
       onMFCampo: function (e) { setMF('campo', e.target.value); },
@@ -2930,6 +2934,10 @@
     fa: '<path d="M12 20s-7-4.35-7-10a4 4 0 0 1 7-2.65A4 4 0 0 1 19 10c0 5.65-7 10-7 10Z"></path>',
     visit: '<circle cx="10" cy="8" r="3.5"></circle><path d="M3.5 20v-1.5A3.5 3.5 0 0 1 7 15h6"></path><path d="M18 14v6"></path><path d="M15 17h6"></path>',
     adultos: '<circle cx="12" cy="7.5" r="3.8"></circle><path d="M5 20.5v-1a7 7 0 0 1 14 0v1"></path>',
+    trocas: '<path d="M4 8h12"></path><path d="m13 5 3 3-3 3"></path><path d="M20 16H8"></path><path d="m11 13-3 3 3 3"></path>',
+    transferidos: '<path d="M3 12h12"></path><path d="m11 7 5 5-5 5"></path><path d="M20 5v14"></path>',
+    perdidos: '<circle cx="12" cy="12" r="8.5"></circle><path d="m9.2 14.8 5.6-5.6"></path><path d="m9.2 9.2 5.6 5.6"></path>',
+    inativos: '<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
     jovens: '<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z"></path>',
     kids: '<circle cx="12" cy="12" r="8.5"></circle><path d="M8.5 14a4 4 0 0 0 7 0"></path><path d="M9 9.5h.01"></path><path d="M15 9.5h.01"></path>',
   };
@@ -2946,6 +2954,10 @@
     visit: ['#6B3FA0', '#efe8f8'],
     jovens: ['#C2410C', '#fdebdd'],
     kids: ['#3B6FD4', '#e8f0fc'],
+    trocas: ['#2E4FC7', '#e6ecfb'],
+    transferidos: ['#0E7A68', '#e0f4ef'],
+    perdidos: ['#B0281E', '#fbe7e5'],
+    inativos: ['#A1780F', '#fdf1da'],
   };
 
   // Quadro branco: ícone no canto superior esquerdo, números e textos
@@ -4010,7 +4022,7 @@
     var th = function (label, align, padding) {
       return '<th style="text-align:' + align + ';padding:9px ' + padding + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
     };
-    if (!rows.length) return '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">' + escHtml(vazioTexto) + '</div>';
+    if (!rows.length) return '<div style="padding:20px 22px;font-size:12.5px;color:#6b7c93">' + escHtml(vazioTexto) + '</div>';
     return '<div class="table-scroll" style="max-height:300px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       th('Nº', 'right', '12px') + th('Nome', 'left', '22px') + th('Posição', 'left', '12px') +
@@ -4027,73 +4039,100 @@
       '</tbody></table></div>';
   }
 
+  // Movimentações: indicadores no topo, filtros, o histórico (que é o
+  // conteúdo principal) e, no fim, as listas de quem está fora da
+  // contagem — em abas, para uma tabela larga de cada vez em vez de duas
+  // espremidas lado a lado.
   function movimentacoesHtml(vals) {
     var campoOptions = Object.keys(MOVIMENTACAO_LABELS).map(function (k) { return { v: k, label: MOVIMENTACAO_LABELS[k] }; });
-    var html = '<div>';
+    var filtrando = !!(vals.movFilters.celula || vals.movFilters.campo);
+    var transferidos = vals.sairamRows.length - vals.totalPerdidos;
+    var html = '<div class="home">';
 
-    html += '<div class="grid-form2" style="margin:18px 0 16px">' +
-      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Perdidos por Célula <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.totalPerdidos + ' no total</span></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-top:2px">Só conta quem saiu como "Perdido" — transferidos não entram nessa contagem.</div></div>' +
-      (vals.perdidosRows.length
-        ? '<div class="table-scroll" style="max-height:260px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-          '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-          '<th style="text-align:left;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-          '<th style="text-align:right;padding:9px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Perdidos</th>' +
-          '</tr></thead><tbody>' +
-          vals.perdidosRows.map(function (r) {
-            return '<tr style="border-bottom:1px solid #f0f4f9">' +
-              '<td style="padding:9px 22px;font-weight:600;color:#14243a">' + escHtml(r.celula) + '</td>' +
-              '<td style="padding:9px 22px;text-align:right;color:#6B3FA0;font-weight:700">' + r.qtd + '</td></tr>';
-          }).join('') +
-          '</tbody></table></div>'
-        : '<div style="padding:0 22px 18px;font-size:12.5px;color:#6b7c93">Nenhum perdido registrado.</div>') +
+    html += '<div class="home-kpis home-kpis-4">' +
+      homeKpi('trocas', vals.movRows.length, 'Movimentações', filtrando ? 'no filtro atual' : 'registradas') +
+      homeKpi('transferidos', transferidos < 0 ? 0 : transferidos, 'Transferidos', 'outra célula, rede ou igreja') +
+      homeKpi('perdidos', vals.totalPerdidos, 'Perdidos', 'saíram e não seguem em outra igreja') +
+      homeKpi('inativos', vals.inativosRows.length, 'Inativos', 'cadastrados, fora dos totais') +
+      '</div>';
+
+    // Perdidos por célula vira uma linha de etiquetas — só aparece quando
+    // existe alguém, em vez de um cartão grande e vazio.
+    if (vals.perdidosRows.length) {
+      html += '<div class="home-card" style="margin-top:14px">' +
+        '<div class="home-card-title">Perdidos por célula</div>' +
+        '<div class="home-card-sub">Só quem saiu como "Perdido" — transferidos não entram nesta conta.</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">' +
+        vals.perdidosRows.map(function (r) {
+          return '<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#fbe7e5;color:#B0281E;font-size:12.5px;font-weight:700">' +
+            escHtml(r.celula) + '<b style="font-size:13px">' + r.qtd + '</b></span>';
+        }).join('') +
+        '</div></div>';
+    }
+
+    // ---- Histórico (conteúdo principal da tela) ----
+    html += '<div class="home-section">' +
+      '<div><div class="home-section-title">Histórico de movimentações</div>' +
+      '<div class="home-card-sub">Toda mudança de célula, status, função, batismo, encontro e situação, além das notas.</div></div>' +
+      '</div>';
+
+    html += '<div class="home-card" style="margin-bottom:14px">' +
+      '<div class="grid-form2">' +
+      optionalSelectField('Célula', cb(vals.onMFCelula, 'change'), vals.movCelulaOptions, vals.movFilters.celula, 'Todas as células') +
+      optionalSelectField('Tipo de mudança', cb(vals.onMFCampo, 'change'), campoOptions, vals.movFilters.campo, 'Todos os tipos') +
       '</div>' +
-      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Fora da contagem <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.sairamRows.length + '</span></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Transferidos e perdidos — clique numa linha para abrir a ficha</div></div>' +
-      foraDaContagemTabela(vals.sairamRows, 'Ninguém transferido ou perdido.') +
-      '</div></div>';
-
-    // Inativos: lista própria, com a ficha aberta pelo clique na linha.
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden;margin-bottom:16px">' +
-      '<div style="padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Inativos <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.inativosRows.length + '</span></div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-top:3px">Continuam cadastrados, mas não entram em nenhum total por célula — clique numa linha para abrir a ficha e editar</div></div>' +
-      foraDaContagemTabela(vals.inativosRows, 'Ninguém inativo no momento.') +
+      (filtrando
+        ? '<button type="button" ' + cb(vals.limparMovFiltros) + ' style="margin-top:12px;padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#6b7c93;cursor:pointer">Limpar filtros</button>'
+        : '') +
       '</div>';
 
-    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<select ' + cb(vals.onMFCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todas as células', vals.movFilters.celula === '') +
-      vals.movCelulaOptions.map(function (o) { return opt(o.v, o.label, vals.movFilters.celula === o.v); }).join('') +
-      '</select>' +
-      '<select ' + cb(vals.onMFCampo, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todos os tipos', vals.movFilters.campo === '') +
-      campoOptions.map(function (o) { return opt(o.v, o.label, vals.movFilters.campo === o.v); }).join('') +
-      '</select>' +
-      '</div>';
-
+    var th = function (label, align, pad) {
+      return '<th style="text-align:' + align + ';padding:10px ' + (pad || '12px') + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
+    };
+    var corCampo = {
+      celula: ['#e6ecfb', '#2E4FC7'], posicao: ['#efe8f8', '#6B3FA0'], status_pessoa: ['#e0f4ef', '#0E7A68'],
+      funcao: ['#fdf1da', '#A1780F'], batizado: ['#dcf3ef', '#0E7A68'], encontro: ['#e4eefa', '#2E4FC7'],
+      situacao_saida: ['#fbe7e5', '#B0281E'], nota: ['#eef2f7', '#5a6b80'],
+    };
     html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="padding:18px 22px 14px"><div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Movimentações <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.movRows.length + ' registros</span></div></div>' +
-      '<div class="table-scroll" style="max-height:600px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<div class="table-scroll" style="max-height:560px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Data</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Tipo</th>' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Mudança</th>' +
+      th('Data', 'left', '22px') + th('Pessoa', 'left') + th('Tipo', 'left') + th('Mudança', 'left', '22px') +
       '</tr></thead><tbody>' +
       vals.movRows.map(function (r) {
+        var cor = corCampo[r.campo] || ['#eef2f7', '#5a6b80'];
         return '<tr style="border-bottom:1px solid #f0f4f9">' +
-          '<td style="padding:10px 22px;color:#4a5b70;font-variant-numeric:tabular-nums">' + escHtml(r.dataLabel) + '</td>' +
-          '<td style="padding:10px 12px;font-weight:600;color:#14243a">' + escHtml(r.nome) + '</td>' +
-          '<td style="padding:10px 12px;color:#4a5b70">' + escHtml(r.celulaLabel) + '</td>' +
-          '<td style="padding:10px 12px;color:#4a5b70">' + escHtml(r.campoLabel) + '</td>' +
-          '<td style="padding:10px 22px;color:#4a5b70">' + escHtml(r.desc) + '</td></tr>';
+          '<td style="padding:11px 22px;color:#6b7c93;font-variant-numeric:tabular-nums;white-space:nowrap">' + escHtml(r.dataLabel) + '</td>' +
+          '<td style="padding:11px 12px;min-width:0"><div style="font-weight:700;color:#14243a">' + escHtml(r.nome) + '</div>' +
+          '<div style="font-size:11.5px;color:#8a99ab">' + escHtml(r.celulaLabel) + '</div></td>' +
+          '<td style="padding:11px 12px"><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;background:' + cor[0] + ';color:' + cor[1] + ';white-space:nowrap">' + escHtml(r.campoLabel) + '</span></td>' +
+          '<td style="padding:11px 22px;color:#4a5b70">' + escHtml(r.desc) + '</td></tr>';
       }).join('') +
+      (vals.movRows.length ? '' : '<tr><td colspan="4" style="padding:20px 22px;color:#8a99ab;font-size:12.5px">' +
+        (vals.movStatus === 'loading' ? 'Carregando…' : (filtrando ? 'Nenhuma movimentação com esses filtros.' : 'Nenhuma movimentação registrada ainda.')) + '</td></tr>') +
       '</tbody></table></div></div>';
+
+    // ---- Quem está fora da contagem: uma lista de cada vez ----
+    var aba = function (chave, label, n) {
+      var ativo = vals.movLista === chave;
+      return '<button type="button" ' + cb(vals.setMovLista(chave)) + ' style="padding:9px 16px;border:1px solid ' + (ativo ? '#1B2344' : '#d4deea') + ';border-radius:999px;background:' + (ativo ? '#1B2344' : '#fff') + ';color:' + (ativo ? '#fff' : '#4a5b70') + ';font-size:13px;font-weight:700;cursor:pointer">' + label + ' · ' + n + '</button>';
+    };
+    var inativos = vals.movLista === 'inativos';
+    html += '<div class="home-section">' +
+      '<div><div class="home-section-title">Fora dos totais</div>' +
+      '<div class="home-card-sub">' + (inativos
+        ? 'Continuam cadastrados, mas não entram em nenhum total por célula.'
+        : 'Transferidos e perdidos.') + ' Clique numa linha para abrir a ficha e editar.</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      aba('fora', 'Transferidos e perdidos', vals.sairamRows.length) +
+      aba('inativos', 'Inativos', vals.inativosRows.length) +
+      '</div></div>';
+
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      (inativos
+        ? foraDaContagemTabela(vals.inativosRows, 'Ninguém inativo no momento.')
+        : foraDaContagemTabela(vals.sairamRows, 'Ninguém transferido ou perdido.')) +
+      '</div>';
 
     // Mesma ficha da aba Cadastro, pra abrir/editar quem está fora da contagem.
     if (vals.selected) html += detailDrawerHtml(vals);

@@ -115,6 +115,7 @@
   .home-card{background:#fff;border:1px solid #e6ecf4;border-radius:18px;padding:18px 20px;box-shadow:0 1px 2px rgba(20,36,58,.04),0 10px 26px -20px rgba(20,36,58,.25)}
   /* seis quadros numa faixa só; 3 e depois 2 conforme a tela encolhe */
   .home-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-top:16px}
+  .home-kpis-4{grid-template-columns:repeat(4,minmax(0,1fr))}
   /* quadros brancos: ícone no canto superior esquerdo, dados centralizados */
   .home-kpi{display:flex;flex-direction:column;align-items:stretch;text-align:center;gap:12px}
   .home-kpi .home-kpi-icon{align-self:flex-start}
@@ -172,7 +173,7 @@
   @media (max-width:1100px){
     .home-grid3{grid-template-columns:1fr 1fr}
     .home-grid3>:first-child{grid-column:1/-1}
-    .home-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .home-kpis,.home-kpis-4{grid-template-columns:repeat(3,minmax(0,1fr))}
   }
   @media (max-width:1000px){
     .home-hero-top{grid-template-columns:1fr}
@@ -189,7 +190,7 @@
     .main-content{padding:16px 14px 40px;max-width:100%}
   }
   @media (max-width:700px){
-    .home-kpis{grid-template-columns:repeat(2,1fr)}
+    .home-kpis,.home-kpis-4{grid-template-columns:repeat(2,1fr)}
     .home-grid3,.home-grid2{grid-template-columns:1fr}
     .home-hero{padding:20px 18px}
     .home-hello{font-size:23px}
