@@ -91,14 +91,20 @@
   .home-hero{position:relative;overflow:hidden;border-radius:22px;padding:26px 28px 24px;color:#fff;background:radial-gradient(90% 130% at 100% 0%,rgba(107,63,160,.85) 0%,rgba(107,63,160,0) 60%),linear-gradient(135deg,#161c38 0%,#233b7d 58%,#0E7A68 135%);box-shadow:0 22px 44px -24px rgba(27,35,68,.7)}
   .home-hero::before{content:'';position:absolute;right:-70px;bottom:-110px;width:300px;height:300px;border-radius:50%;border:46px solid rgba(255,255,255,.05)}
   .home-hero::after{content:'';position:absolute;right:120px;top:-60px;width:140px;height:140px;border-radius:50%;background:rgba(20,156,136,.22);filter:blur(30px)}
-  .home-hero-top{display:flex;justify-content:space-between;gap:22px;flex-wrap:wrap;align-items:flex-start;position:relative;z-index:1}
+  /* Duas colunas fixas: saudação à esquerda, filtros à direita. Em linha
+     flexível, um nome comprido no filtro empurrava os filtros para baixo
+     e deixava metade do banner vazia. */
+  .home-hero-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,430px);gap:20px;align-items:start;position:relative;z-index:1}
+  .home-hero-top>*{min-width:0}
   .home-brand{font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:800;color:#8fe3d1}
   .home-hello{font-size:30px;font-weight:800;letter-spacing:-.025em;margin-top:6px;line-height:1.15}
   .home-sub{font-size:13.5px;color:rgba(255,255,255,.7);margin-top:4px;font-weight:500}
-  .home-chip{display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;background:#149C88;font-size:11.5px;font-weight:700;color:#fff}
+  .home-chip{display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;background:#149C88;font-size:11.5px;font-weight:700;color:#fff;max-width:100%;overflow-wrap:anywhere;line-height:1.4}
   .home-chip-soft{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18)}
-  .home-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:12px}
-  .home-filter{display:flex;flex-direction:column;gap:5px;min-width:180px}
+  .home-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:12px;min-width:0}
+  /* os selects encolhem em vez de empurrar o bloco para fora do lugar */
+  .home-filter{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1 1 150px}
+  .home-filter select{width:100%;max-width:100%}
   .home-filter label{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:rgba(255,255,255,.62)}
   .home-filter select{padding:9px 12px;border-radius:11px;border:1px solid rgba(255,255,255,.22);background:rgba(10,16,40,.35);color:#fff;font-size:13px;font-weight:600;cursor:pointer;outline:none;font-family:inherit}
   .home-filter select option{color:#14243a;background:#fff}
@@ -162,6 +168,9 @@
   @media (max-width:1100px){
     .home-grid3{grid-template-columns:1fr 1fr}
     .home-grid3>:first-child{grid-column:1/-1}
+  }
+  @media (max-width:1000px){
+    .home-hero-top{grid-template-columns:1fr}
   }
 
   /* ---- responsivo: abaixo de 900px o menu lateral vira gaveta ---- */
