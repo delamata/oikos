@@ -115,9 +115,10 @@
   .home-card{background:#fff;border:1px solid #e6ecf4;border-radius:18px;padding:18px 20px;box-shadow:0 1px 2px rgba(20,36,58,.04),0 10px 26px -20px rgba(20,36,58,.25)}
   /* seis quadros numa faixa só; 3 e depois 2 conforme a tela encolhe */
   .home-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-top:16px}
-  /* todos os quadros iguais e com o conteúdo centralizado */
-  .home-kpi{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}
-  .home-kpi>div:last-child{width:100%}
+  /* quadros brancos: ícone no canto superior esquerdo, dados centralizados */
+  .home-kpi{display:flex;flex-direction:column;align-items:stretch;text-align:center;gap:12px}
+  .home-kpi .home-kpi-icon{align-self:flex-start}
+  .home-kpi-texto{width:100%}
   .home-kpi-destaque{background:linear-gradient(140deg,#16A394,#3B5FDD 60%,#6B3FA0);border-color:transparent;color:#fff}
   .home-kpi-destaque .home-kpi-value,.home-kpi-destaque .home-kpi-label{color:#fff}
   .home-kpi-destaque .home-kpi-sub{color:rgba(255,255,255,.72)}

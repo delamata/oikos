@@ -1755,6 +1755,7 @@
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
       membrosRedeLabel: tipoResumo(pessoasRede),
       adultosMembros: contaTipo(pessoasRede, 'Adultos'),
+      principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), kids, faFiltrados.length),
       faltamBat: filtered.filter(function (p) { return p.batizado === 'Não'; }).length,
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
     };
@@ -2390,13 +2391,13 @@
       '</div>';
 
     // KPI row
-    html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
-      kpiCard('Total de Membros - Adultos e Kids', vals.k.membrosRede, vals.k.membrosRedeLabel, { gradient: true }) +
-      kpiCard('Total de Adultos', vals.k.adultosMembros, 'membros adultos', { gradient: true }) +
-      kpiCard('Total de Frequentadores Assíduos', vals.k.totalFA, vals.k.faLabel, { gradient: true }) +
-      kpiCard('Total de Visitantes', vals.k.totalVisitantes, vals.k.visitantesLabel, { gradient: true }) +
-      kpiCard('Total de Jovens', vals.k.totalJovens, 'jovens na seleção', { gradient: true }) +
-      kpiCard('Total de Kids e Juvenis', vals.k.totalKids, 'crianças e adolescentes na seleção', { gradient: true }) +
+    html += '<div class="home-kpis" style="margin:0 0 16px">' +
+      homeKpi('rede', vals.k.principal.valor, 'Total de Membros - Adultos e Kids', vals.k.principal.sub) +
+      homeKpi('adultos', vals.k.adultosMembros, 'Total de Adultos', 'membros adultos') +
+      homeKpi('fa', vals.k.totalFA, 'Frequentadores Assíduos', vals.k.faLabel) +
+      homeKpi('visit', vals.k.totalVisitantes, 'Visitantes', vals.k.visitantesLabel) +
+      homeKpi('jovens', vals.k.totalJovens, 'Jovens', 'jovens na seleção') +
+      homeKpi('kids', vals.k.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção') +
       '</div>';
 
     // Charts grid
@@ -2621,6 +2622,7 @@
       celulaOptions: celulaListPublica.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
       membrosRede: membrosRede, membrosRedeLabel: tipoResumo(pessoasRede),
       adultosMembros: contaTipo(pessoasRede, 'Adultos'),
+      principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), totalKids, totalFA),
       totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
       posBars: posBars, perfilBars: perfilBars, rows: rows,
       loading: state.membersPublicosStatus === 'loading' && !all.length,
@@ -2647,13 +2649,13 @@
       '</select>' +
       '</div>';
 
-    html += '<div class="grid-kpi6" style="margin-bottom:16px">' +
-      kpiCard('Total de Membros - Adultos e Kids', vals.membrosRede, vals.membrosRedeLabel, { gradient: true }) +
-      kpiCard('Total de Adultos', vals.adultosMembros, 'membros adultos', { gradient: true }) +
-      kpiCard('Total de Frequentadores Assíduos', vals.totalFA, '', { gradient: true }) +
-      kpiCard('Total de Visitantes', vals.totalVisitantes, '', { gradient: true }) +
-      kpiCard('Total de Jovens', vals.totalJovens, 'jovens na seleção', { gradient: true }) +
-      kpiCard('Total de Kids e Juvenis', vals.totalKids, 'crianças e adolescentes na seleção', { gradient: true }) +
+    html += '<div class="home-kpis" style="margin:0 0 16px">' +
+      homeKpi('rede', vals.principal.valor, 'Total de Membros - Adultos e Kids', vals.principal.sub) +
+      homeKpi('adultos', vals.adultosMembros, 'Total de Adultos', 'membros adultos') +
+      homeKpi('fa', vals.totalFA, 'Frequentadores Assíduos', 'na seleção') +
+      homeKpi('visit', vals.totalVisitantes, 'Visitantes', 'na seleção') +
+      homeKpi('jovens', vals.totalJovens, 'Jovens', 'jovens na seleção') +
+      homeKpi('kids', vals.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção') +
       '</div>';
 
     html += '<div class="grid-2b" style="margin-bottom:16px">' +
@@ -2910,6 +2912,7 @@
       kpis: {
         membrosRede: membrosRede, membrosRedeSub: tipoResumo(pessoasRede),
         adultosMembros: contaTipo(pessoasRede, 'Adultos'),
+        principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), kids, fa.length),
         fa: fa.length, faSub: tipoResumo(fa),
         visit: visit.length, visitSub: tipoResumo(visit),
         kids: kids, jovens: jovens, naoVisit: naoVisit.length,
@@ -2935,14 +2938,31 @@
     return '<div class="home-kpi-icon" style="background:' + bg + ';color:' + color + '"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + HOME_ICONS[key] + '</svg></div>';
   }
 
-  // Todos os quadros com o mesmo visual do primeiro (fundo em degradê) e
-  // conteúdo centralizado.
+  // Cor do ícone de cada quadro (fundo do cartão é branco em todos).
+  var KPI_CORES = {
+    rede: ['#1B2344', '#e9ecf5'],
+    adultos: ['#2E4FC7', '#e6ecfb'],
+    fa: ['#0E7A68', '#e0f4ef'],
+    visit: ['#6B3FA0', '#efe8f8'],
+    jovens: ['#C2410C', '#fdebdd'],
+    kids: ['#3B6FD4', '#e8f0fc'],
+  };
+
+  // Quadro branco: ícone no canto superior esquerdo, números e textos
+  // centralizados.
   function homeKpi(icon, value, label, sub) {
-    return '<div class="home-card home-kpi home-kpi-destaque">' +
-      homeIcon(icon, '#fff', 'rgba(255,255,255,.16)') +
-      '<div><div class="home-kpi-value">' + value + '</div>' +
+    var cor = KPI_CORES[icon] || ['#2E4FC7', '#e6ecfb'];
+    return '<div class="home-card home-kpi">' +
+      homeIcon(icon, cor[0], cor[1]) +
+      '<div class="home-kpi-texto"><div class="home-kpi-value">' + value + '</div>' +
       '<div class="home-kpi-label">' + escHtml(label) + '</div>' +
       '<div class="home-kpi-sub">' + escHtml(sub) + '</div></div></div>';
+  }
+
+  // Primeiro quadro: soma de Adultos (só membros) + Kids e Juvenis + FAs,
+  // com a conta aberta embaixo.
+  function totalPrincipal(adultos, kids, fas) {
+    return { valor: adultos + kids + fas, sub: adultos + ' adultos · ' + kids + ' kids/juvenis · ' + fas + ' FAs' };
   }
 
   function homeRing(pctv, color, label, sub) {
@@ -3007,12 +3027,12 @@
     }
 
     html += '<div class="home-kpis">' +
-      homeKpi('rede', v.kpis.membrosRede, 'Total de Membros - Adultos e Kids', v.kpis.membrosRedeSub) +
+      homeKpi('rede', v.kpis.principal.valor, 'Total de Membros - Adultos e Kids', v.kpis.principal.sub) +
       homeKpi('adultos', v.kpis.adultosMembros, 'Total de Adultos', 'membros adultos') +
       homeKpi('fa', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub) +
       homeKpi('visit', v.kpis.visit, 'Visitantes', v.kpis.visitSub) +
       homeKpi('jovens', v.kpis.jovens, 'Jovens', 'jovens no recorte') +
-      homeKpi('kids', v.kpis.kids, 'Kids e Juvenis', 'crianças e adolescentes') +
+      homeKpi('kids', v.kpis.kids, 'Kids e Juvenis', 'Kids e Juvenis no recorte') +
       '</div>';
 
     html += '<div class="home-grid3">' +
