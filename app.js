@@ -4365,7 +4365,8 @@
   }
 
   function relSvgJornada(etapas) {
-    var W = 560, rowH = 38, L = 192, R = 92, T = 4;
+    // R guarda duas colunas à direita da barra: o número e o "% do total".
+    var W = 560, rowH = 38, L = 192, R = 140, T = 4;
     var H = T + etapas.length * rowH;
     var max = Math.max(1, etapas[0][1]);
     var corpo = '';
