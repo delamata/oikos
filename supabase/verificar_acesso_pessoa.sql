@@ -8,8 +8,11 @@
 --
 -- A regra aplicada é a mesma de pode_ver_celula() no banco, inclusive a
 -- versão instalada (com ou sem a regra do cônjuge — a consulta detecta):
---   - admin, Pastor ou Pastor de Rede ............ vê todas as células
---   - discipulador/obreiro marcado na célula ....... vê essa célula
+--   - admin ou Pastor ............................. vê todas as células
+--     (Pastor de Rede deixou de ter acesso total em add_relatorios_acesso.sql;
+--      antes dessa migração, ele também via tudo)
+--   - discipulador/obreiro/pastor de rede marcado na célula ... vê essa célula
+--   - quem é "Supervisor" do discipulador da célula ... vê essa célula
 --   - cônjuge de quem é discipulador/obreiro ....... vê a mesma rede
 --   - qualquer pessoa .............................. vê a própria célula
 -- Quem não tem login não acessa nada — mas a consulta mostra mesmo assim
@@ -30,17 +33,22 @@ alvo as (
    where m.nome ilike (select nome_pessoa from parametros)
 ),
 regra as (
-  -- A regra do cônjuge só existe se add_rede_conjuge.sql foi rodado.
-  select position('conjuge' in pg_get_functiondef('pode_ver_celula(text)'::regprocedure)) > 0 as com_conjuge
+  -- A regra do cônjuge só existe se add_rede_conjuge.sql foi rodado; a do
+  -- supervisor (e o Pastor de Rede sem acesso total), se
+  -- add_relatorios_acesso.sql foi rodado.
+  select position('conjuge' in pg_get_functiondef('pode_ver_celula(text)'::regprocedure)) > 0 as com_conjuge,
+         position('supervisor' in pg_get_functiondef('pode_ver_celula(text)'::regprocedure)) > 0 as com_supervisor
 ),
 acesso as (
   select a.id as pessoa_id, h.celula,
     case
-      when a.is_admin or a.posicao in ('Pastor', 'Pastor de Rede') then 'acesso total'
+      when a.is_admin or a.posicao = 'Pastor' then 'acesso total'
+      when not r.com_supervisor and a.posicao = 'Pastor de Rede' then 'acesso total'
       when r.com_conjuge and (h.discipulador_id in (a.id, a.conjuge_id) or h.obreiro_id in (a.id, a.conjuge_id)) then
         case when h.discipulador_id = a.id or h.obreiro_id = a.id
              then 'ela é responsável pela célula'
              else 'pela rede do cônjuge' end
+      when r.com_supervisor and d.supervisor_id in (a.id, a.conjuge_id) then 'supervisiona o discipulador da célula'
       when not r.com_conjuge and a.posicao = 'Obreiro' and h.obreiro_id = a.id then 'ela é obreira da célula'
       when not r.com_conjuge and a.posicao = 'Discipulador' and h.discipulador_id = a.id then 'ela é discipuladora da célula'
       when (r.com_conjuge or a.posicao not in ('Obreiro', 'Discipulador')) and h.celula = a.celula then 'é a célula do cadastro dela'
@@ -48,6 +56,7 @@ acesso as (
     from alvo a
    cross join regra r
    cross join celula_hierarquia h
+    left join members d on d.id = h.discipulador_id
 )
 select
   a.nome,

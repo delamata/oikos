@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Seu login ainda não está vinculado a um cadastro no Oikos.' }, 403);
     }
     if (!perfil.is_full) {
-      return json({ error: 'O Oikos IA está disponível para Pastor, Pastor de Rede e administradores.' }, 403);
+      return json({ error: 'O Oikos IA está disponível para Pastor e administradores.' }, 403);
     }
 
     // ---- Painel de indicadores (tudo já filtrado pela RLS) ----

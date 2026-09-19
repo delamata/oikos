@@ -1,6 +1,6 @@
 // Edge Function: cria um login (e-mail + senha inicial) para alguém já
 // cadastrado em `members`, e vincula esse login ao cadastro em
-// `profiles`. Só quem tem acesso total (Pastor/Pastor de Rede/admin)
+// `profiles`. Só quem tem acesso total (Pastor/admin)
 // pode chamar isso — é a única parte do app que usa a chave secreta
 // (service_role) do Supabase, e por isso precisa rodar aqui, nunca no
 // navegador. Veja o passo a passo de deploy em README.md.

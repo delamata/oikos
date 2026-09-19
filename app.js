@@ -290,6 +290,15 @@
     iaCarregando: false,
     iaErro: null,
 
+    // células que quem está logado enxerga, segundo o banco (minhas_celulas())
+    minhasCelulas: null,
+
+    // Relatórios
+    relFiltros: { periodo: '6', discipulador: '', celula: '' },
+    relMovs: [],                  // movimentações dos últimos 24 meses (sem notas)
+    relMovsStatus: 'idle',
+    relPresenca: null,            // { celula, status, encontros: [{ data, presencas_celula }] }
+
     // movimentações (Supabase)
     movimentacoes: [],
     movStatus: 'idle',
@@ -428,7 +437,9 @@
   function doLogout() {
     pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
+      relPresencaPedida = '';
+      relUltimo = null;
     });
   }
 
@@ -442,7 +453,21 @@
   // ---------------------------------------------------------------------
   function afterLinked() {
     loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia(); loadSolicitacoesLideranca();
+    loadMinhasCelulas();
     vigiarSolicitacoes();
+  }
+
+  // Células que quem está logado enxerga, calculadas pelo próprio banco
+  // (minhas_celulas(), add_relatorios_acesso.sql). Sem a migração, fica
+  // null e o app segue com a regra montada aqui no navegador.
+  function loadMinhasCelulas() {
+    if (!sb) return;
+    sb.rpc('minhas_celulas').then(function (res) {
+      if (res.error || !Array.isArray(res.data)) return;
+      setState({
+        minhasCelulas: res.data.map(function (r) { return typeof r === 'string' ? r : (r.minhas_celulas || r.celula); }).filter(Boolean),
+      });
+    });
   }
 
   function loadProfile() {
@@ -1284,7 +1309,8 @@
   function loadFrequencia() {
     if (!sb) return;
     setState({ freqEncontrosStatus: 'loading' });
-    var desde = isoMenosDias(365);
+    // Dois anos: o Relatórios compara até 12 meses com os 12 anteriores.
+    var desde = isoMenosDias(730);
     sb.from('frequencia_encontros').select('*').gte('data', desde).order('data', { ascending: false }).then(function (res) {
       if (res.error) {
         console.warn('Erro ao carregar frequência:', res.error.message);
@@ -2147,12 +2173,14 @@
     var isTrilho = state.tab === 'trilho';
     var isNovo = state.tab === 'novo';
     var isMov = state.tab === 'mov';
+    var isRel = state.tab === 'rel';
     var isHierarquia = state.tab === 'hierarquia';
 
-    // ---- Acesso total (Pastor/Pastor de Rede/admin) — só reflete a UI;
-    // quem garante de verdade é a RLS no Supabase. ----
+    // ---- Acesso total (Pastor/admin) — só reflete a UI; quem garante de
+    // verdade é a RLS no Supabase. Pastor de Rede vê só as redes que
+    // acompanha, como o Obreiro (add_relatorios_acesso.sql). ----
     var meuMembro = (state.profile && allPessoas.filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
-    var souFull = !!(state.profile && (state.profile.is_admin || (state.meuPerfil && state.meuPerfil.is_full) || (meuMembro && ['Pastor', 'Pastor de Rede'].indexOf(meuMembro.posicao) >= 0)));
+    var souFull = !!(state.profile && (state.profile.is_admin || (state.meuPerfil && state.meuPerfil.is_full) || (meuMembro && meuMembro.posicao === 'Pastor')));
 
     // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
     // Quem responde por um discipulador pode ser um Obreiro, mas também
@@ -2331,6 +2359,8 @@
         });
       },
       goMov: function () { setState({ tab: 'mov', sidebarOpen: false }); },
+      isRel: isRel,
+      goRel: function () { abrirRelatorios(souFull); },
       goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
       sidebarOpen: state.sidebarOpen,
       openSidebar: function () { setState({ sidebarOpen: true }); },
@@ -2465,6 +2495,7 @@
     cadastro: '<circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7"></path>',
     freq: '<path d="M9 11.5 11 13.5 15.5 9"></path><rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect><path d="M8 2.5v4"></path><path d="M16 2.5v4"></path>',
     trilho: '<path d="M5 3v18"></path><path d="M5 4h11l-2 4 2 4H5"></path>',
+    rel: '<path d="M3 21h18"></path><path d="M6 17v-5"></path><path d="M11 17V7"></path><path d="M16 17v-8"></path><path d="M20 4l-4.5 4.5-3-2L7 11"></path>',
     mov: '<path d="M4 7h4l3 10h6"></path><path d="M4 17h4l3-10h6"></path><path d="m17 4 3 3-3 3"></path><path d="m17 14 3 3-3 3"></path>',
     novo: '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
     ia: '<path d="M12 3.5 13.6 8 18 9.6 13.6 11.2 12 15.6 10.4 11.2 6 9.6 10.4 8 12 3.5Z"></path><path d="M18 15.5 18.8 18l2.2.8-2.2.8-.8 2.4-.8-2.4-2.2-.8 2.2-.8.8-2.5Z"></path><path d="M5.5 14 6 16l2 .7-2 .7-.5 2-.5-2-2-.7 2-.7.5-2Z"></path>',
@@ -2496,6 +2527,7 @@
         { icon: 'home', label: 'Início', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: true, onClick: function () {}, show: true, locked: false },
         { icon: 'freq', label: 'Frequência', active: false, onClick: vals.pedirLogin, show: true, locked: true },
+        { icon: 'rel', label: 'Relatórios', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'mov', label: 'Movimentações', active: false, onClick: vals.pedirLogin, show: true, locked: true },
         { icon: 'novo', label: '+ Novo Cadastro', active: false, onClick: vals.pedirLogin, show: true, locked: true },
@@ -2504,6 +2536,7 @@
         { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
+        { icon: 'rel', label: 'Relatórios', active: vals.isRel, onClick: vals.goRel, show: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
@@ -3002,7 +3035,11 @@
         var discipula = daRede.some(function (h) { return doCasal(h.discipulador_id); });
         escopoTitulo = 'Sua rede';
         escopoSub = viaConjuge ? 'Rede de discipulado do casal' : (discipula ? 'Células que você discipula' : 'Células sob sua supervisão');
-      } else if (meu.posicao === 'Discipulador' || meu.posicao === 'Obreiro') {
+      } else if (state.minhasCelulas && state.minhasCelulas.length > 1) {
+        // Rede que só chega pelo "Supervisor" do discipulador.
+        celulas = state.minhasCelulas.slice();
+        escopoTitulo = 'Sua rede'; escopoSub = 'Células sob sua supervisão';
+      } else if (['Discipulador', 'Obreiro', 'Pastor de Rede'].indexOf(meu.posicao) >= 0) {
         celulas = [];
         escopoTitulo = 'Sua rede'; escopoSub = 'Nenhuma célula vinculada';
       } else if (meu.celula) {
@@ -3147,6 +3184,7 @@
     inativos: '<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
     jovens: '<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z"></path>',
     kids: '<circle cx="12" cy="12" r="8.5"></circle><path d="M8.5 14a4 4 0 0 0 7 0"></path><path d="M9 9.5h.01"></path><path d="M15 9.5h.01"></path>',
+    batismo: '<path d="M12 3s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11Z"></path><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"></path>',
   };
 
   function homeIcon(key, color, bg) {
@@ -3165,6 +3203,7 @@
     transferidos: ['#0E7A68', '#e0f4ef'],
     perdidos: ['#B0281E', '#fbe7e5'],
     inativos: ['#A1780F', '#fdf1da'],
+    batismo: ['#3B6FD4', '#e8f0fc'],
   };
 
   // Quadro branco: ícone no canto superior esquerdo, números e textos
@@ -3370,6 +3409,8 @@
     }).map(function (h) { return h.celula; });
     var minha = state.meuPerfil && state.meuPerfil.celula;
     if (minha && minhas.indexOf(minha) < 0) minhas.push(minha);
+    // minhas_celulas() (banco) também conta a supervisão de discipuladores.
+    (state.minhasCelulas || []).forEach(function (c) { if (minhas.indexOf(c) < 0) minhas.push(c); });
     return lista.filter(function (c) { return minhas.indexOf(c) >= 0; });
   }
 
@@ -3950,6 +3991,882 @@
   }
 
   // Cabeçalho das demais telas, no mesmo padrão do destaque do Início.
+  // ---------------------------------------------------------------------
+  // Relatórios — evolução da igreja, da rede de discipulado e da célula
+  //
+  // Cada nível abre no próprio recorte (a RLS garante o resto): líder na
+  // célula, discipulador na rede, obreiro/pastor de rede nas redes que
+  // acompanha, pastor/admin na igreja com filtro por discipulador.
+  // Gráficos são SVG montados aqui, para servirem igual na tela, na
+  // imagem do WhatsApp e no PDF.
+  // ---------------------------------------------------------------------
+  var REL_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  var REL_MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  // Jornada Visitante → FA → Membro (paleta validada para daltonismo).
+  var REL_COR = {
+    visit: '#8A63C9', fa: '#149C88', membro: '#2E4FC7', linha: '#149C88',
+    saiu: '#9aa8ba', perdido: '#B0281E', grade: '#edf1f7', eixo: '#8a99ab',
+    tinta: '#14243a', suave: '#6b7c93', bom: '#0E7A68', bomFundo: '#e0f4ef',
+    ruim: '#B0281E', ruimFundo: '#fbe7e5', neutroFundo: '#eef2f7',
+  };
+  var REL_FONTE = "'Plus Jakarta Sans', Arial, sans-serif";
+  var REL_SITUACOES_SAIDA = ['inativo', 'transferido_celula', 'transferido_rede', 'transferido_igreja'];
+  var relUltimo = null;          // gráficos da última tela, usados pelo compartilhar/PDF
+  var relPresencaPedida = '';    // célula cuja presença por pessoa já foi pedida
+
+  function relAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function relCorta(txt, max) {
+    txt = String(txt || '');
+    return txt.length > max ? txt.slice(0, max - 1) + '…' : txt;
+  }
+
+  // Chaves 'AAAA-MM' dos últimos n meses (o atual incluído), recuados
+  // `offset` meses — offset = n dá o período anterior, para comparar.
+  function relMeses(n, offset) {
+    var hoje = new Date();
+    var lista = [];
+    for (var i = n - 1 + offset; i >= offset; i--) {
+      var d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      lista.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+    }
+    return lista;
+  }
+
+  function relMesCurto(chave) { return REL_MESES[Number(chave.slice(5, 7)) - 1]; }
+  function relMesLongo(chave) { return REL_MESES_LONGOS[Number(chave.slice(5, 7)) - 1] + ' de ' + chave.slice(0, 4); }
+
+  function relPeriodoLabel(meses) {
+    var a = meses[0], b = meses[meses.length - 1];
+    if (a.slice(0, 4) === b.slice(0, 4)) return REL_MESES_LONGOS[Number(a.slice(5, 7)) - 1] + ' a ' + relMesLongo(b);
+    return relMesLongo(a) + ' a ' + relMesLongo(b);
+  }
+
+  function relIso(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function relSemanaDe(iso) {
+    var d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return relIso(d);
+  }
+
+  // Média de presentes por semana: soma dos presentes dividida pelas
+  // semanas que tiveram lançamento. Numa célula só, é a média por encontro.
+  function relMediaSemanal(registros) {
+    if (!registros.length) return null;
+    var semanas = {};
+    var soma = 0;
+    registros.forEach(function (r) { semanas[relSemanaDe(r.data)] = 1; soma += r.presentes; });
+    return Math.round(soma / Object.keys(semanas).length);
+  }
+
+  // Dias com muitos cadastros de uma vez são a importação inicial da
+  // planilha — essas pessoas não "chegaram" naquele dia.
+  function relDiasImportacao(pessoas) {
+    var porDia = {};
+    pessoas.forEach(function (p) {
+      var dia = String(p.created_at || '').slice(0, 10);
+      if (dia) porDia[dia] = (porDia[dia] || 0) + 1;
+    });
+    var dias = {};
+    Object.keys(porDia).forEach(function (d) { if (porDia[d] >= 15) dias[d] = true; });
+    return dias;
+  }
+
+  function loadRelMovs() {
+    if (!sb) return;
+    setState({ relMovsStatus: 'loading' });
+    sb.from('movimentacoes')
+      .select('member_id, campo, valor_anterior, valor_novo, data, members(nome, celula, saida_detalhe)')
+      .neq('campo', 'nota').gte('data', relMeses(24, 0)[0] + '-01')
+      .order('data', { ascending: false }).limit(5000)
+      .then(function (res) {
+        if (res.error) { console.warn('Erro ao carregar movimentações do relatório:', res.error.message); setState({ relMovsStatus: 'error' }); return; }
+        setState({ relMovs: res.data || [], relMovsStatus: 'ok' });
+      });
+  }
+
+  // Presença de cada pessoa nos últimos 8 encontros de uma célula.
+  function loadRelPresenca(celula) {
+    if (!sb || !celula) return;
+    relPresencaPedida = celula;
+    setState({ relPresenca: { celula: celula, status: 'loading', encontros: [] } });
+    sb.from('celula_encontros').select('data, presencas_celula(member_id, presente)')
+      .eq('celula', celula).order('data', { ascending: false }).limit(8)
+      .then(function (res) {
+        if (!state.relPresenca || state.relPresenca.celula !== celula) return;
+        if (res.error) { setState({ relPresenca: { celula: celula, status: 'error', encontros: [] } }); return; }
+        setState({ relPresenca: { celula: celula, status: 'ok', encontros: (res.data || []).slice().reverse() } });
+      });
+  }
+
+  function abrirRelatorios(souFull) {
+    setState({ tab: 'rel', sidebarOpen: false });
+    if (state.freqEncontrosStatus === 'idle' || state.freqEncontrosStatus === 'error') loadFrequencia();
+    if (state.relMovsStatus !== 'ok' && state.relMovsStatus !== 'loading') loadRelMovs();
+    // Discipuladores não têm célula, então a RLS esconde a linha deles em
+    // `members`; o nome para o filtro vem do diretório (só id e nome).
+    if (!souFull && state.directoryStatus === 'idle') loadDirectory();
+  }
+
+  function setRelFiltro(key, val) {
+    setState(function (s) {
+      var f = Object.assign({}, s.relFiltros);
+      f[key] = val;
+      if (key === 'discipulador') f.celula = '';
+      return { relFiltros: f };
+    });
+  }
+
+  function relNomePessoa(id) {
+    var m = memberById(id);
+    if (m) return m.nome;
+    var d = (state.directory || []).filter(function (x) { return x.id === id; })[0];
+    return d ? d.nome : '';
+  }
+
+  // Recorte atual: células que a pessoa enxerga, afinadas pelos filtros.
+  function relEscopo(souFull) {
+    var hier = state.celulaHierarquia || [];
+    var hierDe = function (c) { return hier.filter(function (h) { return h.celula === c; })[0] || {}; };
+    var base = souFull ? currentCelulaList() : celulasDoUsuario(false);
+    var discIds = [];
+    base.forEach(function (c) {
+      var d = hierDe(c).discipulador_id;
+      if (d && discIds.indexOf(d) < 0) discIds.push(d);
+    });
+    var f = state.relFiltros;
+    var disc = f.discipulador && discIds.indexOf(f.discipulador) >= 0 ? f.discipulador : '';
+    var doDisc = disc ? base.filter(function (c) { return hierDe(c).discipulador_id === disc; }) : base;
+    var cel = f.celula && doDisc.indexOf(f.celula) >= 0 ? f.celula : '';
+    var celulas = cel ? [cel] : doDisc;
+    return { base: base, discIds: discIds, disc: disc, doDisc: doDisc, cel: cel, celulas: celulas, unica: celulas.length === 1 ? celulas[0] : '' };
+  }
+
+  function relNivel(souFull, esc) {
+    var pos = (state.meuPerfil && state.meuPerfil.posicao) || '';
+    if (souFull) return { papel: pos === 'Pastor' ? 'Pastor' : 'Admin', titulo: 'Igreja', pdf: 'Relatório da igreja' };
+    if (pos === 'Obreiro' || pos === 'Pastor de Rede') return { papel: pos, titulo: 'Suas redes', pdf: 'Relatório das redes' };
+    if (esc.base.length > 1 || pos === 'Discipulador') return { papel: pos || 'Discipulador', titulo: 'Sua rede', pdf: 'Relatório da rede' };
+    return { papel: pos || 'Líder', titulo: 'Sua célula', pdf: 'Relatório da célula' };
+  }
+
+  // ---- Números do relatório ----
+  function relDados(esc, n) {
+    var naCel = function (c) { return !!c && esc.celulas.indexOf(c) >= 0; };
+    var meses = relMeses(n, 0), antes = relMeses(n, n);
+    var mesDe = function (iso) { return String(iso || '').slice(0, 7); };
+    var noPeriodo = function (iso) { return meses.indexOf(mesDe(iso)) >= 0; };
+    var noAnterior = function (iso) { return antes.indexOf(mesDe(iso)) >= 0; };
+
+    // Frequência: lançamentos do Oikos + planilha antiga, sem contar duas
+    // vezes o mesmo encontro. Rodízio (evento ponte) fica de fora.
+    var regMap = {};
+    (state.freqPlanilha || []).forEach(function (r) {
+      if (r.rodizio || !naCel(r.celula)) return;
+      var total = r.total != null ? Number(r.total) : Number(r.membros || 0) + Number(r.fas || 0) + Number(r.visitantes || 0) + Number(r.kids || 0);
+      regMap[r.celula + '|' + String(r.data).slice(0, 10)] = { celula: r.celula, data: String(r.data).slice(0, 10), presentes: total };
+    });
+    (state.freqEncontros || []).forEach(function (e) {
+      if (!naCel(e.celula) || !Number(e.pessoas)) return;
+      regMap[e.celula + '|' + e.data] = { celula: e.celula, data: e.data, presentes: Number(e.presentes || 0) };
+    });
+    var regs = Object.keys(regMap).map(function (k) { return regMap[k]; });
+    var freqSerie = meses.map(function (m) { return relMediaSemanal(regs.filter(function (r) { return mesDe(r.data) === m; })); });
+    var freqAtual = relMediaSemanal(regs.filter(function (r) { return noPeriodo(r.data); }));
+    var freqAntes = relMediaSemanal(regs.filter(function (r) { return noAnterior(r.data); }));
+
+    // Chegadas: cadastros novos (sem a importação inicial).
+    var todos = data();
+    var importacao = relDiasImportacao(todos);
+    var novos = todos.filter(function (p) {
+      var dia = String(p.created_at || '').slice(0, 10);
+      return dia && !importacao[dia] && naCel(p.celula);
+    }).map(function (p) { return { id: p.id, celula: p.celula, data: String(p.created_at).slice(0, 10) }; });
+
+    // Movimentações no recorte (uma mudança de célula conta nas duas pontas).
+    var movs = (state.relMovs || []).filter(function (m) {
+      var cel = m.members && m.members.celula;
+      if (m.campo === 'celula') return naCel(m.valor_anterior) || naCel(m.valor_novo);
+      return naCel(cel);
+    });
+    var unicos = function (lista, chave) {
+      var vistos = {};
+      return lista.filter(function (m) { var k = chave(m); if (vistos[k]) return false; vistos[k] = true; return true; });
+    };
+    var avancos = unicos(movs.filter(function (m) {
+      return (m.campo === 'status_pessoa' || m.campo === 'posicao') && m.valor_anterior !== m.valor_novo &&
+        (m.valor_novo === 'Frequentador Assíduo' || m.valor_novo === 'Membro');
+    }), function (m) { return m.member_id + '|' + m.valor_novo + '|' + mesDe(m.data); });
+    var batismos = unicos(movs.filter(function (m) { return m.campo === 'batizado' && m.valor_novo === 'Sim'; }), function (m) { return m.member_id + '|' + mesDe(m.data); });
+    var perdidos = unicos(movs.filter(function (m) { return m.campo === 'situacao_saida' && m.valor_novo === 'perdido'; }), function (m) { return m.member_id + '|' + mesDe(m.data); });
+    var saidas = movs.filter(function (m) { return m.campo === 'situacao_saida' && REL_SITUACOES_SAIDA.indexOf(m.valor_novo) >= 0; });
+    var trocas = movs.filter(function (m) { return m.campo === 'celula'; });
+    var conta = function (lista, filtro) { return lista.filter(function (x) { return filtro(x.data); }).length; };
+
+    var kpis = {
+      freq: [freqAtual, freqAntes],
+      novos: [conta(novos, noPeriodo), conta(novos, noAnterior)],
+      avancos: [conta(avancos, noPeriodo), conta(avancos, noAnterior)],
+      batismos: [conta(batismos, noPeriodo), conta(batismos, noAnterior)],
+      perdidos: [conta(perdidos, noPeriodo), conta(perdidos, noAnterior)],
+    };
+
+    var crescimento = meses.map(function (m) {
+      var doMes = function (lista, alvo) { return lista.filter(function (x) { return mesDe(x.data) === m && (!alvo || x.valor_novo === alvo); }).length; };
+      return { visit: doMes(novos), fa: doMes(avancos, 'Frequentador Assíduo'), membro: doMes(avancos, 'Membro') };
+    });
+
+    // Jornada: foto de hoje de quem está ativo no recorte.
+    var ativos = todos.filter(function (p) { return p.active !== false && naCel(p.celula); });
+    var jornada = [
+      ['Pessoas na rede', ativos.length],
+      ['Frequentadores e membros', ativos.filter(function (p) { var s = statusDeMembro(p); return s === 'Frequentador Assíduo' || s === 'Membro'; }).length],
+      ['Membros', ativos.filter(function (p) { return statusDeMembro(p) === 'Membro'; }).length],
+      ['Batizados', ativos.filter(function (p) { return p.batizado === 'Sim'; }).length],
+      ['Encontro com Deus', ativos.filter(function (p) { return p.encontro === 'Sim'; }).length],
+      ['Liderança', ativos.filter(function (p) { return FUNCOES_MINISTERIAIS.indexOf(funcaoDeMembro(p)) >= 0; }).length],
+    ];
+
+    // Comparativo: média por encontro de cada célula, período x anterior.
+    var comparativo = esc.celulas.map(function (c) {
+      var daCel = regs.filter(function (r) { return r.celula === c; });
+      var media = function (lista) { return lista.length ? Math.round(lista.reduce(function (a, r) { return a + r.presentes; }, 0) / lista.length) : null; };
+      var atual = media(daCel.filter(function (r) { return noPeriodo(r.data); }));
+      var ant = media(daCel.filter(function (r) { return noAnterior(r.data); }));
+      return { celula: c, atual: atual, anterior: ant, encontros: daCel.filter(function (r) { return noPeriodo(r.data); }).length };
+    });
+
+    // Entradas e saídas no período, por célula (ou por mês, numa célula só).
+    var chaveMov = function (m) { return m.member_id + '|' + m.campo + '|' + m.valor_novo; };
+    var movPor = function (filtroData, filtroCelula) {
+      var entraram = novos.filter(function (p) { return filtroData(p.data) && filtroCelula(p.celula); }).length +
+        unicos(trocas.filter(function (m) { return filtroData(m.data) && filtroCelula(m.valor_novo); }), chaveMov).length;
+      var sairam = unicos(trocas.filter(function (m) { return filtroData(m.data) && filtroCelula(m.valor_anterior); }), chaveMov).length +
+        unicos(saidas.filter(function (m) { return filtroData(m.data) && filtroCelula(m.members && m.members.celula); }), chaveMov).length;
+      var perd = perdidos.filter(function (m) { return filtroData(m.data) && filtroCelula(m.members && m.members.celula); }).length;
+      return { entraram: entraram, sairam: sairam, perdidos: perd };
+    };
+    var movimentacoes = esc.unica
+      ? meses.map(function (m) {
+        var r = movPor(function (iso) { return mesDe(iso) === m; }, naCel);
+        r.rotulo = relMesCurto(m); r.tip = relMesLongo(m);
+        return r;
+      })
+      : esc.celulas.map(function (c) {
+        var r = movPor(noPeriodo, function (x) { return x === c; });
+        r.rotulo = celulaLabel(c); r.tip = celulaLabel(c);
+        return r;
+      });
+
+    var perdidosLista = perdidos.filter(function (m) { return noPeriodo(m.data); }).map(function (m) {
+      return {
+        nome: (m.members && m.members.nome) || '—',
+        celula: celulaLabel(m.members && m.members.celula),
+        mes: relMesLongo(mesDe(m.data)),
+        detalhe: (m.members && m.members.saida_detalhe) || '',
+      };
+    });
+
+    return {
+      meses: meses, antes: antes, kpis: kpis, freqSerie: freqSerie, crescimento: crescimento,
+      jornada: jornada, comparativo: comparativo, movimentacoes: movimentacoes,
+      perdidosSerie: meses.map(function (m) { return perdidos.filter(function (x) { return mesDe(x.data) === m; }).length; }),
+      perdidosLista: perdidosLista, temFrequencia: regs.length > 0,
+    };
+  }
+
+  // ---- Gráficos (SVG em texto) ----
+  function relSvg(w, h, label, corpo) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" role="img" aria-label="' + relAttr(label) + '" font-family="' + relAttr(REL_FONTE) + '" style="display:block;width:100%;height:auto;overflow:visible">' +
+      '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="#ffffff"></rect>' + corpo + '</svg>';
+  }
+
+  function relTexto(x, y, txt, o) {
+    o = o || {};
+    return '<text x="' + x + '" y="' + y + '" font-size="' + (o.size || 12) + '" font-weight="' + (o.weight || 600) + '" fill="' + (o.cor || REL_COR.eixo) + '"' +
+      (o.anchor ? ' text-anchor="' + o.anchor + '"' : '') + '>' + escHtml(txt) + '</text>';
+  }
+
+  function relEscala(max) {
+    var passo = max <= 5 ? 1 : max <= 10 ? 2 : max <= 30 ? 5 : max <= 60 ? 10 : max <= 150 ? 25 : 50;
+    return { max: Math.max(passo, Math.ceil(max / passo) * passo), passo: passo };
+  }
+
+  function relGrade(L, R, W, y, escala) {
+    var s = '';
+    for (var g = 0; g <= escala.max; g += escala.passo) {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(g) + '" y2="' + y(g) + '" stroke="' + REL_COR.grade + '" stroke-width="1"></line>' +
+        relTexto(L - 8, y(g) + 4, g, { anchor: 'end' });
+    }
+    return s;
+  }
+
+  function relSvgLinha(meses, valores) {
+    var W = 560, H = 250, L = 40, R = 36, T = 18, B = 30;
+    var validos = valores.filter(function (v) { return v != null; });
+    var escala = relEscala(Math.max.apply(null, validos.concat([1])) * 1.15);
+    var x = function (i) { return L + (meses.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (meses.length - 1)); };
+    var y = function (v) { return T + (H - T - B) * (1 - v / escala.max); };
+    var corpo = relGrade(L, R, W, y, escala);
+    var pontos = [];
+    valores.forEach(function (v, i) { if (v != null) pontos.push([x(i), y(v), v, i]); });
+    if (pontos.length > 1) {
+      var area = 'M' + pontos[0][0] + ',' + y(0) + pontos.map(function (p) { return ' L' + p[0] + ',' + p[1]; }).join('') + ' L' + pontos[pontos.length - 1][0] + ',' + y(0) + ' Z';
+      corpo += '<path d="' + area + '" fill="' + REL_COR.linha + '" fill-opacity="0.1"></path>' +
+        '<path d="' + pontos.map(function (p, k) { return (k ? 'L' : 'M') + p[0] + ',' + p[1]; }).join(' ') + '" fill="none" stroke="' + REL_COR.linha + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>';
+    }
+    pontos.forEach(function (p, k) {
+      var ultimo = k === pontos.length - 1;
+      corpo += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (ultimo ? 5.5 : 4) + '" fill="' + REL_COR.linha + '" stroke="#ffffff" stroke-width="2"></circle>';
+      if (ultimo) corpo += relTexto(p[0] + 9, p[1] + 4, p[2], { size: 13.5, weight: 800, cor: REL_COR.tinta });
+    });
+    var faixa = (W - L - R) / Math.max(1, meses.length - 1);
+    meses.forEach(function (m, i) {
+      corpo += relTexto(x(i), H - 9, relMesCurto(m), { anchor: 'middle' });
+      var v = valores[i], ant = i ? valores[i - 1] : null;
+      var tip = relMesLongo(m) + '\n' + (v == null ? 'Sem lançamentos' : v + ' presentes por semana, em média') +
+        (v != null && ant != null ? '\n' + (v - ant >= 0 ? '▲ +' : '▼ ') + (v - ant) + ' em relação ao mês anterior' : '');
+      corpo += '<rect x="' + (x(i) - faixa / 2) + '" y="' + T + '" width="' + faixa + '" height="' + (H - T - B) + '" fill="transparent" data-tip="' + relAttr(tip) + '"></rect>';
+    });
+    return relSvg(W, H, 'Frequência média por mês', corpo);
+  }
+
+  function relSvgCrescimento(meses, linhas) {
+    var W = 560, H = 250, L = 34, R = 10, T = 22, B = 30;
+    var series = [['visit', 'novos visitantes'], ['fa', 'viraram FA'], ['membro', 'viraram membros']];
+    var totais = linhas.map(function (r) { return r.visit + r.fa + r.membro; });
+    var escala = relEscala(Math.max.apply(null, totais.concat([1])) * 1.15);
+    var y = function (v) { return T + (H - T - B) * (1 - v / escala.max); };
+    var faixa = (W - L - R) / meses.length, larg = Math.min(44, faixa * 0.56);
+    var corpo = relGrade(L, R, W, y, escala);
+    linhas.forEach(function (r, i) {
+      var cx = L + faixa * i + faixa / 2, base = 0;
+      var ultimaSerie = null;
+      series.forEach(function (s) { if (r[s[0]]) ultimaSerie = s[0]; });
+      series.forEach(function (s) {
+        var v = r[s[0]];
+        if (!v) return;
+        var topo = s[0] === ultimaSerie;
+        var y0 = y(base), y1 = y(base + v);
+        corpo += '<rect x="' + (cx - larg / 2) + '" y="' + (y1 + (topo ? 0 : 1)) + '" width="' + larg + '" height="' + Math.max(1, y0 - y1 - (topo ? 1 : 2)) + '" rx="' + (topo ? 4 : 1.5) + '" fill="' + REL_COR[s[0]] + '"></rect>';
+        base += v;
+      });
+      if (totais[i]) corpo += relTexto(cx, y(totais[i]) - 7, totais[i], { anchor: 'middle', size: 13, weight: 800, cor: REL_COR.tinta });
+      corpo += relTexto(cx, H - 9, relMesCurto(meses[i]), { anchor: 'middle' });
+      var tip = relMesLongo(meses[i]) + '\n' + series.map(function (s) { return r[s[0]] + ' ' + s[1]; }).join('\n');
+      corpo += '<rect x="' + (cx - faixa / 2) + '" y="' + T + '" width="' + faixa + '" height="' + (H - T - B) + '" fill="transparent" data-tip="' + relAttr(tip) + '"></rect>';
+    });
+    return relSvg(W, H, 'Crescimento por mês', corpo);
+  }
+
+  function relSvgJornada(etapas) {
+    var W = 560, rowH = 38, L = 192, R = 92, T = 4;
+    var H = T + etapas.length * rowH;
+    var max = Math.max(1, etapas[0][1]);
+    var corpo = '';
+    etapas.forEach(function (e, i) {
+      var yy = T + i * rowH, w = Math.max(3, (W - L - R) * e[1] / max);
+      var pct = Math.round(e[1] / max * 100);
+      corpo += relTexto(L - 12, yy + 23, e[0], { anchor: 'end', size: 13, weight: 700, cor: REL_COR.tinta }) +
+        '<rect x="' + L + '" y="' + (yy + 8) + '" width="' + (W - L - R) + '" height="22" rx="4" fill="' + REL_COR.grade + '"></rect>' +
+        '<rect x="' + L + '" y="' + (yy + 8) + '" width="' + w + '" height="22" rx="4" fill="' + REL_COR.membro + '" fill-opacity="' + (1 - i * 0.1).toFixed(2) + '"></rect>' +
+        relTexto(L + w + 8, yy + 23, e[1], { size: 13, weight: 800, cor: REL_COR.tinta }) +
+        (i ? relTexto(W - 4, yy + 23, pct + '% do total', { anchor: 'end', size: 12, weight: 700, cor: REL_COR.suave }) : '') +
+        '<rect x="0" y="' + yy + '" width="' + W + '" height="' + rowH + '" fill="transparent" data-tip="' + relAttr(e[0] + '\n' + e[1] + ' pessoas' + (i ? ' · ' + pct + '% do total' : '')) + '"></rect>';
+    });
+    return relSvg(W, H, 'Jornada das pessoas', corpo);
+  }
+
+  function relChip(x, y, texto, variacao) {
+    var cor = variacao > 0 ? REL_COR.bom : variacao < 0 ? REL_COR.ruim : REL_COR.suave;
+    var fundo = variacao > 0 ? REL_COR.bomFundo : variacao < 0 ? REL_COR.ruimFundo : REL_COR.neutroFundo;
+    return '<rect x="' + (x - 62) + '" y="' + y + '" width="62" height="22" rx="11" fill="' + fundo + '"></rect>' +
+      relTexto(x - 31, y + 15, texto, { anchor: 'middle', size: 12, weight: 800, cor: cor });
+  }
+
+  function relSvgComparativo(linhas) {
+    var itens = linhas.filter(function (l) { return l.atual != null; }).sort(function (a, b) { return b.atual - a.atual; });
+    var W = 560, rowH = 38, L = 156, R = 116, T = 4;
+    var H = T + Math.max(1, itens.length) * rowH;
+    var max = relEscala(Math.max.apply(null, itens.map(function (i) { return i.atual; }).concat([1])) * 1.05).max;
+    var corpo = '';
+    itens.forEach(function (it, i) {
+      var yy = T + i * rowH, w = Math.max(3, (W - L - R) * it.atual / max);
+      var varPct = it.anterior ? Math.round((it.atual - it.anterior) / it.anterior * 100) : null;
+      corpo += relTexto(L - 12, yy + 23, relCorta(celulaLabel(it.celula), 18), { anchor: 'end', size: 13, weight: 700, cor: REL_COR.tinta }) +
+        '<rect x="' + L + '" y="' + (yy + 8) + '" width="' + w + '" height="22" rx="4" fill="' + REL_COR.linha + '"></rect>' +
+        relTexto(L + w + 8, yy + 23, it.atual, { size: 13, weight: 800, cor: REL_COR.tinta }) +
+        (varPct == null ? relTexto(W - 4, yy + 23, 'novo', { anchor: 'end', size: 12, weight: 700, cor: REL_COR.suave })
+          : relChip(W - 4, yy + 8, (varPct > 0 ? '▲ +' : varPct < 0 ? '▼ ' : '■ ') + varPct + '%', varPct)) +
+        '<rect x="0" y="' + yy + '" width="' + W + '" height="' + rowH + '" fill="transparent" data-tip="' + relAttr(celulaLabel(it.celula) + '\n' + it.atual + ' presentes por encontro, em média\n' + it.encontros + ' encontros no período' +
+          (it.anterior != null ? '\nAntes: ' + it.anterior + ' por encontro' : '\nSem lançamentos no período anterior')) + '"></rect>';
+    });
+    return relSvg(W, H, 'Comparativo de células', corpo);
+  }
+
+  function relSvgMov(linhas) {
+    var W = 560, rowH = 38, L = 150, R = 58, T = 24, pad = 26;
+    var H = T + Math.max(1, linhas.length) * rowH;
+    var maxL = Math.max(1, Math.max.apply(null, linhas.map(function (r) { return r.sairam + r.perdidos; })));
+    var maxR = Math.max(1, Math.max.apply(null, linhas.map(function (r) { return r.entraram; })));
+    var unit = (W - L - R - pad * 2) / (maxL + maxR);
+    var cx = L + pad + maxL * unit;
+    var corpo = relTexto(cx - 6, 12, '← saíram', { anchor: 'end', size: 12, weight: 700, cor: REL_COR.suave }) +
+      relTexto(cx + 6, 12, 'entraram →', { size: 12, weight: 700, cor: REL_COR.suave }) +
+      relTexto(W - 4, 12, 'saldo', { anchor: 'end', size: 12, weight: 700, cor: REL_COR.suave }) +
+      '<line x1="' + cx + '" x2="' + cx + '" y1="' + (T - 4) + '" y2="' + H + '" stroke="#c9d4e2" stroke-width="1"></line>';
+    linhas.forEach(function (r, i) {
+      var yy = T + i * rowH, y0 = yy + 8;
+      var saldo = r.entraram - r.sairam - r.perdidos;
+      corpo += relTexto(L - 12, yy + 23, relCorta(r.rotulo, 18), { anchor: 'end', size: 13, weight: 700, cor: REL_COR.tinta });
+      if (r.sairam) corpo += '<rect x="' + (cx - r.sairam * unit) + '" y="' + y0 + '" width="' + Math.max(1, r.sairam * unit - 1) + '" height="22" rx="3" fill="' + REL_COR.saiu + '"></rect>';
+      if (r.perdidos) corpo += '<rect x="' + (cx - (r.sairam + r.perdidos) * unit) + '" y="' + y0 + '" width="' + Math.max(1, r.perdidos * unit - (r.sairam ? 2 : 1)) + '" height="22" rx="3" fill="' + REL_COR.perdido + '"></rect>';
+      if (r.sairam + r.perdidos) corpo += relTexto(cx - (r.sairam + r.perdidos) * unit - 6, yy + 23, r.sairam + r.perdidos, { anchor: 'end', size: 13, weight: 800, cor: REL_COR.tinta });
+      if (r.entraram) corpo += '<rect x="' + (cx + 1) + '" y="' + y0 + '" width="' + Math.max(1, r.entraram * unit - 1) + '" height="22" rx="3" fill="' + REL_COR.linha + '"></rect>';
+      corpo += relTexto(cx + r.entraram * unit + 6, yy + 23, r.entraram, { size: 13, weight: 800, cor: REL_COR.tinta });
+      corpo += '<rect x="' + (W - 50) + '" y="' + y0 + '" width="46" height="22" rx="11" fill="' + (saldo > 0 ? REL_COR.bomFundo : saldo < 0 ? REL_COR.ruimFundo : REL_COR.neutroFundo) + '"></rect>' +
+        relTexto(W - 27, yy + 23, (saldo > 0 ? '+' : '') + saldo, { anchor: 'middle', size: 13, weight: 800, cor: saldo > 0 ? REL_COR.bom : saldo < 0 ? REL_COR.ruim : REL_COR.suave });
+      corpo += '<rect x="0" y="' + yy + '" width="' + W + '" height="' + rowH + '" fill="transparent" data-tip="' + relAttr(r.tip + '\n' + r.entraram + ' entraram\n' + r.sairam + ' transferidos ou inativos\n' + r.perdidos + ' perdidos\nSaldo: ' + (saldo > 0 ? '+' : '') + saldo) + '"></rect>';
+    });
+    return relSvg(W, H, 'Entradas e saídas', corpo);
+  }
+
+  function relSvgPerdidos(meses, valores) {
+    var W = 560, H = 170, L = 34, R = 10, T = 22, B = 30;
+    var escala = relEscala(Math.max(2, Math.max.apply(null, valores)));
+    var y = function (v) { return T + (H - T - B) * (1 - v / escala.max); };
+    var faixa = (W - L - R) / meses.length, larg = Math.min(40, faixa * 0.5);
+    var corpo = relGrade(L, R, W, y, escala);
+    valores.forEach(function (v, i) {
+      var cx = L + faixa * i + faixa / 2;
+      if (v) {
+        corpo += '<rect x="' + (cx - larg / 2) + '" y="' + y(v) + '" width="' + larg + '" height="' + (y(0) - y(v)) + '" rx="4" fill="' + REL_COR.perdido + '"></rect>' +
+          relTexto(cx, y(v) - 7, v, { anchor: 'middle', size: 13, weight: 800, cor: REL_COR.tinta });
+      }
+      corpo += relTexto(cx, H - 9, relMesCurto(meses[i]), { anchor: 'middle' }) +
+        '<rect x="' + (cx - faixa / 2) + '" y="' + T + '" width="' + faixa + '" height="' + (H - T - B) + '" fill="transparent" data-tip="' + relAttr(relMesLongo(meses[i]) + '\n' + (v ? v + (v > 1 ? ' perdidos' : ' perdido') : 'Nenhum perdido')) + '"></rect>';
+    });
+    return relSvg(W, H, 'Perdidos por mês', corpo);
+  }
+
+  function relSvgPresenca(pessoas, encontros) {
+    var W = 560, L = 150, T = 24, rowH = 30, cel = 30;
+    var H = T + Math.max(1, pessoas.length) * rowH + 4;
+    var passo = (W - L - 8) / Math.max(1, encontros.length);
+    var corpo = '';
+    encontros.forEach(function (e, j) {
+      corpo += relTexto(L + passo * j + passo / 2, 13, e.data.slice(8, 10) + '/' + e.data.slice(5, 7), { anchor: 'middle' });
+    });
+    pessoas.forEach(function (p, i) {
+      var yy = T + i * rowH;
+      var alerta = p.faltasSeguidas >= 3;
+      corpo += relTexto(L - 12, yy + 18, relCorta(p.nome, 18) + (alerta ? ' ⚠' : ''), { anchor: 'end', size: 13, weight: alerta ? 800 : 700, cor: alerta ? REL_COR.ruim : REL_COR.tinta });
+      p.marcas.forEach(function (v, j) {
+        var x = L + passo * j + (passo - cel) / 2;
+        var fill = v === true ? REL_COR.linha : '#ffffff';
+        var stroke = v === true ? 'none' : (v === false ? '#c9d4e2' : '#e6ecf4');
+        corpo += '<rect x="' + x + '" y="' + (yy + 3) + '" width="' + cel + '" height="' + (rowH - 7) + '" rx="6" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.5"' +
+          (v == null ? ' stroke-dasharray="3 3"' : '') + ' data-tip="' + relAttr(p.nome + ' · ' + dataLabelIso(encontros[j].data) + '\n' + (v === true ? 'Presente' : v === false ? 'Faltou' : 'Ainda não estava na lista')) + '"></rect>';
+      });
+    });
+    return relSvg(W, H, 'Presença de cada pessoa', corpo);
+  }
+
+  // ---- Tela ----
+  function relTrend(atual, anterior, menorMelhor) {
+    if (atual == null || anterior == null) return '<span class="rel-trend rel-trend-flat">sem base anterior</span>';
+    var dif = atual - anterior;
+    var bom = menorMelhor ? dif < 0 : dif > 0;
+    var cls = dif === 0 ? 'flat' : (bom ? 'up' : 'down');
+    return '<span class="rel-trend rel-trend-' + cls + '">' + (dif === 0 ? '■ igual' : (dif > 0 ? '▲ +' : '▼ ') + dif) + ' vs antes</span>';
+  }
+
+  function relKpi(icon, valor, label, sub, trend) {
+    var cor = KPI_CORES[icon] || ['#2E4FC7', '#e6ecfb'];
+    return '<div class="home-card home-kpi">' + homeIcon(icon, cor[0], cor[1]) +
+      '<div class="home-kpi-texto"><div class="home-kpi-value">' + (valor == null ? '—' : valor) + '</div>' +
+      '<div class="home-kpi-label">' + escHtml(label) + '</div>' + trend +
+      '<div class="home-kpi-sub">' + escHtml(sub) + '</div></div></div>';
+  }
+
+  var REL_SHARE_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"></path></svg>';
+
+  function relLegendaHtml(legenda) {
+    if (!legenda || !legenda.length) return '';
+    return '<div class="rel-legenda">' + legenda.map(function (l) {
+      return '<span><i style="background:' + l.cor + (l.borda ? ';border:1.5px solid ' + l.borda : '') + '"></i>' + escHtml(l.label) + '</span>';
+    }).join('') + '</div>';
+  }
+
+  function relCardHtml(g, extra) {
+    return '<div class="home-card rel-card">' +
+      '<div class="rel-card-head"><div><div class="home-card-title">' + escHtml(g.titulo) + '</div>' +
+      '<div class="home-card-sub">' + escHtml(g.sub) + '</div></div>' +
+      '<button type="button" class="rel-share" title="Compartilhar como imagem" aria-label="Compartilhar ' + relAttr(g.titulo) + ' como imagem" ' + cb(g.compartilhar) + '>' + REL_SHARE_ICON + '</button></div>' +
+      relLegendaHtml(g.legenda) +
+      (g.vazio ? '<div class="rel-vazio">' + escHtml(g.vazio) + '</div>' : '<div class="rel-chart">' + g.svg + '</div>') +
+      (extra || '') +
+      (g.nota ? '<div class="rel-nota">' + escHtml(g.nota) + '</div>' : '') +
+      '</div>';
+  }
+
+  function relVals(vals) {
+    var souFull = vals.souFull;
+    var esc = relEscopo(souFull);
+    var nivel = relNivel(souFull, esc);
+    var n = Number(state.relFiltros.periodo) || 6;
+    var d = relDados(esc, n);
+    var hier = state.celulaHierarquia || [];
+
+    var recorte = esc.unica ? 'Célula ' + celulaLabel(esc.unica)
+      : esc.disc ? 'Rede de ' + (relNomePessoa(esc.disc) || 'discipulador') : nivel.titulo;
+    var periodoLabel = relPeriodoLabel(d.meses);
+
+    // Presença por pessoa: só quando o recorte é uma célula.
+    var pr = state.relPresenca;
+    if (esc.unica && relPresencaPedida !== esc.unica) {
+      var alvo = esc.unica;
+      relPresencaPedida = alvo;
+      setTimeout(function () { loadRelPresenca(alvo); }, 0);
+    }
+
+    var compartilhar = function (id) { return function () { relCompartilharImagem(id); }; };
+    var graficos = {};
+    graficos.freq = {
+      titulo: 'Evolução da frequência', sub: 'Média de presentes por semana nas células, mês a mês',
+      svg: relSvgLinha(d.meses, d.freqSerie), legenda: [],
+      vazio: d.temFrequencia ? '' : 'Ainda não há lançamentos de frequência neste recorte.',
+      nota: 'Fonte: lançamentos em Frequência e a planilha antiga (sem os eventos de rodízio).',
+      compartilhar: compartilhar('freq'),
+    };
+    graficos.cresc = {
+      titulo: 'Crescimento', sub: 'Quem chegou e quem avançou na jornada, por mês',
+      svg: relSvgCrescimento(d.meses, d.crescimento),
+      legenda: [{ cor: REL_COR.visit, label: 'Novos visitantes' }, { cor: REL_COR.fa, label: 'Viraram FA' }, { cor: REL_COR.membro, label: 'Viraram membros' }],
+      nota: 'Novos visitantes = cadastros novos (a importação inicial não conta). Avanços vêm das mudanças de status.',
+      compartilhar: compartilhar('cresc'),
+    };
+    graficos.jornada = {
+      titulo: 'Jornada: de visitante a líder', sub: 'Situação de hoje de quem está ativo no recorte',
+      svg: relSvgJornada(d.jornada), legenda: [], compartilhar: compartilhar('jornada'),
+    };
+    if (esc.unica) {
+      var ativosCel = data().filter(function (p) { return p.active !== false && p.celula === esc.unica; })
+        .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
+      var encontros = (pr && pr.celula === esc.unica && pr.status === 'ok') ? pr.encontros : [];
+      var pessoas = ativosCel.map(function (p) {
+        var marcas = encontros.map(function (e) {
+          var reg = (e.presencas_celula || []).filter(function (x) { return x.member_id === p.id; })[0];
+          return reg ? !!reg.presente : null;
+        });
+        var faltas = 0;
+        for (var k = marcas.length - 1; k >= 0 && marcas[k] === false; k--) faltas++;
+        return { nome: p.nome, marcas: marcas, faltasSeguidas: faltas };
+      });
+      graficos.comp = {
+        titulo: 'Presença de cada pessoa', sub: 'Últimos 8 encontros — em vermelho, quem faltou 3 vezes seguidas',
+        svg: relSvgPresenca(pessoas, encontros),
+        legenda: [{ cor: REL_COR.linha, label: 'Presente' }, { cor: '#ffffff', borda: '#c9d4e2', label: 'Faltou' }],
+        vazio: (!pr || pr.celula !== esc.unica || pr.status === 'loading') ? 'Carregando a presença da célula…'
+          : !encontros.length ? 'Esta célula ainda não tem encontros lançados em Frequência.'
+          : !pessoas.length ? 'Ninguém ativo nesta célula.' : '',
+        nota: 'Ajuda a ver quem está se afastando antes de virar perdido.',
+        compartilhar: compartilhar('comp'),
+      };
+    } else {
+      var semDados = d.comparativo.filter(function (c) { return c.atual == null; }).length;
+      graficos.comp = {
+        titulo: 'Comparativo de células', sub: 'Presentes por encontro no período e a variação contra o período anterior',
+        svg: relSvgComparativo(d.comparativo), legenda: [],
+        vazio: d.comparativo.some(function (c) { return c.atual != null; }) ? '' : 'Nenhuma célula do recorte tem lançamentos no período.',
+        nota: semDados ? semDados + (semDados === 1 ? ' célula sem lançamento no período ficou de fora.' : ' células sem lançamento no período ficaram de fora.') : 'Toque numa barra para ver os detalhes.',
+        compartilhar: compartilhar('comp'),
+      };
+    }
+    graficos.mov = {
+      titulo: esc.unica ? 'Movimentações da célula' : 'Movimentações por célula',
+      sub: esc.unica ? 'Quem entrou e quem saiu, mês a mês' : 'Quem entrou e quem saiu de cada célula no período',
+      svg: relSvgMov(d.movimentacoes),
+      legenda: [{ cor: REL_COR.linha, label: 'Entraram' }, { cor: REL_COR.saiu, label: 'Saíram (transferidos e inativos)' }, { cor: REL_COR.perdido, label: 'Perdidos' }],
+      vazio: d.movimentacoes.length ? '' : 'Nenhuma célula no recorte.',
+      nota: 'Entraram = cadastros novos e quem chegou de outra célula. O número à direita é o saldo.',
+      compartilhar: compartilhar('mov'),
+    };
+    var totalPerdidos = d.perdidosSerie.reduce(function (a, b) { return a + b; }, 0);
+    graficos.perd = {
+      titulo: 'Perdidos',
+      sub: totalPerdidos ? totalPerdidos + (totalPerdidos > 1 ? ' pessoas saíram e não seguem' : ' pessoa saiu e não segue') + ' em outra igreja no período' : 'Quem saiu e não segue em outra igreja, mês a mês',
+      svg: relSvgPerdidos(d.meses, d.perdidosSerie), legenda: [],
+      nota: 'Os nomes aparecem só aqui e no PDF — a imagem para o WhatsApp leva apenas os números.',
+      compartilhar: compartilhar('perd'),
+    };
+
+    var ordem = ['freq', 'cresc', 'jornada', 'comp', 'mov', 'perd'];
+    relUltimo = {
+      graficos: graficos, ordem: ordem, recorte: recorte, periodoLabel: periodoLabel, nivel: nivel,
+      kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, comparativo: d.comparativo,
+    };
+
+    var discOptions = esc.discIds.map(function (id) { return { v: id, label: relNomePessoa(id) || 'Discipulador sem nome' }; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label, 'pt'); });
+    return {
+      souFull: souFull, nivel: nivel, recorte: recorte, periodoLabel: periodoLabel, n: n, dados: d, graficos: graficos,
+      carregando: state.freqEncontrosStatus === 'loading' || state.relMovsStatus === 'loading' || state.membersStatus === 'loading',
+      semCelulas: !esc.base.length,
+      nCelulas: esc.celulas.length,
+      filtros: { periodo: String(n), discipulador: esc.disc, celula: esc.cel },
+      discOptions: discOptions.length > 1 ? discOptions : [],
+      celulaOptions: esc.doDisc.length > 1 ? esc.doDisc.map(function (c) { return { v: c, label: celulaLabel(c) }; }) : [],
+      filtrando: !!(esc.disc || esc.cel),
+      onPeriodo: function (e) { setRelFiltro('periodo', e.target.value); },
+      onDisc: function (e) { setRelFiltro('discipulador', e.target.value); },
+      onCelula: function (e) { setRelFiltro('celula', e.target.value); },
+      limpar: function () { setState(function (s) { return { relFiltros: Object.assign({}, s.relFiltros, { discipulador: '', celula: '' }) }; }); },
+      pdf: function () { relPdf(); },
+      resumo: function () { relResumoWhatsapp(); },
+      hierCarregada: hier.length > 0,
+    };
+  }
+
+  function relHtml(v) {
+    var d = v.dados;
+    var html = '<div class="home">' +
+      '<section class="home-hero">' +
+      '<div class="home-hero-top">' +
+      '<div>' +
+      '<div class="home-brand">Sistema OIKOS · Relatórios</div>' +
+      '<div class="home-hello">' + escHtml(v.recorte) + '</div>' +
+      '<div class="home-sub">Últimos ' + v.n + ' meses · ' + escHtml(v.periodoLabel) + ', comparado com os ' + v.n + ' meses anteriores</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
+      '<span class="home-chip">' + escHtml(v.nivel.papel) + '</span>' +
+      '<span class="home-chip home-chip-soft">' + v.nCelulas + (v.nCelulas === 1 ? ' célula' : ' células') + ' no recorte</span>' +
+      '</div></div>' +
+      '<div class="home-filters">' +
+      '<div class="home-filter"><label for="rel-periodo">Período</label>' +
+      '<select id="rel-periodo" ' + cb(v.onPeriodo, 'change') + '>' +
+      opt('3', 'Últimos 3 meses', v.filtros.periodo === '3') + opt('6', 'Últimos 6 meses', v.filtros.periodo === '6') + opt('12', 'Últimos 12 meses', v.filtros.periodo === '12') +
+      '</select></div>' +
+      (v.discOptions.length
+        ? '<div class="home-filter"><label for="rel-disc">Discipulador</label>' +
+          '<select id="rel-disc" ' + cb(v.onDisc, 'change') + '>' + opt('', 'Todos', !v.filtros.discipulador) +
+          v.discOptions.map(function (o) { return opt(o.v, o.label, v.filtros.discipulador === o.v); }).join('') + '</select></div>'
+        : '') +
+      (v.celulaOptions.length
+        ? '<div class="home-filter"><label for="rel-celula">Célula</label>' +
+          '<select id="rel-celula" ' + cb(v.onCelula, 'change') + '>' + opt('', 'Todas', !v.filtros.celula) +
+          v.celulaOptions.map(function (o) { return opt(o.v, o.label, v.filtros.celula === o.v); }).join('') + '</select></div>'
+        : '') +
+      (v.filtrando ? '<button class="home-clear" ' + cb(v.limpar) + '>Limpar filtros</button>' : '') +
+      '</div>' +
+      '</div>' +
+      '<div class="rel-acoes">' +
+      '<button type="button" class="rel-btn rel-btn-claro" ' + cb(v.pdf) + '>' + escHtml(v.nivel.pdf) + ' em PDF</button>' +
+      '<button type="button" class="rel-btn" ' + cb(v.resumo) + '>' + whatsappIcon + ' Resumo no WhatsApp</button>' +
+      '</div>' +
+      '</section>';
+
+    if (v.semCelulas) {
+      return html + '<div class="home-card home-empty">' +
+        '<div class="home-card-title">Nenhuma célula vinculada a você ainda</div>' +
+        '<div class="home-card-sub" style="margin-top:6px">Peça a um Pastor ou administrador para definir, em Administração, quais células estão sob a sua responsabilidade.</div></div></div>';
+    }
+    if (v.carregando) {
+      html += '<div class="home-card" style="margin-top:16px;color:#7b8aa0;font-size:13px">Carregando os dados do relatório…</div>';
+    }
+
+    var k = d.kpis;
+    html += '<div class="home-kpis rel-kpis">' +
+      relKpi('rede', k.freq[0], 'Frequência média', 'presentes por semana', relTrend(k.freq[0], k.freq[1])) +
+      relKpi('visit', k.novos[0], 'Novos visitantes', 'cadastros no período', relTrend(k.novos[0], k.novos[1])) +
+      relKpi('fa', k.avancos[0], 'Avançaram na jornada', 'viraram FA ou membro', relTrend(k.avancos[0], k.avancos[1])) +
+      relKpi('batismo', k.batismos[0], 'Batismos', 'no período', relTrend(k.batismos[0], k.batismos[1])) +
+      relKpi('perdidos', k.perdidos[0], 'Perdidos', 'saíram e não seguem em outra igreja', relTrend(k.perdidos[0], k.perdidos[1], true)) +
+      '</div>';
+
+    var perdLista = d.perdidosLista.length
+      ? '<div class="rel-perd-lista">' + d.perdidosLista.map(function (p) {
+        return '<div class="rel-perd-row"><div><div class="rel-perd-nome">' + escHtml(p.nome) + '</div>' +
+          '<div class="rel-perd-meta">' + escHtml(p.celula) + (p.detalhe ? ' · “' + escHtml(p.detalhe) + '”' : '') + '</div></div>' +
+          '<div class="rel-perd-mes">' + escHtml(p.mes) + '</div></div>';
+      }).join('') + '</div>'
+      : '<div class="rel-ok">✓ Nenhum perdido no período.</div>';
+
+    var g = v.graficos;
+    html += '<div class="rel-grid">' +
+      relCardHtml(g.freq) + relCardHtml(g.cresc) + relCardHtml(g.jornada) + relCardHtml(g.comp) +
+      relCardHtml(g.mov) + relCardHtml(g.perd, perdLista) +
+      '</div></div>';
+    return html;
+  }
+
+  // ---- Compartilhar ----
+  function relArquivoNome(titulo) {
+    var base = (titulo + ' ' + (relUltimo ? relUltimo.recorte : '')).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return 'oikos-' + base + '-' + hojeIso() + '.png';
+  }
+
+  function relBaixar(blob, nome) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = nome;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function relEntregar(blob, nome, titulo) {
+    var file = null;
+    try { file = new File([blob], nome, { type: 'image/png' }); } catch (e) { file = null; }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: titulo }).catch(function (err) {
+        if (!err || err.name !== 'AbortError') relBaixar(blob, nome);
+      });
+      return;
+    }
+    relBaixar(blob, nome);
+  }
+
+  // Imagem vertical para o WhatsApp: cabeçalho com o recorte e o período,
+  // o gráfico e a legenda escrita — dá para mandar sem explicar nada.
+  function relCompartilharImagem(id) {
+    var g = relUltimo && relUltimo.graficos[id];
+    if (!g) return;
+    if (g.vazio) { window.alert(g.vazio); return; }
+    var svg = g.svg.replace(/ style="[^"]*"/, '');
+    var img = new Image();
+    img.onload = function () {
+      var W = 1080, pad = 60, cw = W - pad * 2;
+      var ch = Math.round(img.height * cw / img.width);
+      var legH = g.legenda.length ? 70 : 0;
+      var H = pad + 34 + 70 + 44 + 36 + ch + legH + 70 + pad;
+      var canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      var c = canvas.getContext('2d');
+      c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H);
+      c.fillStyle = '#149C88'; c.fillRect(0, 0, W, 12);
+      var y = pad + 24;
+      c.textBaseline = 'alphabetic';
+      c.fillStyle = '#0E7A68'; c.font = '800 24px Arial, sans-serif';
+      c.fillText('SISTEMA OIKOS · VIDEIRA SCS', pad, y);
+      y += 64; c.fillStyle = '#14243a'; c.font = '800 50px Arial, sans-serif';
+      c.fillText(g.titulo, pad, y);
+      y += 46; c.fillStyle = '#6b7c93'; c.font = '600 28px Arial, sans-serif';
+      c.fillText(relUltimo.recorte + ' · ' + relUltimo.periodoLabel, pad, y);
+      y += 36;
+      c.drawImage(img, pad, y, cw, ch);
+      y += ch;
+      if (g.legenda.length) {
+        y += 50; var x = pad;
+        c.font = '600 26px Arial, sans-serif';
+        g.legenda.forEach(function (l) {
+          c.fillStyle = l.cor; c.fillRect(x, y - 20, 22, 22);
+          if (l.borda) { c.strokeStyle = l.borda; c.lineWidth = 2; c.strokeRect(x, y - 20, 22, 22); }
+          c.fillStyle = '#44546a'; c.fillText(l.label, x + 32, y);
+          x += 32 + c.measureText(l.label).width + 36;
+        });
+      }
+      y += 60; c.fillStyle = '#8a99ab'; c.font = '600 22px Arial, sans-serif';
+      c.fillText('Gerado em ' + new Date().toLocaleDateString('pt-BR') + ' pelo Sistema OIKOS', pad, y);
+      try {
+        canvas.toBlob(function (blob) {
+          if (!blob) { window.alert('Não foi possível gerar a imagem neste navegador.'); return; }
+          relEntregar(blob, relArquivoNome(g.titulo), g.titulo);
+        }, 'image/png');
+      } catch (e) {
+        window.alert('Este navegador bloqueou a geração da imagem. Use o PDF ou tente pelo Chrome.');
+      }
+    };
+    img.onerror = function () { window.alert('Não foi possível gerar a imagem neste navegador.'); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function relKpiTexto(label, par, menorMelhor) {
+    var atual = par[0], ant = par[1];
+    var txt = label + ': *' + (atual == null ? '—' : atual) + '*';
+    if (atual != null && ant != null && atual !== ant) txt += ' (' + (atual > ant ? '+' : '') + (atual - ant) + ' vs período anterior)';
+    return txt;
+  }
+
+  // Números em texto, sem nomes, para colar em qualquer conversa.
+  function relResumoWhatsapp() {
+    if (!relUltimo) return;
+    var k = relUltimo.kpis;
+    var linhas = [
+      '*Relatório Oikos — ' + relUltimo.recorte + '*',
+      'Últimos ' + relUltimo.n + ' meses (' + relUltimo.periodoLabel + ')',
+      '',
+      '• ' + relKpiTexto('Frequência média por semana', k.freq),
+      '• ' + relKpiTexto('Novos visitantes', k.novos),
+      '• ' + relKpiTexto('Avançaram na jornada', k.avancos),
+      '• ' + relKpiTexto('Batismos', k.batismos),
+      '• ' + relKpiTexto('Perdidos', k.perdidos, true),
+      '',
+      'Gerado pelo Sistema OIKOS',
+    ];
+    window.open('https://wa.me/?text=' + encodeURIComponent(linhas.join('\n')), '_blank');
+  }
+
+  // Relatório completo para a reunião: indicadores, todos os gráficos e
+  // os nomes dos perdidos (que não vão na imagem do WhatsApp).
+  function relPdf() {
+    if (!relUltimo) return;
+    var u = relUltimo, k = u.kpis;
+    var kpi = function (label, par) {
+      return '<div class="kpi"><span>' + escHtml(label) + '</span><b>' + (par[0] == null ? '—' : par[0]) + '</b>' +
+        '<small>antes: ' + (par[1] == null ? '—' : par[1]) + '</small></div>';
+    };
+    var body = '<style>.kpi span{font-size:11px;color:#6b7c93}.kpi small{font-size:10px;color:#8a99ab}' +
+      '.graf{page-break-inside:avoid;margin:0 0 22px}.graf h2{font-size:14px;margin:0 0 2px}.graf p{font-size:11px;color:#6b7c93;margin:0 0 8px}' +
+      '.leg{font-size:11px;color:#44546a;margin-top:6px}.leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 5px 0 12px}' +
+      '.graf svg{max-width:640px}</style>' +
+      '<div class="kpis">' + kpi('Frequência média / semana', k.freq) + kpi('Novos visitantes', k.novos) +
+      kpi('Avançaram na jornada', k.avancos) + kpi('Batismos', k.batismos) + kpi('Perdidos', k.perdidos) + '</div>';
+    u.ordem.forEach(function (id) {
+      var g = u.graficos[id];
+      body += '<div class="graf"><h2>' + escHtml(g.titulo) + '</h2><p>' + escHtml(g.sub) + '</p>' +
+        (g.vazio ? '<p>' + escHtml(g.vazio) + '</p>' : g.svg) +
+        (g.legenda.length ? '<div class="leg">' + g.legenda.map(function (l) { return '<i style="background:' + l.cor + (l.borda ? ';border:1px solid ' + l.borda : '') + '"></i>' + escHtml(l.label); }).join('') + '</div>' : '') +
+        '</div>';
+      if (id === 'perd' && u.perdidosLista.length) {
+        body += '<table><thead><tr><th>Perdido</th><th>Célula</th><th>Mês</th><th>Motivo anotado</th></tr></thead><tbody>' +
+          u.perdidosLista.map(function (p) {
+            return '<tr><td>' + escHtml(p.nome) + '</td><td>' + escHtml(p.celula) + '</td><td>' + escHtml(p.mes) + '</td><td>' + escHtml(p.detalhe || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+    });
+    var subtitulo = u.recorte + ' · últimos ' + u.n + ' meses (' + u.periodoLabel + '), comparado com os ' + u.n + ' anteriores · gerado em ' + new Date().toLocaleString('pt-BR');
+    openPrintable(printableShell('Relatório — ' + u.recorte, subtitulo, body));
+  }
+
+  // Dica dos gráficos: um só balão, fora do #app (que é redesenhado a
+  // cada mudança de estado), seguindo o mouse ou o toque.
+  function relIniciarDicas() {
+    var tip = document.createElement('div');
+    tip.className = 'rel-tip';
+    tip.hidden = true;
+    document.body.appendChild(tip);
+    var mover = function (e) {
+      var alvo = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+      if (!alvo) { tip.hidden = true; return; }
+      tip.textContent = alvo.getAttribute('data-tip');
+      tip.hidden = false;
+      var r = tip.getBoundingClientRect();
+      var left = Math.min(window.innerWidth - r.width - 8, Math.max(8, e.clientX + 14));
+      var top = e.clientY - r.height - 12;
+      if (top < 8) top = e.clientY + 18;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    };
+    document.addEventListener('pointermove', mover);
+    document.addEventListener('pointerdown', mover);
+    window.addEventListener('scroll', function () { tip.hidden = true; }, true);
+  }
+
   var PAGE_HEADERS = {
     cadastro: ['Cadastro de Membros', 'Pessoas, indicadores e gráficos da rede'],
     freq: ['Frequência', 'Lançamento semanal da célula e do culto'],
@@ -4979,13 +5896,13 @@
         sidebarHtml(vals) +
         '<main class="main-content">' +
         mobileTopbarHtml(vals) +
-        (vals.isHome ? homeHtml(homeVals(vals)) : pageHeaderHtml(vals)) +
+        (vals.isHome ? homeHtml(homeVals(vals)) : vals.isRel ? relHtml(relVals(vals)) : pageHeaderHtml(vals)) +
         (vals.isCadastro ? cadastroHtml(vals) : '') +
         (vals.isFreq ? frequenciaHtml(frequenciaVals(vals)) : '') +
         (vals.isIa ? (vals.souFull ? oikosIaHtml(vals)
           : '<div class="home-card home-empty">' +
             '<div class="home-card-title">Oikos IA é restrito</div>' +
-            '<div class="home-card-sub" style="margin-top:6px">Disponível para Pastor, Pastor de Rede e administradores.</div></div>') : '') +
+            '<div class="home-card-sub" style="margin-top:6px">Disponível para Pastor e administradores.</div></div>') : '') +
         (vals.isTrilho ? trilhoHtml(vals) : '') +
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
@@ -5024,6 +5941,7 @@
     root.addEventListener('change', handleEvt);
     root.addEventListener('input', handleEvt);
     root.addEventListener('submit', handleEvt);
+    relIniciarDicas();
     if (supabaseConfigured()) {
       sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
       if (state.fpToken) { abrirFrequenciaPublica(); render(); return; }

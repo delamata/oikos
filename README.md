@@ -8,16 +8,59 @@ dados + autenticação).
 ## Abas
 
 - **Início** — tela que abre ao entrar: um resumo da rede de quem está logado (pessoas ativas, células, líderes, KPIs de Total de Membros (com a quebra por adultos, jovens e kids)/Frequentadores/Visitantes/Jovens/Kids, Batismo e Encontro, composição por posição, estado civil, um cartão por célula e os aniversariantes do mês). O recorte depende de quem entra:
-  - **Admin, Pastor e Pastor de Rede** veem toda a rede e podem filtrar por **Obreiro** e por **Discipulador** (o filtro de discipulador só lista quem está sob o obreiro escolhido). Os filtros seguem a regra do casal: escolher a Simone mostra as células em que o André é o discipulador, e vice-versa; nos cartões o casal aparece junto ("André & Simone"). Veem também a **Rede por discipulador** — clicar num nome filtra por ele.
-  - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro**, as células em que é o obreiro responsável; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
+  - **Admin e Pastor** veem toda a rede e podem filtrar por **Obreiro** e por **Discipulador** (o filtro de discipulador só lista quem está sob o obreiro escolhido). Os filtros seguem a regra do casal: escolher a Simone mostra as células em que o André é o discipulador, e vice-versa; nos cartões o casal aparece junto ("André & Simone"). Veem também a **Rede por discipulador** — clicar num nome filtra por ele.
+  - **Discipulador** vê só as células em que é o discipulador responsável; **Obreiro e Pastor de Rede**, as células em que são o obreiro responsável e as dos discipuladores que supervisionam; **Líder** e demais, a própria célula. Isso vem da tabela de Administração — se ninguém definiu a hierarquia, a tela avisa em vez de mostrar números vazios.
   - Clicar num cartão de célula abre o Cadastro de Membros já filtrado por ela.
 - **Cadastro de Membros** — lista, filtros, KPIs e gráficos dos membros da rede. **Tipo** de cadastro: Adultos, Jovens ou Kids e Juvenis — cada tipo é contado pelo próprio nome nos indicadores; Jovens entram no Trilho do Vencedor junto com Adultos e podem ser vinculados como cônjuge. Posições: Visitante → Frequentador Assíduo (após 4 células seguidas) → Membro (após Encontro com Deus + batismo) → Líder em Treinamento, Anfitrião, Anjo da Guarda, Líder, Discipulador, Obreiro, Pastor de Rede, Pastor. A promoção é manual (o líder muda a posição no cadastro; fica registrado em Movimentações). Cada pessoa recebe um **Nº de matrícula** sequencial e único, atribuído automaticamente pelo banco de dados no momento do cadastro (inclusive pelo cadastro público) — nunca é reaproveitado, mesmo que o registro seja excluído depois.
 - **Frequência** — lançamento semanal, pensado para o celular. Como a célula e o culto acontecem em **dias diferentes**, são **dois lançamentos separados**, cada um com a sua data: a chave no topo alterna entre **Encontro da célula** e **Culto**. O líder abre e já encontra a própria célula selecionada (quando só tem uma, ela fica fixa), a data de hoje para a célula e o domingo mais recente para o culto; marca os presentes e salva. Dá para **apagar um lançamento** (apaga o encontro da célula, ou a presença daquela célula naquele culto — o culto em si continua, porque é da igreja toda). Dá para adicionar um **visitante na hora** (nome, telefone, quem convidou), que entra no cadastro como Visitante daquela célula já marcado como presente — se o nome já existir, o sistema avisa e oferece usar o cadastro que já está lá, em vez de duplicar. Quem não quer entrar no sistema pode lançar pelo **link da célula** (veja "Frequência por link" abaixo). Três abas: **Lançar**, **Histórico** (duas listas — encontros de célula e cultos — com filtro por período/célula/discipulador/rede, mais o histórico de presença de uma pessoa) e **Painel** (presentes, ausentes, % de presença na célula e no culto, visitantes, FAs, membros, e quais células ainda não lançaram a semana). Nada é sobrescrito: corrigir um encontro atualiza a linha daquele encontro e a mudança fica registrada na auditoria.
-- **Oikos IA** — só para Pastor, Pastor de Rede e administradores. Perguntas em português sobre os dados do Oikos ("quais células estão com queda de frequência?", "quantos visitantes tivemos neste mês?"), com sugestões clicáveis na tela. Veja "Oikos IA" abaixo.
+- **Relatórios** — gráficos da evolução da igreja, da rede de discipulado e da célula, prontos para compartilhar. Veja "Relatórios" abaixo.
+- **Oikos IA** — só para Pastor e administradores. Perguntas em português sobre os dados do Oikos ("quais células estão com queda de frequência?", "quantos visitantes tivemos neste mês?"), com sugestões clicáveis na tela. Veja "Oikos IA" abaixo.
 - **Trilho do Vencedor** — acompanhamento dos cursos (Ceifeiros, Maturidade, CTL, Seminário Pastoral).
 - **Movimentações** — histórico de mudanças de célula/posição/batismo/encontro/situação por pessoa, mais notas manuais, e os relatórios de **Perdidos por Célula** (conta só quem saiu como "Perdido"; inativos e transferidos não entram nessa contagem), **Fora da contagem** (transferidos e perdidos) e **Inativos**. Nas duas últimas listas, clicar numa linha abre a ficha da pessoa — dá pra editar o cadastro dali, inclusive reativar quem voltou.
 - **+ Novo Cadastro** — formulário de criação e edição de membros.
-- **Administração** — só aparece para quem tem acesso total (Pastor/Pastor de Rede/admin). Cadastra novas células e nova liderança (Pastor, Obreiro, Discipulador, Líder), com opção de já criar o login da pessoa; e define qual discipulador e qual obreiro são responsáveis por cada célula — isso controla o que cada líder enxerga (veja "Acesso por nível" abaixo). Detalhes em "Administração: novas células e liderança".
+- **Administração** — só aparece para quem tem acesso total (Pastor/admin). Cadastra novas células e nova liderança (Pastor, Obreiro, Discipulador, Líder), com opção de já criar o login da pessoa; e define qual discipulador e qual obreiro são responsáveis por cada célula — isso controla o que cada líder enxerga (veja "Acesso por nível" abaixo). Detalhes em "Administração: novas células e liderança".
+
+### Relatórios
+
+Cada pessoa abre o Relatórios já no próprio nível — a mesma regra de
+acesso do resto do sistema:
+
+- **Líder** — só a própria célula.
+- **Discipulador** — o geral da rede e cada célula que discipula (filtro de célula).
+- **Obreiro e Pastor de Rede** — as redes que acompanham, com filtro por
+  discipulador e por célula.
+- **Pastor e Admin** — a igreja inteira, com filtro por discipulador e por célula.
+
+Período: últimos 3, 6 (padrão) ou 12 meses, sempre comparado com o
+mesmo número de meses anteriores. A tela traz:
+
+- **Resumo do período** — frequência média por semana, novos visitantes,
+  quem avançou na jornada (virou FA ou membro), batismos e perdidos, cada
+  um com a variação contra o período anterior.
+- **Evolução da frequência** — média de presentes por semana, mês a mês
+  (lançamentos da Frequência + planilha antiga, sem os eventos de rodízio).
+- **Crescimento** — novos visitantes, quem virou FA e quem virou membro,
+  por mês. Novos visitantes são os cadastros novos: dias com 15 ou mais
+  cadastros de uma vez são tratados como a importação inicial e não contam.
+- **Jornada** — foto de hoje: pessoas, FAs e membros, batizados, Encontro
+  com Deus e liderança.
+- **Comparativo de células** — presentes por encontro no período e a
+  variação. Com uma célula só no recorte, vira **Presença de cada pessoa**
+  nos últimos 8 encontros, destacando quem faltou 3 vezes seguidas.
+- **Movimentações por célula** — quem entrou (cadastros novos e quem
+  chegou de outra célula), quem saiu (transferidos e inativos), perdidos
+  e o saldo. Numa célula só, mês a mês.
+- **Perdidos** — por mês, com a lista de nomes, célula e o motivo anotado.
+
+Compartilhar: cada gráfico tem um botão que gera uma **imagem** pronta
+para o WhatsApp (no celular abre o compartilhar; no computador baixa o
+arquivo). A imagem dos Perdidos leva só os números — os nomes ficam na
+tela e no PDF. O botão **Relatório … em PDF** abre todos os gráficos numa
+folha para imprimir ou salvar em PDF, no nível de quem gerou; **Resumo no
+WhatsApp** manda os números em texto, sem nomes.
+
+Antes de usar, rode `supabase/add_relatorios_acesso.sql` (veja
+"Configuração inicial") — ele também muda o acesso do Pastor de Rede.
 
 ### Hierarquia: status, função e supervisão
 
@@ -213,9 +256,12 @@ Cada login vê nos relatórios só o que está no seu escopo, decidido pela
 **posição e célula do próprio cadastro da pessoa** (sem tabela de papéis
 separada):
 
-- **Pastor, Pastor de Rede, ou marcado como admin** — vê e edita tudo.
-- **Obreiro** — vê os discipuladores abaixo dele e todas as células/membros
-  na linha desses discipuladores.
+- **Pastor, ou marcado como admin** — vê e edita tudo.
+- **Obreiro e Pastor de Rede** — veem as células em que estão marcados como
+  obreiro responsável (Administração) e as células dos discipuladores que
+  supervisionam (campo "Supervisor" na ficha do discipulador). Até o
+  `add_relatorios_acesso.sql`, o Pastor de Rede via tudo; se alguém precisa
+  continuar vendo tudo, marque essa pessoa como admin.
 - **Discipulador** — vê os líderes/células diretamente abaixo dele.
 - **Qualquer outra posição (Líder, Anfitrião, Membro, etc.)** — vê só a
   própria célula.
@@ -412,6 +458,7 @@ sistema.
    - Rode [`supabase/add_frequencia_link.sql`](supabase/add_frequencia_link.sql) uma vez, depois do `add_frequencia.sql` — permite o lançamento de frequência por link, sem login (veja "Frequência por link" acima).
    - Rode [`supabase/add_frequencia_historico.sql`](supabase/add_frequencia_historico.sql) e depois [`supabase/importar_historico_planilha.sql`](supabase/importar_historico_planilha.sql) — criam e preenchem a tabela com o histórico da planilha Google (veja "Histórico da planilha antiga" acima).
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
+   - Rode [`supabase/add_relatorios_acesso.sql`](supabase/add_relatorios_acesso.sql) uma vez, depois do `add_rede_conjuge.sql` — Pastor de Rede deixa de ter acesso total (passa a ver as redes que acompanha, como o Obreiro), a supervisão de discipuladores passa a contar no acesso, e cria `minhas_celulas()`, usada pelo Relatórios. Antes, rode a consulta de conferência que está no fim do arquivo para ver o que cada Pastor de Rede vai passar a enxergar.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
