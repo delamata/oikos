@@ -43,6 +43,35 @@ O campo **Posição**, usado pelas telas, gráficos e regras de acesso,
 continua existindo e é preenchido sozinho pelo banco (a função quando
 existe, senão o status) — por isso nada do que já funcionava mudou.
 
+### "Já sou líder" (pedido de acesso de liderança, sem login)
+
+Na tela de cadastro público, o link **"Já sou líder"** abre um fluxo
+para a liderança se identificar:
+
+- A pessoa informa o **nome** e a **função**.
+- **Líder de célula**: informa também **qual célula lidera**. O nome é
+  conferido com o cadastro (sem diferenciar maiúsculas nem acentos). Se
+  ela já existe, a tela diz que ela já está cadastrada e que deve
+  procurar o administrador; se não, o pedido fica registrado e ela
+  também é orientada a procurar o administrador.
+- **Discipulador, Obreiro/Pastor de Rede e Pastor**: aparece a lista de
+  quem já está cadastrado com aquela função, e a pessoa toca no próprio
+  nome. Se não estiver na lista, preenche um cadastro curto. Nos dois
+  casos a orientação é procurar o administrador para liberar o acesso à
+  rede.
+
+Nada disso dá acesso sozinho. Como no Oikos o nível de acesso vem da
+função (um Pastor enxerga tudo), a tela pública **só cria um pedido** na
+tabela `solicitacoes_lideranca` — quem não tem login não consegue ler
+nem alterar esses pedidos (`supabase/add_solicitacoes_lideranca.sql`).
+
+Os pedidos aparecem para Admin/Pastor em **Administração → Pedidos de
+acesso**. **Liberar acesso** preenche a "Nova Liderança" logo abaixo
+(pessoa já cadastrada ou nova, com a função e a célula informadas); o
+admin confere, cria o login e salva — e o pedido fica aprovado sozinho.
+**Recusar** encerra o pedido. O link "Já tenho acesso, quero entrar"
+continua levando ao login normal.
+
 ### Frequência por link (sem login)
 
 Cada célula pode ter um **link próprio** para o líder lançar a presença
@@ -370,6 +399,7 @@ sistema.
    - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
    - Rode [`supabase/add_frequencia.sql`](supabase/add_frequencia.sql) uma vez, **depois** do `add_hierarquia_status.sql` — cria o módulo de Frequência (encontros e presenças por célula), fecha `presencas_culto` por escopo de célula e atualiza `editar_celula()` para levar os encontros junto ao renomear.
    - Rode [`supabase/fix_auditoria_celula.sql`](supabase/fix_auditoria_celula.sql) se você já tinha rodado o `add_hierarquia_status.sql` antes desta correção — sem ele, alterar uma célula (trocar discipulador/obreiro ou gerar o link de frequência) falha com `record "new" has no field "id"`. Em instalação nova não precisa: o `add_hierarquia_status.sql` já vem corrigido.
+   - Rode [`supabase/add_solicitacoes_lideranca.sql`](supabase/add_solicitacoes_lideranca.sql) uma vez — cria a tabela de pedidos do "Já sou líder" (veja a seção acima).
    - Rode [`supabase/add_frequencia_link.sql`](supabase/add_frequencia_link.sql) uma vez, depois do `add_frequencia.sql` — permite o lançamento de frequência por link, sem login (veja "Frequência por link" acima).
    - Rode [`supabase/add_frequencia_historico.sql`](supabase/add_frequencia_historico.sql) e depois [`supabase/importar_historico_planilha.sql`](supabase/importar_historico_planilha.sql) — criam e preenchem a tabela com o histórico da planilha Google (veja "Histórico da planilha antiga" acima).
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.

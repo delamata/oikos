@@ -221,6 +221,15 @@
     fpVisitante: null,            // { nome, tel } com o formulário aberto
     fpVisitanteSaving: false,
 
+    // "Já sou líder" (sem login): pedido de acesso de liderança
+    lidAberto: false,
+    lidForm: { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '' },
+    lidSaving: false,
+    lidErro: null,
+    lidResultado: null,           // { titulo, texto } depois de enviar
+    solicitacoes: [],             // pedidos pendentes (só acesso total vê)
+    adminSolicitacaoId: null,     // pedido que está sendo liberado agora
+
     // cadastro público (sem login)
     isPublicCadastro: urlWantsCadastroPublico(),
     publicForm: Object.assign({}, publicFormDefaults),
@@ -431,7 +440,7 @@
   // Vínculo login → cadastro (profiles) e hierarquia célula → discipulador/obreiro
   // ---------------------------------------------------------------------
   function afterLinked() {
-    loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia();
+    loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia(); loadSolicitacoesLideranca();
   }
 
   function loadProfile() {
@@ -756,7 +765,7 @@
       });
       if (!f.criarLogin) {
         setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults), adminLiderConvite: null });
-        loadMembers(); loadCelulaHierarquia();
+        loadMembers(); loadCelulaHierarquia(); concluirSolicitacaoPendente();
         return;
       }
       // Convite por Google: só grava o e-mail autorizado. Quando a
@@ -774,7 +783,7 @@
             adminLiderConvite: { nome: nomeConvidado, email: email.toLowerCase() },
             adminConviteCopiado: false,
           });
-          loadMembers(); loadCelulaHierarquia();
+          loadMembers(); loadCelulaHierarquia(); concluirSolicitacaoPendente();
         });
         return;
       }
@@ -785,7 +794,7 @@
         }
         if (res.data && res.data.error) { setState({ adminLiderSaving: false, adminLiderError: res.data.error }); return; }
         setState({ adminLiderSaving: false, adminLiderSalvo: true, adminLiderForm: Object.assign({}, adminLiderFormDefaults), adminLiderConvite: null });
-        loadMembers(); loadCelulaHierarquia();
+        loadMembers(); loadCelulaHierarquia(); concluirSolicitacaoPendente();
       });
     };
 
@@ -829,6 +838,157 @@
       if (res.error) { console.warn('Erro ao carregar células:', res.error.message); setState({ celulasPublicasStatus: 'error' }); return; }
       setState({ celulasPublicas: res.data.map(function (r) { return r.celula; }), celulasPublicasStatus: 'ok' });
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // "Já sou líder" (tela pública, sem login) — a pessoa se identifica e
+  // deixa uma SOLICITAÇÃO de acesso; quem libera é o administrador
+  // (supabase/add_solicitacoes_lideranca.sql). Nada aqui grava função de
+  // liderança em members: sem login, só dá para criar o pedido.
+  // ---------------------------------------------------------------------
+  var FUNCOES_SOLICITACAO = [
+    { v: 'Líder', label: 'Líder de célula' },
+    { v: 'Discipulador', label: 'Discipulador' },
+    { v: 'Obreiro', label: 'Obreiro / Pastor de Rede' },
+    { v: 'Pastor', label: 'Pastor' },
+  ];
+  // Quem aparece na lista de cada função (Obreiro e Pastor de Rede são a mesma função).
+  var POSICOES_DA_FUNCAO = {
+    'Discipulador': ['Discipulador'],
+    'Obreiro': ['Obreiro', 'Pastor de Rede'],
+    'Pastor': ['Pastor'],
+  };
+  var lidFormDefaults = { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '' };
+
+  function abrirSolicitacaoLideranca() {
+    setState({ lidAberto: true, lidForm: Object.assign({}, lidFormDefaults), lidErro: null, lidResultado: null, lidSaving: false });
+    loadCelulasPublicas();
+    loadMembersPublicos();
+  }
+
+  function fecharSolicitacaoLideranca() { setState({ lidAberto: false, lidErro: null }); }
+
+  function setLidField(key, val) {
+    setState(function (s) {
+      var f = Object.assign({}, s.lidForm);
+      f[key] = val;
+      return { lidForm: f, lidErro: null };
+    });
+  }
+
+  function setLidEtapa(etapa) {
+    setState(function (s) { return { lidForm: Object.assign({}, s.lidForm, { etapa: etapa }), lidErro: null }; });
+  }
+
+  function erroSolicitacao(err) {
+    var msg = (err && err.message) || 'Não foi possível enviar agora.';
+    if ((err && err.code === '42P01') || /relation .*solicitacoes_lideranca|could not find the table|schema cache/i.test(msg)) {
+      return 'Falta rodar supabase/add_solicitacoes_lideranca.sql no Supabase.';
+    }
+    return msg;
+  }
+
+  function enviarSolicitacao(row, resultado) {
+    if (!sb) return;
+    setState({ lidSaving: true, lidErro: null });
+    // Sem .select(): quem não tem login pode criar o pedido, mas não lê a tabela.
+    sb.from('solicitacoes_lideranca').insert(row).then(function (res) {
+      if (res.error) { setState({ lidSaving: false, lidErro: erroSolicitacao(res.error) }); return; }
+      setState(function (s) {
+        return { lidSaving: false, lidResultado: resultado, lidForm: Object.assign({}, s.lidForm, { etapa: 'enviado' }) };
+      });
+    });
+  }
+
+  function continuarSolicitacao() {
+    var f = state.lidForm;
+    var nome = (f.nome || '').trim();
+    if (nome.length < 3) { setState({ lidErro: 'Digite seu nome completo.' }); return; }
+
+    if (f.funcao !== 'Líder') { setLidEtapa('lista'); return; }
+
+    if (!f.celula) { setState({ lidErro: 'Escolha a célula que você lidera.' }); return; }
+    // Valida o nome contra o cadastro (a mesma lista pública de nomes).
+    var alvo = normalizarNome(nome);
+    var achado = (state.membersPublicos || []).filter(function (p) { return normalizarNome(p.nome) === alvo; })[0] || null;
+    enviarSolicitacao({
+      nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null,
+      member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
+    }, achado
+      ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
+      : { titulo: 'Pedido enviado', texto: 'Recebemos seus dados como líder da célula ' + celulaLabel(f.celula) + '. Procure o administrador do sistema para liberar o seu acesso.' });
+  }
+
+  function escolherNomeNaLista(pessoa) {
+    var f = state.lidForm;
+    var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
+    enviarSolicitacao({
+      nome: pessoa.nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
+      member_id: pessoa.id, ja_cadastrado: true,
+    }, { titulo: 'Encontramos o seu cadastro', texto: pessoa.nome + ', você já está no Oikos como ' + rotulo + '. Seu pedido foi enviado: procure o administrador do sistema para liberar o seu acesso à rede.' });
+  }
+
+  function enviarCadastroNovoLideranca() {
+    var f = state.lidForm;
+    var nome = (f.nome || '').trim();
+    if (nome.length < 3) { setState({ lidErro: 'Digite seu nome completo.' }); return; }
+    var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
+    enviarSolicitacao({
+      nome: nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
+      member_id: null, ja_cadastrado: false,
+    }, { titulo: 'Cadastro enviado', texto: 'Recebemos o seu cadastro como ' + rotulo + '. Procure o administrador do sistema para liberar o seu acesso à rede.' });
+  }
+
+  // ---- Lado do administrador: solicitações pendentes ----
+  function loadSolicitacoesLideranca() {
+    if (!sb) return;
+    sb.from('solicitacoes_lideranca').select('*').eq('status', 'pendente').order('criado_em', { ascending: false }).then(function (res) {
+      // Sem acesso total a RLS nega — é esperado, só não mostra nada.
+      setState({ solicitacoes: res.error ? [] : (res.data || []) });
+    });
+  }
+
+  // Preenche o formulário de Nova Liderança com o pedido; o admin só
+  // confere, completa o login e salva.
+  function liberarSolicitacao(s) {
+    var membro = s.member_id ? memberById(s.member_id) : null;
+    setState({
+      adminSolicitacaoId: s.id,
+      adminLiderForm: Object.assign({}, adminLiderFormDefaults, {
+        modo: membro ? 'existente' : 'novo',
+        memberId: membro ? membro.id : '',
+        nome: membro ? membro.nome : s.nome,
+        query: membro ? membro.nome : '',
+        posicao: s.funcao,
+        celula: s.funcao === 'Líder' ? (s.celula || (membro && membro.celula) || '') : '',
+      }),
+      adminLiderError: null, adminLiderSalvo: false,
+    });
+    var alvo = document.getElementById('admin-nova-lideranca');
+    if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function resolverSolicitacao(id, status, depois) {
+    sb.from('solicitacoes_lideranca').update({ status: status, resolvido_em: new Date().toISOString(), resolvido_por: meuUserId() }).eq('id', id).then(function (res) {
+      if (res.error) console.warn('Solicitação:', res.error.message);
+      loadSolicitacoesLideranca();
+      if (depois) depois();
+    });
+  }
+
+  function recusarSolicitacao(s) {
+    if (!window.confirm('Recusar o pedido de ' + s.nome + '?')) return;
+    resolverSolicitacao(s.id, 'recusada');
+    if (state.adminSolicitacaoId === s.id) setState({ adminSolicitacaoId: null });
+  }
+
+  // Chamado quando a Nova Liderança é salva: se veio de um pedido, ele
+  // passa a aprovado.
+  function concluirSolicitacaoPendente() {
+    var id = state.adminSolicitacaoId;
+    if (!id) return;
+    setState({ adminSolicitacaoId: null });
+    resolverSolicitacao(id, 'aprovada');
   }
 
   function irParaCadastroPublico() { setState({ isPublicCadastro: true }); loadCelulasPublicas(); }
@@ -2179,6 +2339,10 @@
       setAdminLiderModo: function (modo) { return function () { setAdminLiderModo(modo); }; },
       pickAdminLiderExistente: function (m) { return function () { pickAdminLiderExistente(m); }; },
       submitAdminLider: function (e) { if (e && e.preventDefault) e.preventDefault(); submitAdminLider(); },
+      solicitacoes: state.solicitacoes,
+      adminSolicitacaoId: state.adminSolicitacaoId,
+      liberarSolicitacao: function (s) { return function () { liberarSolicitacao(s); }; },
+      recusarSolicitacao: function (s) { return function () { recusarSolicitacao(s); }; },
       adminLiderConvite: state.adminLiderConvite,
       adminConviteCopiado: state.adminConviteCopiado,
       conviteTexto: state.adminLiderConvite ? textoConviteAcesso(state.adminLiderConvite.nome, state.adminLiderConvite.email) : '',
@@ -4169,6 +4333,83 @@
       '</div></div></div>';
   }
 
+  // "Já sou líder" — mesmo cartão do cadastro público. Etapas: inicio
+  // (nome + função [+ célula]) → lista (Discipulador/Obreiro/Pastor
+  // clicam no próprio nome) → novo (não está na lista) → enviado.
+  function solicitacaoLiderancaHtml(v) {
+    var f = v.lidForm;
+    var campo = 'width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box';
+    var rotuloFuncao = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
+    var corpo = '';
+
+    var titulo = function (t, sub) {
+      return '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">' + escHtml(t) + '</div>' +
+        '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:18px">' + escHtml(sub) + '</div>';
+    };
+    var erro = v.lidErro
+      ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(v.lidErro) + '</div>'
+      : '';
+    var botao = function (texto, extra) {
+      return '<button ' + (extra || 'type="submit"') + (v.lidSaving ? ' disabled' : '') + ' style="width:100%;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' +
+        (v.lidSaving ? 'Enviando…' : escHtml(texto)) + '</button>';
+    };
+
+    if (f.etapa === 'enviado' && v.lidResultado) {
+      corpo = titulo(v.lidResultado.titulo, 'Liderança da Videira SCS') +
+        '<div style="background:#e2f2ea;color:#237a5a;border-radius:12px;padding:14px;font-size:13.5px;font-weight:600;line-height:1.5">' + escHtml(v.lidResultado.texto) + '</div>';
+    } else if (f.etapa === 'lista') {
+      var posicoes = POSICOES_DA_FUNCAO[f.funcao] || [];
+      var lista = (v.membersPublicos || []).filter(function (p) { return posicoes.indexOf(p.posicao) >= 0; })
+        .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
+      var plural = { 'Discipulador': 'discipuladores', 'Obreiro': 'obreiros e pastores de rede', 'Pastor': 'pastores' }[f.funcao] || 'líderes';
+      corpo = titulo('Encontre o seu nome', 'Estes são os ' + plural + ' cadastrados. Toque no seu nome.') + erro +
+        '<div style="display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto">' +
+        lista.map(function (p) {
+          return '<button type="button" ' + cb(v.escolher(p)) + (v.lidSaving ? ' disabled' : '') + ' style="text-align:left;padding:12px 14px;border:1px solid #e2e9f2;border-radius:11px;background:#fff;cursor:pointer;font-size:14px;font-weight:700;color:#14243a">' +
+            escHtml(p.nome) + ' <span style="font-size:11.5px;font-weight:600;color:#8a99ab">· ' + escHtml(p.posicao) + '</span></button>';
+        }).join('') +
+        (lista.length ? '' : '<div style="font-size:12.5px;color:#8a99ab;padding:8px 2px">' + (v.membersPublicosStatus === 'loading' ? 'Carregando…' : 'Ninguém cadastrado com essa função ainda.') + '</div>') +
+        '</div>' +
+        '<button type="button" ' + cb(v.naoEstou) + ' style="width:100%;margin-top:14px;padding:11px;border:1px dashed #c9d6ea;border-radius:11px;background:#fff;font-size:13px;font-weight:700;color:#0E7A68;cursor:pointer">Meu nome não está na lista</button>' +
+        '<div style="margin-top:12px;text-align:center"><button type="button" ' + cb(v.voltarInicio) + ' style="border:none;background:none;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Voltar</button></div>';
+    } else if (f.etapa === 'novo') {
+      corpo = titulo('Cadastro de ' + rotuloFuncao, 'Preencha seus dados. O administrador do sistema confere e libera o seu acesso à rede.') + erro +
+        '<form ' + cb(v.enviarNovo, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+        '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+        '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' style="' + campo + '"></div>' +
+        '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
+        '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +
+        botao('Enviar cadastro') +
+        '</form>' +
+        '<div style="margin-top:12px;text-align:center"><button type="button" ' + cb(v.voltarInicio) + ' style="border:none;background:none;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Voltar</button></div>';
+    } else {
+      var celulaOpts = (v.celulasPublicas || []).map(function (c) { return { v: c, label: celulaLabel(c) }; });
+      corpo = titulo('Já sou líder', 'Conte quem você é e qual a sua função na rede.') + erro +
+        '<form ' + cb(v.continuar, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+        '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
+        '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' placeholder="Seu nome" style="' + campo + '"></div>' +
+        selectField('Sua função', cb(v.onLid('funcao'), 'change'), FUNCOES_SOLICITACAO, f.funcao) +
+        (f.funcao === 'Líder'
+          ? '<div class="grid-form2">' +
+            selectField('Célula que você lidera', cb(v.onLid('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
+            '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
+            '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +
+            '</div>'
+          : '') +
+        botao(f.funcao === 'Líder' ? 'Enviar' : 'Continuar') +
+        '</form>';
+    }
+
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:460px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      corpo +
+      '<div style="margin-top:18px;padding-top:14px;border-top:1px solid #eef2f7;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<button type="button" ' + cb(v.fechar) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Sou visitante</button>' +
+      '<button type="button" ' + cb(v.entrar) + ' style="border:none;background:none;padding:0;color:#2E4FC7;font-size:12.5px;font-weight:700;cursor:pointer">Já tenho acesso, quero entrar</button>' +
+      '</div></div></div>';
+  }
+
   // Tela do link de frequência — mesmo formato do cadastro público.
   function frequenciaPublicaHtml(vals) {
     var cartao = function (conteudo) {
@@ -4265,7 +4506,8 @@
           '</form>'
         )) +
       '<div style="margin-top:16px;text-align:center">' +
-      '<button ' + cb(vals.voltarParaLogin) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Já sou líder, quero entrar</button>' +
+      '<button ' + cb(vals.abrirLideranca) + ' style="border:none;background:none;padding:0;color:#2E4FC7;font-size:12.5px;font-weight:700;cursor:pointer">Já sou líder</button>' +
+      '<div style="margin-top:8px"><button ' + cb(vals.voltarParaLogin) + ' style="border:none;background:none;padding:0;color:#8a99ab;font-size:12px;font-weight:600;cursor:pointer">Já tenho acesso, quero entrar</button></div>' +
       '</div></div></div>';
   }
 
@@ -4480,10 +4722,42 @@
     return adminCard('Editar célula · ' + celulaLabel(e.original), 'Altere o nome e quem responde por ela. As pessoas continuam na célula.', body);
   }
 
+  // Pedidos feitos em "Já sou líder" (tela pública). "Liberar acesso"
+  // preenche a Nova Liderança logo abaixo; ao salvar, o pedido fica
+  // aprovado sozinho.
+  function adminSolicitacoesHtml(vals) {
+    var lista = vals.solicitacoes || [];
+    if (!lista.length) return '';
+    var rotulo = function (fn) { return (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === fn; })[0] || {}).label || fn; };
+    var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+      lista.map(function (s) {
+        var ativo = vals.adminSolicitacaoId === s.id;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid ' + (ativo ? '#3B5FDD' : '#e6ecf4') + ';border-radius:12px;background:' + (ativo ? '#eef3ff' : '#f7f9fc') + '">' +
+          '<div style="min-width:0">' +
+          '<div style="font-size:14px;font-weight:800;color:#14243a">' + escHtml(s.nome) + '</div>' +
+          '<div style="font-size:12px;color:#6b7c93;margin-top:2px">' + escHtml(rotulo(s.funcao)) +
+          (s.celula ? ' · célula ' + escHtml(celulaLabel(s.celula)) : '') +
+          (s.telefone ? ' · ' + escHtml(s.telefone) : '') +
+          ' · ' + escHtml(new Date(s.criado_em).toLocaleDateString('pt-BR')) + '</div>' +
+          '<span style="display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.ja_cadastrado ? '#e0f4ef' : '#fdf1da') + ';color:' + (s.ja_cadastrado ? '#0E7A68' : '#A1780F') + '">' +
+          (s.ja_cadastrado ? 'Já está no cadastro' : 'Pessoa nova') + '</span>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px">' +
+          (ativo
+            ? '<span style="font-size:12px;color:#2E4FC7;font-weight:700;padding:8px 4px">Complete em "Nova Liderança" ↓</span>'
+            : '<button type="button" ' + cb(vals.liberarSolicitacao(s)) + ' style="padding:8px 14px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">Liberar acesso</button>') +
+          '<button type="button" ' + cb(vals.recusarSolicitacao(s)) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;color:#a02020;font-weight:600;cursor:pointer">Recusar</button>' +
+          '</div></div>';
+      }).join('') + '</div>';
+    return adminCard('Pedidos de acesso · ' + lista.length,
+      'Feitos em "Já sou líder", na tela de cadastro. "Liberar acesso" preenche a Nova Liderança abaixo — confira, crie o login e salve.', body);
+  }
+
   function hierarquiaHtml(vals) {
     var html = '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Cadastre novas células e liderança, e defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
+    html += adminSolicitacoesHtml(vals);
     html += adminNovaCelulaHtml(vals);
-    html += adminNovaLiderancaHtml(vals);
+    html += '<div id="admin-nova-lideranca">' + adminNovaLiderancaHtml(vals) + '</div>';
     html += '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin:20px 0 4px">Células cadastradas</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:12px">Clique em Editar para mudar o nome da célula ou quem responde por ela.</div>';
     if (vals.adminCelulaEditSalvo) html += adminBanner('ok', vals.adminCelulaEditSalvo);
@@ -4566,8 +4840,23 @@
         onFpVisitante: function (key) { return function (e) { setVisitantePublico(key, e.target.value); }; },
         salvarFpVisitante: function () { salvarVisitantePublico(); },
       });
+    } else if (state.isPublicCadastro && state.lidAberto) {
+      html = solicitacaoLiderancaHtml({
+        lidForm: state.lidForm, lidSaving: state.lidSaving, lidErro: state.lidErro, lidResultado: state.lidResultado,
+        celulasPublicas: state.celulasPublicas, membersPublicos: state.membersPublicos,
+        membersPublicosStatus: state.membersPublicosStatus,
+        onLid: function (key) { return function (e) { setLidField(key, e.target.value); }; },
+        continuar: function (e) { if (e && e.preventDefault) e.preventDefault(); continuarSolicitacao(); },
+        escolher: function (p) { return function () { escolherNomeNaLista(p); }; },
+        naoEstou: function () { setLidEtapa('novo'); },
+        voltarInicio: function () { setLidEtapa('inicio'); },
+        enviarNovo: function (e) { if (e && e.preventDefault) e.preventDefault(); enviarCadastroNovoLideranca(); },
+        fechar: function () { fecharSolicitacaoLideranca(); },
+        entrar: function () { fecharSolicitacaoLideranca(); voltarParaLogin(); },
+      });
     } else if (state.isPublicCadastro) {
       html = cadastroPublicoHtml({
+        abrirLideranca: function () { abrirSolicitacaoLideranca(); },
         publicForm: state.publicForm, publicSaving: state.publicSaving, publicError: state.publicError, publicSalvo: state.publicSalvo,
         celulasPublicas: state.celulasPublicas, celulasPublicasStatus: state.celulasPublicasStatus,
         onPF: function (key) { return function (e) { setPublicField(key, e.target.value); }; },
