@@ -426,8 +426,9 @@
   }
 
   function doLogout() {
+    pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' } });
     });
   }
 
@@ -441,6 +442,7 @@
   // ---------------------------------------------------------------------
   function afterLinked() {
     loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia(); loadSolicitacoesLideranca();
+    vigiarSolicitacoes();
   }
 
   function loadProfile() {
@@ -954,6 +956,20 @@
   }
 
   // ---- Lado do administrador: solicitações pendentes ----
+  // Pedidos novos chegam enquanto o admin está com o sistema aberto: busca
+  // de novo a cada minuto, para o alerta do menu acender sozinho.
+  var intervaloSolicitacoes = null;
+  function vigiarSolicitacoes() {
+    if (intervaloSolicitacoes) return;
+    intervaloSolicitacoes = setInterval(function () {
+      if (state.session && state.profile) loadSolicitacoesLideranca();
+    }, 60000);
+  }
+
+  function pararVigiaSolicitacoes() {
+    if (intervaloSolicitacoes) { clearInterval(intervaloSolicitacoes); intervaloSolicitacoes = null; }
+  }
+
   function loadSolicitacoesLideranca() {
     if (!sb) return;
     sb.from('solicitacoes_lideranca').select('*').eq('status', 'pendente').order('criado_em', { ascending: false }).then(function (res) {
@@ -2461,12 +2477,17 @@
 
   var lockIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;opacity:.7"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
 
-  function sideNavItem(iconKey, label, active, onClick, locked) {
+  // badge: número de pendências (ex: pedidos de acesso) — aparece como
+  // alerta ao lado do item do menu.
+  function sideNavItem(iconKey, label, active, onClick, locked, badge) {
     var bg = active ? 'rgba(255,255,255,.14)' : 'transparent';
     var color = locked ? 'rgba(255,255,255,.4)' : (active ? '#fff' : 'rgba(255,255,255,.7)');
     var borderColor = active ? '#149C88' : 'transparent';
+    var alerta = badge
+      ? '<span class="nav-alerta" title="' + badge + (badge === 1 ? ' pedido de acesso novo' : ' pedidos de acesso novos') + '">' + (badge > 99 ? '99+' : badge) + '</span>'
+      : '';
     return '<button ' + cb(onClick) + (locked ? ' title="Faça login para acessar"' : '') + ' style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:none;border-left:3px solid ' + borderColor + ';border-radius:0 9px 9px 0;background:' + bg + ';color:' + color + ';font-size:13.5px;font-weight:600;cursor:pointer">' +
-      navIcon(iconKey) + '<span style="flex:1">' + escHtml(label) + '</span>' + (locked ? lockIcon : '') + '</button>';
+      navIcon(iconKey) + '<span style="flex:1">' + escHtml(label) + '</span>' + alerta + (locked ? lockIcon : '') + '</button>';
   }
 
   function sidebarHtml(vals) {
@@ -2487,7 +2508,7 @@
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
-        { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull },
+        { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull, badge: vals.souFull ? (vals.solicitacoes || []).length : 0 },
       ];
     var footer = vals.anonMode
       ? '<div style="display:flex;align-items:baseline;gap:8px;padding:4px 2px 0">' +
@@ -2519,7 +2540,7 @@
       '<div style="font-size:11px;color:rgba(255,255,255,.55);font-weight:600;margin-top:2px">Videira SCS</div>' +
       '</div>' +
       '<nav style="display:flex;flex-direction:column;gap:3px;margin-top:22px">' +
-      items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked); }).join('') +
+      items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge); }).join('') +
       '</nav>' +
       '<div style="margin-top:auto;padding-top:18px">' +
       footer +
@@ -2529,8 +2550,12 @@
   }
 
   function mobileTopbarHtml(vals) {
+    // No celular o menu fica escondido: um ponto no botão avisa que há
+    // pedidos de acesso esperando na Administração.
+    var pendentes = vals.souFull ? (vals.solicitacoes || []).length : 0;
     return '<div class="mobile-topbar">' +
-      '<button ' + cb(vals.openSidebar) + ' style="border:none;background:#eef2f7;width:36px;height:36px;border-radius:9px;cursor:pointer;color:#1B2344;font-size:17px;line-height:1">☰</button>' +
+      '<button ' + cb(vals.openSidebar) + ' style="position:relative;border:none;background:#eef2f7;width:36px;height:36px;border-radius:9px;cursor:pointer;color:#1B2344;font-size:17px;line-height:1">☰' +
+      (pendentes ? '<span class="nav-alerta-ponto" title="Pedidos de acesso na Administração"></span>' : '') + '</button>' +
       '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:15px;color:#1B2344">Sistema OIKOS</div>' +
       '</div>';
   }
@@ -4754,25 +4779,37 @@
     var lista = vals.solicitacoes || [];
     if (!lista.length) return '';
     var rotulo = function (fn) { return (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === fn; })[0] || {}).label || fn; };
-    var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+    // Cada dado informado na tela "Já sou líder" em linha própria, com
+    // rótulo — inclusive o que ficou em branco, para não passar batido.
+    var dado = function (rotuloCampo, valor, destaque) {
+      var vazio = !valor;
+      return '<div style="min-width:0">' +
+        '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#8a99ab;font-weight:700">' + rotuloCampo + '</div>' +
+        '<div style="font-size:13px;margin-top:2px;overflow-wrap:anywhere;' + (vazio ? 'color:#b08a2e;font-weight:600;font-style:italic' : 'color:#14243a;font-weight:' + (destaque ? '800' : '600')) + '">' +
+        (vazio ? 'não informado' : escHtml(valor)) + '</div></div>';
+    };
+    var body = '<div style="display:flex;flex-direction:column;gap:12px">' +
       lista.map(function (s) {
         var ativo = vals.adminSolicitacaoId === s.id;
-        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid ' + (ativo ? '#3B5FDD' : '#e6ecf4') + ';border-radius:12px;background:' + (ativo ? '#eef3ff' : '#f7f9fc') + '">' +
-          '<div style="min-width:0">' +
-          '<div style="font-size:14px;font-weight:800;color:#14243a">' + escHtml(s.nome) + '</div>' +
-          '<div style="font-size:12px;color:#6b7c93;margin-top:2px">' + escHtml(rotulo(s.funcao)) +
-          (s.celula ? ' · célula ' + escHtml(celulaLabel(s.celula)) : '') +
-          (s.email ? ' · ' + escHtml(s.email) : '') +
-          (s.telefone ? ' · ' + escHtml(s.telefone) : '') +
-          ' · ' + escHtml(new Date(s.criado_em).toLocaleDateString('pt-BR')) + '</div>' +
-          '<span style="display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.ja_cadastrado ? '#e0f4ef' : '#fdf1da') + ';color:' + (s.ja_cadastrado ? '#0E7A68' : '#A1780F') + '">' +
-          (s.ja_cadastrado ? 'Já está no cadastro' : 'Pessoa nova') + '</span>' +
-          '</div>' +
-          '<div style="display:flex;gap:8px">' +
+        var enviado = new Date(s.criado_em);
+        var quando = enviado.toLocaleDateString('pt-BR') + ' às ' + enviado.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return '<div style="padding:14px 16px;border:1px solid ' + (ativo ? '#3B5FDD' : '#e6ecf4') + ';border-radius:14px;background:' + (ativo ? '#eef3ff' : '#f7f9fc') + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+          '<div><div style="font-size:15px;font-weight:800;color:#14243a">' + escHtml(s.nome) + '</div>' +
+          '<span style="display:inline-block;margin-top:5px;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.ja_cadastrado ? '#e0f4ef' : '#fdf1da') + ';color:' + (s.ja_cadastrado ? '#0E7A68' : '#A1780F') + '">' +
+          (s.ja_cadastrado ? 'Já está no cadastro' : 'Pessoa nova') + '</span></div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           (ativo
             ? '<span style="font-size:12px;color:#2E4FC7;font-weight:700;padding:8px 4px">Complete em "Nova Liderança" ↓</span>'
             : '<button type="button" ' + cb(vals.liberarSolicitacao(s)) + ' style="padding:8px 14px;border:none;border-radius:999px;background:#149C88;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer">Liberar acesso</button>') +
           '<button type="button" ' + cb(vals.recusarSolicitacao(s)) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;color:#a02020;font-weight:600;cursor:pointer">Recusar</button>' +
+          '</div></div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:12px;padding-top:12px;border-top:1px dashed #dde5ef">' +
+          dado('Função', rotulo(s.funcao)) +
+          (s.funcao === 'Líder' ? dado('Célula que lidera', s.celula ? celulaLabel(s.celula) : '') : '') +
+          dado('E-mail', s.email, true) +
+          dado('Telefone', s.telefone) +
+          dado('Enviado em', quando) +
           '</div></div>';
       }).join('') + '</div>';
     return adminCard('Pedidos de acesso · ' + lista.length,

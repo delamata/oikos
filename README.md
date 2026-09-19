@@ -69,7 +69,13 @@ tabela `solicitacoes_lideranca` — quem não tem login não consegue ler
 nem alterar esses pedidos (`supabase/add_solicitacoes_lideranca.sql`).
 
 Os pedidos aparecem para Admin/Pastor em **Administração → Pedidos de
-acesso**. **Liberar acesso** preenche a "Nova Liderança" logo abaixo
+acesso**, cada um com todos os dados informados na tela — função,
+célula (para Líder), e-mail, telefone e data/hora do envio; o que não
+foi informado aparece como "não informado". Enquanto houver pedido
+pendente, o item **Administração** do menu mostra um **alerta com a
+quantidade** (no celular, um ponto no botão do menu). O sistema confere
+pedidos novos a cada minuto, então o alerta acende sozinho, sem
+recarregar a página. **Liberar acesso** preenche a "Nova Liderança" logo abaixo
 (pessoa já cadastrada ou nova, com a função e a célula informadas); o
 admin confere, cria o login e salva — e o pedido fica aprovado sozinho.
 **Recusar** encerra o pedido. O link "Já tenho acesso, quero entrar"

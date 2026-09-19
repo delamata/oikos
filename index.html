@@ -20,6 +20,11 @@
   /* cursor de seta e sem seleção de texto: o menu é para clicar, não para ler/copiar */
   .sidebar{flex:0 0 252px;width:252px;background:linear-gradient(180deg,#1B2344,#161c38);color:#fff;display:flex;flex-direction:column;padding:20px 16px 22px;position:sticky;top:0;height:100vh;overflow-y:auto;cursor:default;user-select:none;-webkit-user-select:none}
   .sidebar button{cursor:pointer}
+  /* alerta de pendências no item do menu (ex: pedidos de acesso) */
+  .nav-alerta{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#f5b82e;color:#1B2344;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px rgba(245,184,46,.25);animation:nav-alerta-pulso 2s ease-in-out infinite}
+  .nav-alerta-ponto{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:#f5b82e;box-shadow:0 0 0 2px #eef2f7}
+  @keyframes nav-alerta-pulso{0%,100%{box-shadow:0 0 0 3px rgba(245,184,46,.25)}50%{box-shadow:0 0 0 6px rgba(245,184,46,.08)}}
+  @media (prefers-reduced-motion:reduce){.nav-alerta{animation:none}}
   .sidebar-close-btn{display:none}
   .sidebar-backdrop{display:none}
   .main-content{flex:1;min-width:0;padding:26px 30px 56px;max-width:1160px}
@@ -214,7 +219,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="config.js?v=32"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
