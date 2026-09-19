@@ -39,9 +39,16 @@ mesmo número de meses anteriores. A tela traz:
   um com a variação contra o período anterior.
 - **Evolução da frequência** — média de presentes por semana, mês a mês
   (lançamentos da Frequência + planilha antiga, sem os eventos de rodízio).
-- **Crescimento** — novos visitantes, quem virou FA e quem virou membro,
-  por mês. Novos visitantes são os cadastros novos: dias com 15 ou mais
-  cadastros de uma vez são tratados como a importação inicial e não contam.
+- **Visitantes, FAs e membros por mês** — três colunas por mês com o total
+  de pessoas ativas em cada situação no fim do mês, sem Kids e Juvenis.
+  Como o banco guarda só a situação de hoje, cada pessoa é "voltada no
+  tempo" desfazendo as mudanças de status, célula e situação registradas
+  em Movimentações depois daquele mês. Meses antes do primeiro cadastro do
+  sistema aparecem como "—".
+- **Kids e Juvenis por mês** — o total de Kids e Juvenis ativos no fim de
+  cada mês, com a divisão visitante/FA/membro ao tocar na coluna.
+- O indicador **Novos visitantes** conta os cadastros novos: dias com 15 ou
+  mais cadastros de uma vez são tratados como a importação inicial e não contam.
 - **Jornada** — foto de hoje: pessoas, FAs e membros, batizados, Encontro
   com Deus e liderança.
 - **Comparativo de células** — presentes por encontro no período e a

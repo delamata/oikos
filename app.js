@@ -4004,7 +4004,7 @@
   var REL_MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   // Jornada Visitante → FA → Membro (paleta validada para daltonismo).
   var REL_COR = {
-    visit: '#8A63C9', fa: '#149C88', membro: '#2E4FC7', linha: '#149C88',
+    visit: '#8A63C9', fa: '#149C88', membro: '#2E4FC7', linha: '#149C88', kids: '#3B6FD4',
     saiu: '#9aa8ba', perdido: '#B0281E', grade: '#edf1f7', eixo: '#8a99ab',
     tinta: '#14243a', suave: '#6b7c93', bom: '#0E7A68', bomFundo: '#e0f4ef',
     ruim: '#B0281E', ruimFundo: '#fbe7e5', neutroFundo: '#eef2f7',
@@ -4216,10 +4216,63 @@
       perdidos: [conta(perdidos, noPeriodo), conta(perdidos, noAnterior)],
     };
 
-    var crescimento = meses.map(function (m) {
-      var doMes = function (lista, alvo) { return lista.filter(function (x) { return mesDe(x.data) === m && (!alvo || x.valor_novo === alvo); }).length; };
-      return { visit: doMes(novos), fa: doMes(avancos, 'Frequentador Assíduo'), membro: doMes(avancos, 'Membro') };
+    // Totais no fim de cada mês. O banco só guarda a situação de hoje, então
+    // cada pessoa é "voltada no tempo": parte do cadastro atual e desfaz, da
+    // mais nova para a mais antiga, as mudanças registradas depois do fim
+    // do mês (status, célula e situação). Antes do primeiro cadastro do
+    // sistema não há como saber — esses meses ficam sem dado.
+    var inicioSistema = todos.reduce(function (min, p) {
+      var dia = String(p.created_at || '').slice(0, 10);
+      return dia && (!min || dia < min) ? dia : min;
+    }, '');
+    var mudancasDe = {};
+    (state.relMovs || []).forEach(function (m) {
+      if (['status_pessoa', 'posicao', 'celula', 'situacao_saida'].indexOf(m.campo) < 0) return;
+      (mudancasDe[m.member_id] || (mudancasDe[m.member_id] = [])).push(m);
     });
+    Object.keys(mudancasDe).forEach(function (id) {
+      var lista = mudancasDe[id];
+      // Status: usa status_pessoa; posicao só vale para cadastros antigos
+      // que não têm nenhuma mudança de status_pessoa registrada.
+      var temStatus = lista.some(function (m) { return m.campo === 'status_pessoa'; });
+      mudancasDe[id] = lista.filter(function (m) { return m.campo !== 'posicao' || !temStatus; })
+        .sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+    });
+    var statusDaPosicao = function (pos) {
+      return pos === 'Visitante' || pos === 'Frequentador Assíduo' ? pos : (pos ? 'Membro' : null);
+    };
+    var fimDoMes = function (chave) {
+      var d = new Date(Number(chave.slice(0, 4)), Number(chave.slice(5, 7)), 0);
+      var hoje = new Date();
+      return relIso(d > hoje ? hoje : d);
+    };
+    var totaisNoFimDe = function (chave) {
+      var fim = fimDoMes(chave);
+      if (!inicioSistema || fim < inicioSistema) return null;
+      var r = { visit: 0, fa: 0, membro: 0, kids: 0, kidsVisit: 0, kidsFa: 0, kidsMembro: 0 };
+      todos.forEach(function (p) {
+        var criado = String(p.created_at || '').slice(0, 10);
+        if (!criado || criado > fim) return;
+        var st = statusDeMembro(p), cel = p.celula, sit = p.situacao_saida || (p.active === false ? 'inativo' : 'ativo');
+        (mudancasDe[p.id] || []).forEach(function (m) {
+          if (String(m.data).slice(0, 10) <= fim) return;
+          if (m.campo === 'status_pessoa') st = m.valor_anterior || st;
+          else if (m.campo === 'posicao') st = statusDaPosicao(m.valor_anterior) || st;
+          else if (m.campo === 'celula') cel = m.valor_anterior;
+          else if (m.campo === 'situacao_saida') sit = m.valor_anterior || 'ativo';
+        });
+        if (sit !== 'ativo' || !naCel(cel)) return;
+        var chaveSt = st === 'Membro' ? 'membro' : st === 'Frequentador Assíduo' ? 'fa' : 'visit';
+        if (p.tipo === 'Kids e Juvenis') {
+          r.kids++;
+          r[chaveSt === 'membro' ? 'kidsMembro' : chaveSt === 'fa' ? 'kidsFa' : 'kidsVisit']++;
+        } else {
+          r[chaveSt]++;
+        }
+      });
+      return r;
+    };
+    var crescimento = meses.map(totaisNoFimDe);
 
     // Jornada: foto de hoje de quem está ativo no recorte.
     var ativos = todos.filter(function (p) { return p.active !== false && naCel(p.celula); });
@@ -4336,32 +4389,40 @@
     return relSvg(W, H, 'Frequência média por mês', corpo);
   }
 
-  function relSvgCrescimento(meses, linhas) {
-    var W = 560, H = 250, L = 34, R = 10, T = 22, B = 30;
-    var series = [['visit', 'novos visitantes'], ['fa', 'viraram FA'], ['membro', 'viraram membros']];
-    var totais = linhas.map(function (r) { return r.visit + r.fa + r.membro; });
-    var escala = relEscala(Math.max.apply(null, totais.concat([1])) * 1.15);
+  // Colunas lado a lado por mês (uma por série). `series`: [[chave, nome, cor]];
+  // uma série com o 4º item `true` só aparece na dica, sem coluna.
+  // Mês sem dado (antes do sistema) aparece como "—".
+  function relSvgColunas(meses, linhas, todasSeries, label) {
+    var W = 560, H = 260, L = 34, R = 10, T = 24, B = 30;
+    var series = todasSeries.filter(function (s) { return !s[3]; });
+    var todos = [];
+    linhas.forEach(function (r) { if (r) series.forEach(function (s) { todos.push(r[s[0]]); }); });
+    var escala = relEscala(Math.max.apply(null, todos.concat([1])) * 1.12);
     var y = function (v) { return T + (H - T - B) * (1 - v / escala.max); };
-    var faixa = (W - L - R) / meses.length, larg = Math.min(44, faixa * 0.56);
+    var faixa = (W - L - R) / meses.length;
+    var gap = 2;
+    var larg = Math.min(26, (faixa * 0.78 - gap * (series.length - 1)) / series.length);
+    var grupo = larg * series.length + gap * (series.length - 1);
+    // Número em cima de cada coluna só quando cabe (até 6 meses).
+    var comNumeros = meses.length <= 6;
     var corpo = relGrade(L, R, W, y, escala);
     linhas.forEach(function (r, i) {
-      var cx = L + faixa * i + faixa / 2, base = 0;
-      var ultimaSerie = null;
-      series.forEach(function (s) { if (r[s[0]]) ultimaSerie = s[0]; });
-      series.forEach(function (s) {
-        var v = r[s[0]];
-        if (!v) return;
-        var topo = s[0] === ultimaSerie;
-        var y0 = y(base), y1 = y(base + v);
-        corpo += '<rect x="' + (cx - larg / 2) + '" y="' + (y1 + (topo ? 0 : 1)) + '" width="' + larg + '" height="' + Math.max(1, y0 - y1 - (topo ? 1 : 2)) + '" rx="' + (topo ? 4 : 1.5) + '" fill="' + REL_COR[s[0]] + '"></rect>';
-        base += v;
-      });
-      if (totais[i]) corpo += relTexto(cx, y(totais[i]) - 7, totais[i], { anchor: 'middle', size: 13, weight: 800, cor: REL_COR.tinta });
+      var cx = L + faixa * i + faixa / 2;
       corpo += relTexto(cx, H - 9, relMesCurto(meses[i]), { anchor: 'middle' });
-      var tip = relMesLongo(meses[i]) + '\n' + series.map(function (s) { return r[s[0]] + ' ' + s[1]; }).join('\n');
+      if (!r) {
+        corpo += relTexto(cx, y(0) - 6, '—', { anchor: 'middle', size: 13, cor: REL_COR.eixo });
+        corpo += '<rect x="' + (cx - faixa / 2) + '" y="' + T + '" width="' + faixa + '" height="' + (H - T - B) + '" fill="transparent" data-tip="' + relAttr(relMesLongo(meses[i]) + '\nSem dados: antes do início do sistema') + '"></rect>';
+        return;
+      }
+      series.forEach(function (s, k) {
+        var v = r[s[0]], x = cx - grupo / 2 + k * (larg + gap);
+        if (v) corpo += '<rect x="' + x + '" y="' + y(v) + '" width="' + larg + '" height="' + Math.max(1, y(0) - y(v)) + '" rx="3" fill="' + s[2] + '"></rect>';
+        if (comNumeros) corpo += relTexto(x + larg / 2, y(v) - 5, v, { anchor: 'middle', size: 11, weight: 800, cor: REL_COR.tinta });
+      });
+      var tip = relMesLongo(meses[i]) + '\n' + todasSeries.map(function (s) { return r[s[0]] + ' ' + s[1]; }).join('\n');
       corpo += '<rect x="' + (cx - faixa / 2) + '" y="' + T + '" width="' + faixa + '" height="' + (H - T - B) + '" fill="transparent" data-tip="' + relAttr(tip) + '"></rect>';
     });
-    return relSvg(W, H, 'Crescimento por mês', corpo);
+    return relSvg(W, H, label, corpo);
   }
 
   function relSvgJornada(etapas) {
@@ -4545,12 +4606,26 @@
       nota: 'Fonte: lançamentos em Frequência e a planilha antiga (sem os eventos de rodízio).',
       compartilhar: compartilhar('freq'),
     };
+    var semHistorico = d.crescimento.some(function (r) { return !r; });
     graficos.cresc = {
-      titulo: 'Crescimento', sub: 'Quem chegou e quem avançou na jornada, por mês',
-      svg: relSvgCrescimento(d.meses, d.crescimento),
-      legenda: [{ cor: REL_COR.visit, label: 'Novos visitantes' }, { cor: REL_COR.fa, label: 'Viraram FA' }, { cor: REL_COR.membro, label: 'Viraram membros' }],
-      nota: 'Novos visitantes = cadastros novos (a importação inicial não conta). Avanços vêm das mudanças de status.',
+      titulo: 'Visitantes, FAs e membros por mês', sub: 'Total de pessoas ativas em cada situação no fim de cada mês — sem Kids e Juvenis',
+      svg: relSvgColunas(d.meses, d.crescimento, [
+        ['visit', 'visitantes', REL_COR.visit], ['fa', 'FAs', REL_COR.fa], ['membro', 'membros', REL_COR.membro],
+      ], 'Total de visitantes, FAs e membros por mês'),
+      legenda: [{ cor: REL_COR.visit, label: 'Visitantes' }, { cor: REL_COR.fa, label: 'FAs' }, { cor: REL_COR.membro, label: 'Membros' }],
+      nota: 'Montado a partir do cadastro de hoje e das mudanças de status, célula e situação registradas em Movimentações.' +
+        (semHistorico ? ' “—” = mês antes do início do sistema.' : ''),
       compartilhar: compartilhar('cresc'),
+    };
+    graficos.kids = {
+      titulo: 'Kids e Juvenis por mês', sub: 'Total de Kids e Juvenis ativos no fim de cada mês',
+      svg: relSvgColunas(d.meses, d.crescimento, [
+        ['kids', 'Kids e Juvenis no total', REL_COR.kids], ['kidsVisit', 'visitantes', null, true],
+        ['kidsFa', 'FAs', null, true], ['kidsMembro', 'membros', null, true],
+      ], 'Total de Kids e Juvenis por mês'),
+      legenda: [],
+      nota: 'Toque numa coluna para ver quantos são visitantes, FAs e membros.' + (semHistorico ? ' “—” = mês antes do início do sistema.' : ''),
+      compartilhar: compartilhar('kids'),
     };
     graficos.jornada = {
       titulo: 'Jornada: de visitante a líder', sub: 'Situação de hoje de quem está ativo no recorte',
@@ -4607,7 +4682,7 @@
       compartilhar: compartilhar('perd'),
     };
 
-    var ordem = ['freq', 'cresc', 'jornada', 'comp', 'mov', 'perd'];
+    var ordem = ['freq', 'cresc', 'kids', 'jornada', 'comp', 'mov', 'perd'];
     relUltimo = {
       graficos: graficos, ordem: ordem, recorte: recorte, periodoLabel: periodoLabel, nivel: nivel,
       kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, comparativo: d.comparativo,
@@ -4699,7 +4774,7 @@
 
     var g = v.graficos;
     html += '<div class="rel-grid">' +
-      relCardHtml(g.freq) + relCardHtml(g.cresc) + relCardHtml(g.jornada) + relCardHtml(g.comp) +
+      relCardHtml(g.freq) + relCardHtml(g.cresc) + relCardHtml(g.kids) + relCardHtml(g.jornada) + relCardHtml(g.comp) +
       relCardHtml(g.mov) + relCardHtml(g.perd, perdLista) +
       '</div></div>';
     return html;
