@@ -911,12 +911,14 @@
     var f = state.lidForm;
     var nome = (f.nome || '').trim();
     if (nome.length < 3) { setState({ lidErro: 'Digite seu nome completo.' }); return; }
+    // E-mail é pedido de toda a liderança, já na primeira tela — inclusive
+    // de quem depois se acha na lista (é com ele que o login é criado).
+    var email = emailValido(f.email);
+    if (!email) { setState({ lidErro: 'Digite um e-mail válido — é com ele que o seu acesso será criado.' }); return; }
 
     if (f.funcao !== 'Líder') { setLidEtapa('lista'); return; }
 
     if (!f.celula) { setState({ lidErro: 'Escolha a célula que você lidera.' }); return; }
-    var email = emailValido(f.email);
-    if (!email) { setState({ lidErro: 'Digite um e-mail válido — é com ele que o seu acesso será criado.' }); return; }
     // Valida o nome contra o cadastro (a mesma lista pública de nomes).
     var alvo = normalizarNome(nome);
     var achado = (state.membersPublicos || []).filter(function (p) { return normalizarNome(p.nome) === alvo; })[0] || null;
@@ -933,6 +935,7 @@
     var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
     enviarSolicitacao({
       nome: pessoa.nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
+      email: emailValido(f.email),
       member_id: pessoa.id, ja_cadastrado: true,
     }, { titulo: 'Encontramos o seu cadastro', texto: pessoa.nome + ', você já está no Oikos como ' + rotulo + '. Seu pedido foi enviado: procure o administrador do sistema para liberar o seu acesso à rede.' });
   }
@@ -4410,9 +4413,9 @@
         '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
         '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' placeholder="Seu nome" style="' + campo + '"></div>' +
         selectField('Sua função', cb(v.onLid('funcao'), 'change'), FUNCOES_SOLICITACAO, f.funcao) +
+        campoEmail +
         (f.funcao === 'Líder'
-          ? campoEmail +
-            '<div class="grid-form2">' +
+          ? '<div class="grid-form2">' +
             selectField('Célula que você lidera', cb(v.onLid('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
             '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
             '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +

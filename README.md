@@ -49,9 +49,9 @@ Na tela de cadastro público, o link **"Já sou líder"** abre um fluxo
 para a liderança se identificar:
 
 - A pessoa informa o **nome** e a **função**.
-- Em todo **cadastro novo** de liderança o **e-mail é obrigatório** — é
-  com ele que o admin cria o login. Quem apenas toca no próprio nome na
-  lista (já cadastrado) não precisa informar.
+- O **e-mail é obrigatório** para toda a liderança, já na primeira tela
+  — inclusive para quem depois se acha na lista. É com ele que o admin
+  cria o login.
 - **Líder de célula**: informa também **qual célula lidera**. O nome é
   conferido com o cadastro (sem diferenciar maiúsculas nem acentos). Se
   ela já existe, a tela diz que ela já está cadastrada e que deve
