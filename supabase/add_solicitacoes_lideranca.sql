@@ -18,6 +18,7 @@ create table if not exists solicitacoes_lideranca (
   funcao text not null check (funcao in ('Líder', 'Discipulador', 'Obreiro', 'Pastor')),
   celula text,                                   -- só para Líder: a célula que ele lidera
   telefone text check (telefone is null or length(telefone) <= 30),
+  email text check (email is null or email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]{2,}$'),
   member_id uuid references members(id) on delete set null,  -- quando a pessoa se achou na lista
   ja_cadastrado boolean not null default false,
   status text not null default 'pendente' check (status in ('pendente', 'aprovada', 'recusada')),
@@ -25,6 +26,13 @@ create table if not exists solicitacoes_lideranca (
   resolvido_em timestamptz,
   resolvido_por uuid references auth.users
 );
+
+-- Para quem já rodou a versão anterior deste arquivo (sem e-mail):
+-- rodar de novo só acrescenta a coluna, sem mexer nos pedidos.
+alter table solicitacoes_lideranca add column if not exists email text;
+alter table solicitacoes_lideranca drop constraint if exists solicitacoes_lideranca_email_check;
+alter table solicitacoes_lideranca add constraint solicitacoes_lideranca_email_check
+  check (email is null or email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]{2,}$');
 
 create index if not exists solicitacoes_lideranca_status_idx on solicitacoes_lideranca (status, criado_em desc);
 

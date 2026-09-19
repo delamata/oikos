@@ -223,7 +223,7 @@
 
     // "Já sou líder" (sem login): pedido de acesso de liderança
     lidAberto: false,
-    lidForm: { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '' },
+    lidForm: { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '', email: '' },
     lidSaving: false,
     lidErro: null,
     lidResultado: null,           // { titulo, texto } depois de enviar
@@ -858,7 +858,14 @@
     'Obreiro': ['Obreiro', 'Pastor de Rede'],
     'Pastor': ['Pastor'],
   };
-  var lidFormDefaults = { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '' };
+  var lidFormDefaults = { etapa: 'inicio', nome: '', funcao: 'Líder', celula: '', tel: '', email: '' };
+
+  // Cadastro novo de liderança precisa de e-mail: é com ele que o admin
+  // cria o login. Devolve o e-mail limpo, ou null se inválido.
+  function emailValido(txt) {
+    var e = String(txt || '').trim().toLowerCase();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) ? e : null;
+  }
 
   function abrirSolicitacaoLideranca() {
     setState({ lidAberto: true, lidForm: Object.assign({}, lidFormDefaults), lidErro: null, lidResultado: null, lidSaving: false });
@@ -908,11 +915,13 @@
     if (f.funcao !== 'Líder') { setLidEtapa('lista'); return; }
 
     if (!f.celula) { setState({ lidErro: 'Escolha a célula que você lidera.' }); return; }
+    var email = emailValido(f.email);
+    if (!email) { setState({ lidErro: 'Digite um e-mail válido — é com ele que o seu acesso será criado.' }); return; }
     // Valida o nome contra o cadastro (a mesma lista pública de nomes).
     var alvo = normalizarNome(nome);
     var achado = (state.membersPublicos || []).filter(function (p) { return normalizarNome(p.nome) === alvo; })[0] || null;
     enviarSolicitacao({
-      nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null,
+      nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
       member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
     }, achado
       ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
@@ -932,9 +941,11 @@
     var f = state.lidForm;
     var nome = (f.nome || '').trim();
     if (nome.length < 3) { setState({ lidErro: 'Digite seu nome completo.' }); return; }
+    var email = emailValido(f.email);
+    if (!email) { setState({ lidErro: 'Digite um e-mail válido — é com ele que o seu acesso será criado.' }); return; }
     var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
     enviarSolicitacao({
-      nome: nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
+      nome: nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null, email: email,
       member_id: null, ja_cadastrado: false,
     }, { titulo: 'Cadastro enviado', texto: 'Recebemos o seu cadastro como ' + rotulo + '. Procure o administrador do sistema para liberar o seu acesso à rede.' });
   }
@@ -964,6 +975,10 @@
       }),
       adminLiderError: null, adminLiderSalvo: false,
     });
+    // O campo de e-mail do login não guarda estado (é lido da tela ao
+    // salvar): preenche direto nele com o e-mail do pedido.
+    var campoEmail = document.getElementById('adminlider-email');
+    if (campoEmail && s.email) campoEmail.value = s.email;
     var alvo = document.getElementById('admin-nova-lideranca');
     if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -4341,6 +4356,11 @@
     var campo = 'width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box';
     var rotuloFuncao = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
     var corpo = '';
+    // type=text + inputmode=email: com type=email o cursor pula a cada
+    // tecla, porque a tela é redesenhada enquanto se digita.
+    var campoEmail = '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail</label>' +
+      '<input type="text" inputmode="email" autocomplete="email" autocapitalize="none" id="lid-email" value="' + escHtml(f.email) + '" ' + cb(v.onLid('email'), 'input') + ' placeholder="seuemail@gmail.com" style="' + campo + '">' +
+      '<div style="font-size:11.5px;color:#8a99ab;margin-top:4px">É com ele que o administrador vai criar o seu acesso.</div></div>';
 
     var titulo = function (t, sub) {
       return '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">' + escHtml(t) + '</div>' +
@@ -4377,6 +4397,7 @@
         '<form ' + cb(v.enviarNovo, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
         '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome completo</label>' +
         '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' style="' + campo + '"></div>' +
+        campoEmail +
         '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
         '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +
         botao('Enviar cadastro') +
@@ -4390,7 +4411,8 @@
         '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' placeholder="Seu nome" style="' + campo + '"></div>' +
         selectField('Sua função', cb(v.onLid('funcao'), 'change'), FUNCOES_SOLICITACAO, f.funcao) +
         (f.funcao === 'Líder'
-          ? '<div class="grid-form2">' +
+          ? campoEmail +
+            '<div class="grid-form2">' +
             selectField('Célula que você lidera', cb(v.onLid('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
             '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
             '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +
@@ -4737,6 +4759,7 @@
           '<div style="font-size:14px;font-weight:800;color:#14243a">' + escHtml(s.nome) + '</div>' +
           '<div style="font-size:12px;color:#6b7c93;margin-top:2px">' + escHtml(rotulo(s.funcao)) +
           (s.celula ? ' · célula ' + escHtml(celulaLabel(s.celula)) : '') +
+          (s.email ? ' · ' + escHtml(s.email) : '') +
           (s.telefone ? ' · ' + escHtml(s.telefone) : '') +
           ' · ' + escHtml(new Date(s.criado_em).toLocaleDateString('pt-BR')) + '</div>' +
           '<span style="display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.ja_cadastrado ? '#e0f4ef' : '#fdf1da') + ';color:' + (s.ja_cadastrado ? '#0E7A68' : '#A1780F') + '">' +
