@@ -12,7 +12,9 @@
 --   - discipulador/obreiro marcado na célula ....... vê essa célula
 --   - cônjuge de quem é discipulador/obreiro ....... vê a mesma rede
 --   - qualquer pessoa .............................. vê a própria célula
--- Quem não tem login não acessa nada.
+-- Quem não tem login não acessa nada — mas a consulta mostra mesmo assim
+-- o que a pessoa PASSARIA a ver quando ganhar o login, para conferir
+-- antes de liberar.
 
 with parametros as (
   select
@@ -34,7 +36,6 @@ regra as (
 acesso as (
   select a.id as pessoa_id, h.celula,
     case
-      when a.user_id is null then null
       when a.is_admin or a.posicao in ('Pastor', 'Pastor de Rede') then 'acesso total'
       when r.com_conjuge and (h.discipulador_id in (a.id, a.conjuge_id) or h.obreiro_id in (a.id, a.conjuge_id)) then
         case when h.discipulador_id = a.id or h.obreiro_id = a.id
@@ -57,18 +58,26 @@ select
   cj.nome                                           as conjuge,
   cj.posicao                                        as posicao_do_conjuge,
   (select com_conjuge from regra)                   as regra_do_conjuge_instalada,
-  count(ac.motivo)                                  as qtd_celulas_que_ve,
+  case when a.user_id is null then 0 else count(ac.motivo) end as qtd_celulas_que_ve_hoje,
+  count(ac.motivo)                                  as qtd_celulas_com_login,
   string_agg(ac.celula || ' (' || ac.motivo || ')', '; ' order by ac.celula)
-    filter (where ac.motivo is not null)            as celulas_que_ve,
+    filter (where ac.motivo is not null)            as celulas_com_login,
   (select count(*) from members x
     where x.active
       and x.celula in (select celula from acesso where pessoa_id = a.id and motivo is not null)) as pessoas_que_ve,
   case
-    when a.user_id is null then 'SEM LOGIN: não acessa o sistema'
     when count(ac.motivo) = 1
      and bool_or(ac.motivo is not null and ac.celula ilike (select celula_esperada from parametros))
-      then 'OK: vê somente a célula esperada'
-    else 'ATENÇÃO: vê outra célula, ou mais de uma'
+      then case when a.user_id is null
+                then 'SEM LOGIN: hoje não acessa nada. Com login, verá SOMENTE a célula esperada.'
+                else 'OK: vê somente a célula esperada' end
+    when count(ac.motivo) = 0
+      then case when a.user_id is null
+                then 'SEM LOGIN e SEM CÉLULA: mesmo com login não veria nada — confira a célula do cadastro.'
+                else 'ATENÇÃO: tem login mas não vê nenhuma célula — confira a célula do cadastro.' end
+    else case when a.user_id is null
+              then 'SEM LOGIN: hoje não acessa nada. ATENÇÃO: com login, veria outra célula ou mais de uma.'
+              else 'ATENÇÃO: vê outra célula, ou mais de uma' end
   end                                               as resultado
   from alvo a
   left join members cj on cj.id = a.conjuge_id
