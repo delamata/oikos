@@ -125,6 +125,14 @@
   .home-kpi{display:flex;flex-direction:column;align-items:stretch;text-align:center;gap:12px}
   .home-kpi .home-kpi-icon{align-self:flex-start}
   .home-kpi-texto{width:100%}
+  /* quadro que filtra: vira botão, com destaque quando está filtrando */
+  .home-kpi-click{font:inherit;color:inherit;text-align:inherit;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+  .home-kpi-click:hover{transform:translateY(-2px);border-color:#c9d6ea;box-shadow:0 18px 32px -20px rgba(20,36,58,.4)}
+  .home-kpi-ativo{border-color:#149C88;box-shadow:0 0 0 2px rgba(20,156,136,.35)}
+  .home-kpi-ativo:hover{border-color:#149C88}
+  .kpi-filtro-aviso{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 16px;padding:10px 14px;border-radius:12px;background:#e0f4ef;color:#0E7A68;font-size:13px;font-weight:600}
+  .kpi-filtro-aviso b{font-weight:800}
+  .kpi-filtro-aviso button{margin-left:auto;border:none;background:#0E7A68;color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:999px;cursor:pointer}
   .home-kpi-destaque{background:linear-gradient(140deg,#16A394,#3B5FDD 60%,#6B3FA0);border-color:transparent;color:#fff}
   .home-kpi-destaque .home-kpi-value,.home-kpi-destaque .home-kpi-label{color:#fff}
   .home-kpi-destaque .home-kpi-sub{color:rgba(255,255,255,.72)}
@@ -256,7 +264,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="config.js?v=37"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>

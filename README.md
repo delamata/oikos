@@ -69,6 +69,21 @@ WhatsApp** manda os números em texto, sem nomes.
 Antes de usar, rode `supabase/add_relatorios_acesso.sql` (veja
 "Configuração inicial") — ele também muda o acesso do Pastor de Rede.
 
+### Quadros de indicadores filtram
+
+Na tela **Cadastro de Membros** (e na versão pública, sem login), clicar
+num dos seis quadros do topo — Total de Membros, Total de Adultos,
+Frequentadores Assíduos, Visitantes, Jovens, Kids e Juvenis — filtra as
+listas, as tabelas e os gráficos abaixo por aquele grupo. O quadro
+escolhido fica destacado, uma faixa mostra quantas pessoas ficaram na
+seleção, e clicar de novo no mesmo quadro (ou em "Ver todos", ou em
+"Limpar") volta a mostrar todo mundo. Os números dos quadros **não**
+mudam quando um filtro está ativo: eles continuam sendo o menu do filtro.
+O filtro se combina com os outros (busca, tipo, célula, posição,
+batismo, encontro). No **Início**, clicar num quadro abre o Cadastro de
+Membros já filtrado por ele, como já acontece ao clicar num cartão de
+célula.
+
 ### Nomes em maiúsculas
 
 Nomes de pessoas (membros, FAs, visitantes, Kids e Juvenis) aparecem

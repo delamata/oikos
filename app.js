@@ -79,6 +79,42 @@
     return ['Visitante', 'Frequentador Assíduo', 'Membro'].indexOf(p.posicao) < 0 ? p.posicao : '';
   }
 
+  // Grupos dos quadros de indicadores: clicar num quadro filtra a lista e
+  // os gráficos abaixo dele. Cada grupo repete a conta do próprio quadro.
+  var GRUPOS_KPI = {
+    principal: {
+      label: 'Total de Membros — Adultos e Kids',
+      testa: function (p) {
+        return (POSICOES_REDE.indexOf(p.posicao) >= 0 && p.tipo === 'Adultos')
+          || p.tipo === 'Kids e Juvenis' || p.posicao === 'Frequentador Assíduo';
+      },
+    },
+    adultos: { label: 'Total de Adultos', testa: function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0 && p.tipo === 'Adultos'; } },
+    fa: { label: 'Frequentadores Assíduos', testa: function (p) { return p.posicao === 'Frequentador Assíduo'; } },
+    visit: { label: 'Visitantes', testa: function (p) { return p.posicao === 'Visitante'; } },
+    jovens: { label: 'Jovens', testa: function (p) { return p.tipo === 'Jovens'; } },
+    kids: { label: 'Kids e Juvenis', testa: function (p) { return p.tipo === 'Kids e Juvenis'; } },
+  };
+
+  // Na tela pública (sem login) não existe o campo tipo confiável para
+  // Kids: lá o quadro conta por idade, e o filtro acompanha.
+  function ehKidsPorIdade(p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; }
+  var GRUPOS_KPI_ANON = Object.assign({}, GRUPOS_KPI, {
+    kids: { label: 'Kids e Juvenis', testa: ehKidsPorIdade },
+    principal: {
+      label: 'Total de Membros — Adultos e Kids',
+      testa: function (p) {
+        return (POSICOES_REDE.indexOf(p.posicao) >= 0 && p.tipo === 'Adultos')
+          || ehKidsPorIdade(p) || p.posicao === 'Frequentador Assíduo';
+      },
+    },
+  });
+
+  function filtraGrupo(pessoas, grupo, mapa) {
+    var g = (mapa || GRUPOS_KPI)[grupo];
+    return g ? pessoas.filter(g.testa) : pessoas;
+  }
+
   function posicaoOptions() {
     return posicaoOrder.map(function (p) { return { v: p, label: p }; });
   }
@@ -142,7 +178,7 @@
 
   var state = {
     q: '',
-    filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' },
+    filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '' },
     sort: { key: 'idade', dir: 1 },
     selected: null,
     tab: 'home',
@@ -161,7 +197,7 @@
     // Cadastro de Membros sem login (versão limitada — ver members_publico)
     membersPublicos: [],
     membersPublicosStatus: 'idle',
-    anonFilters: { q: '', tipo: '', celula: '', posicao: '' },
+    anonFilters: { q: '', tipo: '', celula: '', posicao: '', grupo: '' },
 
     // vínculo login → cadastro (profiles)
     profile: null,          // null = ainda verificando; false = sem vínculo; objeto = vinculado
@@ -377,6 +413,23 @@
   }
 
   function setF(key, val) { setState(function (s) { var f = Object.assign({}, s.filters); f[key] = val; return { filters: f }; }); }
+  // Clicar de novo no mesmo quadro tira o filtro.
+  function toggleGrupoKpi(grupo) {
+    setState(function (s) {
+      var f = Object.assign({}, s.filters);
+      f.grupo = f.grupo === grupo ? '' : grupo;
+      return { filters: f, selected: null };
+    });
+  }
+
+  function toggleGrupoKpiAnon(grupo) {
+    setState(function (s) {
+      var f = Object.assign({}, s.anonFilters);
+      f.grupo = f.grupo === grupo ? '' : grupo;
+      return { anonFilters: f };
+    });
+  }
+
   function setAnonF(key, val) { setState(function (s) { var f = Object.assign({}, s.anonFilters); f[key] = val; return { anonFilters: f }; }); }
   function setTF(key, val) { setState(function (s) { var f = Object.assign({}, s.trilhoFilters); f[key] = val; return { trilhoFilters: f }; }); }
   function setNF(key, val) { setState(function (s) { var f = Object.assign({}, s.novoForm); f[key] = val; return { novoForm: f, novoSalvo: false }; }); }
@@ -1999,6 +2052,12 @@
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
     };
 
+    // Quadro clicado: os quadros continuam mostrando o total de cada grupo
+    // (eles são o menu do filtro) e a lista, os gráficos e a tabela abaixo
+    // passam a mostrar só o grupo escolhido.
+    filtered = filtraGrupo(filtered, f.grupo);
+    total = filtered.length;
+
 
     // Estado civil bars
     var civilOrder = CIVIL_ORDER;
@@ -2467,6 +2526,10 @@
       }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); }),
       q: state.q,
       filters: f,
+      grupoAtivo: f.grupo,
+      grupoLabel: (GRUPOS_KPI[f.grupo] || {}).label || '',
+      totalFiltrado: total,
+      onGrupo: function (g) { return function () { toggleGrupoKpi(g); }; },
       k: k, civilBars: civilBars, posBars: posBars, celulaBars: celulaBars, perfilBars: perfilBars, people: people, visitantes: visitantes, kids3a12: kids3a12,
       selected: !!s, sel: sel,
       sortNomeArrow: sort.key === 'nome' ? (sort.dir === 1 ? '↑' : '↓') : '',
@@ -2477,7 +2540,7 @@
       onPosicao: function (e) { setF('posicao', e.target.value); },
       onBatizado: function (e) { setF('batizado', e.target.value); },
       onEncontro: function (e) { setF('encontro', e.target.value); },
-      clearFilters: function () { setState({ q: '', filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '' } }); },
+      clearFilters: function () { setState({ q: '', filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '' } }); },
       shareMembrosWhatsapp: function () { shareMembrosWhatsapp(); },
       shareAdultosWhatsapp: function () { shareListWhatsapp('Adultos — Nome e Nascimento', people, 'nome', 'nascLabel'); },
       shareVisitantesWhatsapp: function () { shareListWhatsapp('Visitantes — Nome e Nascimento', visitantes, 'nome', 'nascLabel'); },
@@ -2653,14 +2716,19 @@
       '</div>';
 
     // KPI row
+    var kpiOpts = function (g) { return { onClick: vals.onGrupo(g), ativo: vals.grupoAtivo === g }; };
     html += '<div class="home-kpis" style="margin:0 0 16px">' +
-      homeKpi('rede', vals.k.principal.valor, 'Total de Membros - Adultos e Kids', vals.k.principal.sub) +
-      homeKpi('adultos', vals.k.adultosMembros, 'Total de Adultos', 'membros adultos') +
-      homeKpi('fa', vals.k.totalFA, 'Frequentadores Assíduos', vals.k.faLabel) +
-      homeKpi('visit', vals.k.totalVisitantes, 'Visitantes', vals.k.visitantesLabel) +
-      homeKpi('jovens', vals.k.totalJovens, 'Jovens', 'jovens na seleção') +
-      homeKpi('kids', vals.k.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção') +
-      '</div>';
+      homeKpi('rede', vals.k.principal.valor, 'Total de Membros - Adultos e Kids', vals.k.principal.sub, kpiOpts('principal')) +
+      homeKpi('adultos', vals.k.adultosMembros, 'Total de Adultos', 'membros adultos', kpiOpts('adultos')) +
+      homeKpi('fa', vals.k.totalFA, 'Frequentadores Assíduos', vals.k.faLabel, kpiOpts('fa')) +
+      homeKpi('visit', vals.k.totalVisitantes, 'Visitantes', vals.k.visitantesLabel, kpiOpts('visit')) +
+      homeKpi('jovens', vals.k.totalJovens, 'Jovens', 'jovens na seleção', kpiOpts('jovens')) +
+      homeKpi('kids', vals.k.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção', kpiOpts('kids')) +
+      '</div>' +
+      (vals.grupoAtivo
+        ? '<div class="kpi-filtro-aviso">Mostrando só <b>' + escHtml(vals.grupoLabel) + '</b> — ' + vals.totalFiltrado + (vals.totalFiltrado === 1 ? ' pessoa' : ' pessoas') +
+          '<button type="button" ' + cb(vals.onGrupo(vals.grupoAtivo)) + '>Ver todos</button></div>'
+        : '');
 
     // Charts grid
     html += '<div class="grid-2a" style="margin-bottom:16px">' +
@@ -2834,8 +2902,12 @@
     var membrosRede = pessoasRede.length;
     var totalFA = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; }).length;
     var totalVisitantes = filtered.filter(function (p) { return p.posicao === 'Visitante'; }).length;
-    var totalKids = filtered.filter(function (p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; }).length;
+    var totalKids = filtered.filter(ehKidsPorIdade).length;
     var totalJovens = contaTipo(filtered, 'Jovens');
+
+    // Os quadros seguem mostrando o total de cada grupo; a lista e os
+    // gráficos abaixo respondem ao quadro clicado.
+    filtered = filtraGrupo(filtered, f.grupo, GRUPOS_KPI_ANON);
 
     var posCounts = {};
     filtered.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
@@ -2887,6 +2959,9 @@
       principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), totalKids, totalFA),
       totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
       posBars: posBars, perfilBars: perfilBars, rows: rows,
+      grupoAtivo: f.grupo,
+      grupoLabel: (GRUPOS_KPI_ANON[f.grupo] || {}).label || '',
+      onGrupo: function (g) { return function () { toggleGrupoKpiAnon(g); }; },
       loading: state.membersPublicosStatus === 'loading' && !all.length,
     };
   }
@@ -2911,14 +2986,19 @@
       '</select>' +
       '</div>';
 
+    var kpiOpts = function (g) { return { onClick: vals.onGrupo(g), ativo: vals.grupoAtivo === g }; };
     html += '<div class="home-kpis" style="margin:0 0 16px">' +
-      homeKpi('rede', vals.principal.valor, 'Total de Membros - Adultos e Kids', vals.principal.sub) +
-      homeKpi('adultos', vals.adultosMembros, 'Total de Adultos', 'membros adultos') +
-      homeKpi('fa', vals.totalFA, 'Frequentadores Assíduos', 'na seleção') +
-      homeKpi('visit', vals.totalVisitantes, 'Visitantes', 'na seleção') +
-      homeKpi('jovens', vals.totalJovens, 'Jovens', 'jovens na seleção') +
-      homeKpi('kids', vals.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção') +
-      '</div>';
+      homeKpi('rede', vals.principal.valor, 'Total de Membros - Adultos e Kids', vals.principal.sub, kpiOpts('principal')) +
+      homeKpi('adultos', vals.adultosMembros, 'Total de Adultos', 'membros adultos', kpiOpts('adultos')) +
+      homeKpi('fa', vals.totalFA, 'Frequentadores Assíduos', 'na seleção', kpiOpts('fa')) +
+      homeKpi('visit', vals.totalVisitantes, 'Visitantes', 'na seleção', kpiOpts('visit')) +
+      homeKpi('jovens', vals.totalJovens, 'Jovens', 'jovens na seleção', kpiOpts('jovens')) +
+      homeKpi('kids', vals.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção', kpiOpts('kids')) +
+      '</div>' +
+      (vals.grupoAtivo
+        ? '<div class="kpi-filtro-aviso">Mostrando só <b>' + escHtml(vals.grupoLabel) + '</b> — ' + vals.rows.length + (vals.rows.length === 1 ? ' pessoa' : ' pessoas') +
+          '<button type="button" ' + cb(vals.onGrupo(vals.grupoAtivo)) + '>Ver todos</button></div>'
+        : '');
 
     html += '<div class="grid-2b" style="margin-bottom:16px">' +
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
@@ -2993,7 +3073,14 @@
   }
 
   function abrirCadastroDaCelula(celula) {
-    setState({ tab: 'cadastro', q: '', filters: { tipo: '', celula: celula || '', posicao: '', batizado: '', encontro: '' }, sidebarOpen: false });
+    setState({ tab: 'cadastro', q: '', filters: { tipo: '', celula: celula || '', posicao: '', batizado: '', encontro: '', grupo: '' }, sidebarOpen: false });
+  }
+
+  function abrirCadastroDoGrupo(grupo) {
+    setState({
+      tab: 'cadastro', q: '', selected: null, sidebarOpen: false,
+      filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: grupo },
+    });
   }
 
   function homeVals(vals) {
@@ -3174,6 +3261,7 @@
       onObreiro: function (e) { setHomeFiltro('obreiro', e.target.value); },
       onDiscipulador: function (e) { setHomeFiltro('discipulador', e.target.value); },
       limparFiltros: function () { setState({ homeFilters: { obreiro: '', discipulador: '' } }); },
+      abrirGrupo: function (g) { return function () { abrirCadastroDoGrupo(g); }; },
       carregando: !todos.length && state.membersStatus !== 'ok' && state.membersStatus !== 'error',
       semRede: !!celulas && !celulas.length,
       total: total, nCelulas: listaCelulas.length, lideres: lideres,
@@ -3228,13 +3316,21 @@
 
   // Quadro branco: ícone no canto superior esquerdo, números e textos
   // centralizados.
-  function homeKpi(icon, value, label, sub) {
+  // `opts.onClick` transforma o quadro em botão de filtro; `opts.ativo`
+  // marca o quadro que está filtrando agora.
+  function homeKpi(icon, value, label, sub, opts) {
+    opts = opts || {};
     var cor = KPI_CORES[icon] || ['#2E4FC7', '#e6ecfb'];
-    return '<div class="home-card home-kpi">' +
-      homeIcon(icon, cor[0], cor[1]) +
+    var miolo = homeIcon(icon, cor[0], cor[1]) +
       '<div class="home-kpi-texto"><div class="home-kpi-value">' + value + '</div>' +
       '<div class="home-kpi-label">' + escHtml(label) + '</div>' +
-      '<div class="home-kpi-sub">' + escHtml(sub) + '</div></div></div>';
+      '<div class="home-kpi-sub">' + escHtml(sub) + '</div></div>';
+    if (!opts.onClick) return '<div class="home-card home-kpi">' + miolo + '</div>';
+    return '<button type="button" ' + cb(opts.onClick) +
+      ' class="home-card home-kpi home-kpi-click' + (opts.ativo ? ' home-kpi-ativo' : '') + '"' +
+      ' aria-pressed="' + (opts.ativo ? 'true' : 'false') + '"' +
+      ' title="' + relAttr(opts.ativo ? 'Mostrando só ' + label + ' — clique para ver todos' : 'Clique para filtrar por ' + label) + '">' +
+      miolo + '</button>';
   }
 
   // Primeiro quadro: soma de Adultos (só membros) + Kids e Juvenis + FAs,
@@ -3304,13 +3400,16 @@
         '</div></div>';
     }
 
+    // Clicar num quadro abre o Cadastro de Membros já filtrado por ele,
+    // como já acontece ao clicar num cartão de célula.
+    var kpiOpts = function (g) { return { onClick: v.abrirGrupo(g) }; };
     html += '<div class="home-kpis">' +
-      homeKpi('rede', v.kpis.principal.valor, 'Total de Membros - Adultos e Kids', v.kpis.principal.sub) +
-      homeKpi('adultos', v.kpis.adultosMembros, 'Total de Adultos', 'membros adultos') +
-      homeKpi('fa', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub) +
-      homeKpi('visit', v.kpis.visit, 'Visitantes', v.kpis.visitSub) +
-      homeKpi('jovens', v.kpis.jovens, 'Jovens', 'jovens no recorte') +
-      homeKpi('kids', v.kpis.kids, 'Kids e Juvenis', 'Kids e Juvenis no recorte') +
+      homeKpi('rede', v.kpis.principal.valor, 'Total de Membros - Adultos e Kids', v.kpis.principal.sub, kpiOpts('principal')) +
+      homeKpi('adultos', v.kpis.adultosMembros, 'Total de Adultos', 'membros adultos', kpiOpts('adultos')) +
+      homeKpi('fa', v.kpis.fa, 'Frequentadores Assíduos', v.kpis.faSub, kpiOpts('fa')) +
+      homeKpi('visit', v.kpis.visit, 'Visitantes', v.kpis.visitSub, kpiOpts('visit')) +
+      homeKpi('jovens', v.kpis.jovens, 'Jovens', 'jovens no recorte', kpiOpts('jovens')) +
+      homeKpi('kids', v.kpis.kids, 'Kids e Juvenis', 'Kids e Juvenis no recorte', kpiOpts('kids')) +
       '</div>';
 
     html += '<div class="home-grid3">' +
