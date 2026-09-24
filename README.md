@@ -69,6 +69,17 @@ WhatsApp** manda os números em texto, sem nomes.
 Antes de usar, rode `supabase/add_relatorios_acesso.sql` (veja
 "Configuração inicial") — ele também muda o acesso do Pastor de Rede.
 
+### Nomes em maiúsculas
+
+Nomes de pessoas (membros, FAs, visitantes, Kids e Juvenis) aparecem
+sempre em MAIÚSCULAS em todas as telas: listas, ficha, Frequência,
+Movimentações, Relatórios, PDFs e mensagens de WhatsApp. É só exibição —
+no banco fica exatamente o que foi digitado, e é esse texto que volta ao
+formulário de edição. A saudação do Início ("Boa tarde, André") também
+mantém o nome como escrito. Quem faz isso é `nomeMaiusculo()`, aplicado
+quando os dados chegam do Supabase (`comNomeMaiusculo`), então qualquer
+tela nova já nasce com o nome em maiúsculas.
+
 ### Hierarquia: status, função e supervisão
 
 O cadastro separa duas coisas que antes ficavam juntas no campo Posição:

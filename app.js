@@ -530,7 +530,7 @@
     setState({ directoryStatus: 'loading' });
     sb.from('members_directory').select('*').order('nome').then(function (res) {
       if (res.error) { console.warn('Erro ao carregar diretório:', res.error.message); setState({ directoryStatus: 'error' }); return; }
-      setState({ directory: res.data, directoryStatus: 'ok' });
+      setState({ directory: (res.data || []).map(comNomeMaiusculo), directoryStatus: 'ok' });
     });
   }
 
@@ -950,7 +950,7 @@
     var alvo = normalizarNome(nome);
     var achado = (state.membersPublicos || []).filter(function (p) { return normalizarNome(p.nome) === alvo; })[0] || null;
     enviarSolicitacao({
-      nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
+      nome: achado ? (achado.nomeOriginal || achado.nome) : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
       member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
     }, achado
       ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
@@ -961,7 +961,7 @@
     var f = state.lidForm;
     var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
     enviarSolicitacao({
-      nome: pessoa.nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
+      nome: pessoa.nomeOriginal || pessoa.nome, funcao: f.funcao, celula: null, telefone: (f.tel || '').trim() || null,
       email: emailValido(f.email),
       member_id: pessoa.id, ja_cadastrado: true,
     }, { titulo: 'Encontramos o seu cadastro', texto: pessoa.nome + ', você já está no Oikos como ' + rotulo + '. Seu pedido foi enviado: procure o administrador do sistema para liberar o seu acesso à rede.' });
@@ -1012,7 +1012,7 @@
       adminLiderForm: Object.assign({}, adminLiderFormDefaults, {
         modo: membro ? 'existente' : 'novo',
         memberId: membro ? membro.id : '',
-        nome: membro ? membro.nome : s.nome,
+        nome: membro ? (membro.nomeOriginal || membro.nome) : s.nome,
         query: membro ? membro.nome : '',
         posicao: s.funcao,
         celula: s.funcao === 'Líder' ? (s.celula || (membro && membro.celula) || '') : '',
@@ -1061,7 +1061,7 @@
     setState({ membersPublicosStatus: 'loading' });
     sb.from('members_publico').select('*').order('nome').then(function (res) {
       if (res.error) { console.warn('Erro ao carregar cadastro público:', res.error.message); setState({ membersPublicosStatus: 'error' }); return; }
-      setState({ membersPublicos: res.data, membersPublicosStatus: 'ok' });
+      setState({ membersPublicos: (res.data || []).map(comNomeMaiusculo), membersPublicosStatus: 'ok' });
     });
   }
 
@@ -1090,8 +1090,26 @@
   // ---------------------------------------------------------------------
   // Membros (Supabase)
   // ---------------------------------------------------------------------
+  // Nome de pessoa aparece sempre em MAIÚSCULAS na tela. O que a pessoa
+  // digitou fica guardado em `nomeOriginal` — é ele que volta para o
+  // formulário de edição, para o banco não virar tudo maiúsculo.
+  function nomeMaiusculo(nome) {
+    return String(nome == null ? '' : nome).toLocaleUpperCase('pt-BR');
+  }
+
+  function comNomeMaiusculo(row) {
+    if (!row || row.nome == null) return row;
+    return Object.assign({}, row, { nome: nomeMaiusculo(row.nome), nomeOriginal: row.nome });
+  }
+
+  // Linhas que trazem a pessoa junto (movimentações, por exemplo).
+  function comMembroMaiusculo(row) {
+    if (!row || !row.members) return row;
+    return Object.assign({}, row, { members: comNomeMaiusculo(row.members) });
+  }
+
   function mapMemberRow(row) {
-    return Object.assign({}, row, { idade: ageFromIso(row.nasc) });
+    return Object.assign({}, comNomeMaiusculo(row), { idade: ageFromIso(row.nasc) });
   }
 
   function loadMembers() {
@@ -1131,7 +1149,7 @@
     setState({
       tab: 'novo', selected: null,
       novoForm: {
-        nome: p.nome, tipo: p.tipo, celula: p.celula,
+        nome: p.nomeOriginal || p.nome, tipo: p.tipo, celula: p.celula,
         status: statusDeMembro(p), funcao: funcaoDeMembro(p), supervisorId: p.supervisor_id || '',
         batizado: p.batizado, encontro: p.encontro, civil: p.civil,
         nasc: p.nasc || '', tel: p.tel || '',
@@ -1646,7 +1664,7 @@
         setState({ fpStatus: 'error', fpErro: erroLinkFrequencia(res.error) });
         return;
       }
-      var pessoas = res.data.pessoas || [];
+      var pessoas = (res.data.pessoas || []).map(comNomeMaiusculo);
       var marcados = {};
       pessoas.forEach(function (p) { if (p.presente) marcados[p.id] = true; });
       setState({
@@ -1715,7 +1733,7 @@
     }).then(function (res) {
       if (res.error) { setState({ fpVisitanteSaving: false, fpErro: erroLinkFrequencia(res.error) }); return; }
       setState(function (s) {
-        var pessoas = s.fpPessoas.concat([{ id: res.data, nome: (f.nome || '').trim(), status: 'Visitante', presente: true }])
+        var pessoas = s.fpPessoas.concat([{ id: res.data, nome: nomeMaiusculo((f.nome || '').trim()), status: 'Visitante', presente: true }])
           .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
         var marcados = Object.assign({}, s.fpMarcados);
         marcados[res.data] = true;
@@ -1785,7 +1803,7 @@
     setState({ movStatus: 'loading' });
     sb.from('movimentacoes').select('*, members(nome, celula)').order('data', { ascending: false }).limit(300).then(function (res) {
       if (res.error) { console.warn('Erro ao carregar movimentações:', res.error.message); setState({ movStatus: 'error' }); return; }
-      setState({ movimentacoes: res.data, movStatus: 'ok' });
+      setState({ movimentacoes: (res.data || []).map(comMembroMaiusculo), movStatus: 'ok' });
     });
   }
 
@@ -2988,7 +3006,9 @@
     var mp = state.meuPerfil;
     var meuRow = (state.profile && memberById(state.profile.member_id)) || null;
     var meu = mp
-      ? { id: mp.member_id, posicao: mp.posicao, celula: mp.celula, nome: (meuRow && meuRow.nome) || state.meuNome }
+      // A saudação usa o nome como a pessoa escreveu ("Boa tarde, André"),
+      // não em maiúsculas como nas listas.
+      ? { id: mp.member_id, posicao: mp.posicao, celula: mp.celula, nome: (meuRow && (meuRow.nomeOriginal || meuRow.nome)) || state.meuNome }
       : meuRow;
     var primeiroNome = function (nome) { return String(nome || '').trim().split(/\s+/)[0] || ''; };
     var nomeDe = function (id) { var m = memberById(id); return m ? m.nome : ''; };
@@ -4086,7 +4106,7 @@
       .order('data', { ascending: false }).limit(5000)
       .then(function (res) {
         if (res.error) { console.warn('Erro ao carregar movimentações do relatório:', res.error.message); setState({ relMovsStatus: 'error' }); return; }
-        setState({ relMovs: res.data || [], relMovsStatus: 'ok' });
+        setState({ relMovs: (res.data || []).map(comMembroMaiusculo), relMovsStatus: 'ok' });
       });
   }
 
