@@ -1,6 +1,12 @@
 (function () {
   'use strict';
 
+  // Sistema do Trilho do Vencedor (turmas, matrícula, presença) — app à
+  // parte (Next.js/Vercel), unificado sob /trilho no mesmo domínio deste
+  // site. Absoluto (em vez de relativo) porque o Oikos também pode ser
+  // acessado direto pelo GitHub Pages, onde /trilho não existiria.
+  var TRILHO_APP_URL = 'https://oikos.vercel.app/trilho';
+
   var MESES_PT = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   // Fallback só — a lista de verdade vem de celula_hierarquia (banco),
@@ -2424,6 +2430,10 @@
       },
       goCadastro: function () { setState({ tab: 'cadastro', sidebarOpen: false }); },
       goTrilho: function () { setState({ tab: 'trilho', sidebarOpen: false }); },
+      // Abre o sistema do Trilho do Vencedor de verdade (turmas, matrícula,
+      // presença) — app à parte (Next.js/Vercel), unificado sob /trilho
+      // no mesmo domínio. Mesmo login (mesmo Supabase Auth dos dois).
+      abrirTrilhoApp: function () { window.location.href = TRILHO_APP_URL; },
       goNovo: function () {
         setState(function (s) {
           var patch = { tab: 'novo', novoSalvo: false, novoError: null, sidebarOpen: false };
@@ -2581,6 +2591,7 @@
     novo: '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
     ia: '<path d="M12 3.5 13.6 8 18 9.6 13.6 11.2 12 15.6 10.4 11.2 6 9.6 10.4 8 12 3.5Z"></path><path d="M18 15.5 18.8 18l2.2.8-2.2.8-.8 2.4-.8-2.4-2.2-.8 2.2-.8.8-2.5Z"></path><path d="M5.5 14 6 16l2 .7-2 .7-.5 2-.5-2-2-.7 2-.7.5-2Z"></path>',
     hierarquia: '<circle cx="12" cy="4.5" r="2"></circle><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="18" r="2"></circle><path d="M12 6.5v4"></path><path d="M12 10.5 6 16"></path><path d="M12 10.5 18 16"></path>',
+    externo: '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',
   };
 
   function navIcon(key) {
@@ -2619,6 +2630,7 @@
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
         { icon: 'rel', label: 'Relatórios', active: vals.isRel, onClick: vals.goRel, show: true },
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
+        { icon: 'externo', label: 'Trilho — Turmas e Presença', active: false, onClick: vals.abrirTrilhoApp, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
