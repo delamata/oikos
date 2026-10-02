@@ -474,6 +474,28 @@
     });
   }
 
+  // Login único: se já está logado no Trilho (mesma origem desde a
+  // unificação de domínio, ver TRILHO_APP_URL), pega a sessão de lá e
+  // loga aqui sozinho, sem pedir senha de novo. Só funciona same-origin
+  // de verdade (a rota não manda cabeçalho CORS), então falha — e cai
+  // na tela de login normal — se o Oikos for acessado fora do domínio
+  // unificado (ex: direto pelo GitHub Pages). Silencioso de propósito:
+  // é só uma tentativa a mais, nunca deve travar o carregamento normal.
+  function tryBridgeSessionFromTrilho() {
+    if (!sb) return;
+    sb.auth.getSession().then(function (res) {
+      if (res.data && res.data.session) return; // já logado, nada a fazer
+      fetch(TRILHO_APP_URL + '/api/auth/session', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (tok) {
+          if (tok && tok.access_token && tok.refresh_token) {
+            return sb.auth.setSession({ access_token: tok.access_token, refresh_token: tok.refresh_token });
+          }
+        })
+        .catch(function () {});
+    });
+  }
+
   function doLogin() {
     var emailEl = document.getElementById('login-email');
     var senhaEl = document.getElementById('login-senha');
@@ -2433,7 +2455,20 @@
       // Abre o sistema do Trilho do Vencedor de verdade (turmas, matrícula,
       // presença) — app à parte (Next.js/Vercel), unificado sob /trilho
       // no mesmo domínio. Mesmo login (mesmo Supabase Auth dos dois).
-      abrirTrilhoApp: function () { window.location.href = TRILHO_APP_URL; },
+      abrirTrilhoApp: function () {
+        // Login único: manda a sessão já aberta aqui via fragmento da URL
+        // (nunca chega ao servidor, só o JS do Trilho lê) — ver
+        // tryBridgeSessionFromTrilho() pro caminho contrário. Sem sessão
+        // (não devia acontecer, botão só aparece logado), cai no /login
+        // de lá mesmo.
+        var url = TRILHO_APP_URL + '/bridge';
+        var tok = state.session;
+        if (tok && tok.access_token && tok.refresh_token) {
+          url += '#access_token=' + encodeURIComponent(tok.access_token) +
+            '&refresh_token=' + encodeURIComponent(tok.refresh_token);
+        }
+        window.location.href = url;
+      },
       goNovo: function () {
         setState(function (s) {
           var patch = { tab: 'novo', novoSalvo: false, novoError: null, sidebarOpen: false };
@@ -6153,6 +6188,7 @@
       sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
       if (state.fpToken) { abrirFrequenciaPublica(); render(); return; }
       checkSession();
+      tryBridgeSessionFromTrilho();
       loadCelulasPublicas();
       // Sem sessão, a tela padrão é o Cadastro de Membros público — já
       // carrega os dados dele. Se acabar logado, esse fetch só fica sem
