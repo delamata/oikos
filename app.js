@@ -5,7 +5,7 @@
   // parte (Next.js/Vercel), unificado sob /trilho no mesmo domínio deste
   // site. Absoluto (em vez de relativo) porque o Oikos também pode ser
   // acessado direto pelo GitHub Pages, onde /trilho não existiria.
-  var TRILHO_APP_URL = 'https://oikos.vercel.app/trilho';
+  var TRILHO_APP_URL = 'https://sistemaoikos.vercel.app/trilho';
 
   var MESES_PT = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
