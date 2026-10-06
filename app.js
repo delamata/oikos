@@ -143,7 +143,7 @@
     return !!(url && key && url.indexOf('COLE_AQUI') === -1 && key.indexOf('COLE_AQUI') === -1);
   }
 
-  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', status: 'Visitante', funcao: '', supervisorId: '', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
+  var novoFormDefaults = { nome: '', tipo: 'Adultos', celula: 'Otavio e Jô', status: 'Visitante', funcao: '', supervisorId: '', batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)', nasc: '', tel: '', email: '', maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não', situacao: 'ativo', saidaDetalhe: '', conjugeId: '', conjugeNome: '', conjugeQuery: '' };
   // Campos que o cônjuge herda de quem foi salvo: onde a pessoa é
   // contada (célula), se é contada (situação) e o nível de acesso
   // (posição). O "Admin" mora em profiles.is_admin e é espelhado à
@@ -892,6 +892,8 @@
         celula: precisaCelula ? (f.celula || null) : null,
         batizado: 'Não', encontro: 'Não', civil: 'Solteiro (a)',
         nasc: null, tel: '',
+        // O e-mail do login também fica no cadastro, como contato.
+        email: emailValido(email) || null,
         maturidade: 'Não', ctl: 'Não', seminario: 'Não', ceifeiros: 'Não',
         situacao_saida: 'ativo', active: true,
       };
@@ -1186,7 +1188,7 @@
       posicao: posicao, status_pessoa: f.status, funcao: f.funcao || null,
       supervisor_id: f.supervisorId || null,
       batizado: f.batizado, encontro: f.encontro, civil: f.civil,
-      nasc: f.nasc || null, tel: f.tel.trim(),
+      nasc: f.nasc || null, tel: f.tel.trim(), email: (f.email || '').trim().toLowerCase() || null,
       maturidade: f.maturidade, ctl: f.ctl, seminario: f.seminario, ceifeiros: f.ceifeiros,
       situacao_saida: f.situacao, saida_detalhe: (f.saidaDetalhe || '').trim() || null,
       active: f.situacao === 'ativo',
@@ -1210,7 +1212,7 @@
         nome: p.nomeOriginal || p.nome, tipo: p.tipo, celula: p.celula,
         status: statusDeMembro(p), funcao: funcaoDeMembro(p), supervisorId: p.supervisor_id || '',
         batizado: p.batizado, encontro: p.encontro, civil: p.civil,
-        nasc: p.nasc || '', tel: p.tel || '',
+        nasc: p.nasc || '', tel: p.tel || '', email: p.email || '',
         maturidade: p.maturidade, ctl: p.ctl, seminario: p.seminario, ceifeiros: p.ceifeiros,
         situacao: p.situacao_saida || 'ativo', saidaDetalhe: p.saida_detalhe || '',
         conjugeId: p.conjuge_id || '', conjugeNome: conjuge ? conjuge.nome : '', conjugeQuery: '',
@@ -1296,6 +1298,11 @@
     // (o banco também barra, aqui é só pra avisar antes de enviar).
     if (f.funcao === 'Anfitrião' && f.status !== 'Membro') {
       setState({ novoError: 'Anfitrião precisa estar como Membro. Ajuste o status antes de salvar.' });
+      return;
+    }
+    // E-mail é opcional, mas se foi digitado precisa ser um e-mail.
+    if ((f.email || '').trim() && !emailValido(f.email)) {
+      setState({ novoError: 'O e-mail digitado não parece válido. Corrija ou deixe o campo em branco.' });
       return;
     }
     setState({ novoSaving: true, novoError: null });
@@ -2233,6 +2240,7 @@
           { label: 'Batizado', value: s.batizado },
           { label: 'Encontro com Deus', value: s.encontro },
           { label: 'Telefone', value: s.tel || '—' },
+          { label: 'E-mail', value: s.email || '—' },
         ],
         onEdit: function () { startEditMembro(s); },
         historico: historico,
@@ -5102,6 +5110,12 @@
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
       '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '</div>' +
+
+      // type=text + inputmode=email: com type=email o cursor pula a cada
+      // tecla, porque a tela é redesenhada enquanto se digita.
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail (opcional)</label>' +
+      '<input type="text" inputmode="email" autocomplete="email" autocapitalize="none" id="novo-email" value="' + escHtml(f.email || '') + '" ' + cb(vals.onNF('email'), 'input') + ' placeholder="nome@email.com" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" />' +
+      '<div style="font-size:11.5px;color:#8a99ab;margin-top:4px">Só contato. O acesso ao sistema continua sendo criado em Administração.</div></div>' +
 
       '<div class="grid-form2">' +
       simNaoField('Foi batizado?', cb(vals.onNF('batizado'), 'change'), f.batizado) +
