@@ -830,6 +830,12 @@
       f.celula = member.celula || ''; f.query = member.nome;
       return { adminLiderForm: f, adminLiderError: null, adminLiderSalvo: false };
     });
+    // O e-mail do login não guarda estado (o cursor pula se for
+    // controlado): depois do render, traz o e-mail que está no cadastro
+    // da pessoa. Quem não tem e-mail na ficha deixa o campo vazio, em vez
+    // de ficar com o e-mail de quem foi escolhido antes.
+    var campoEmail = document.getElementById('adminlider-email');
+    if (campoEmail) campoEmail.value = member.email || '';
   }
 
   // Mensagem de erro de sb.functions.invoke(): quando a function responde
@@ -1226,9 +1232,11 @@
       adminLiderError: null, adminLiderSalvo: false,
     });
     // O campo de e-mail do login não guarda estado (é lido da tela ao
-    // salvar): preenche direto nele com o e-mail do pedido.
+    // salvar): preenche direto nele com o e-mail do pedido — ou, se o
+    // pedido veio sem e-mail, com o que está no cadastro da pessoa.
     var campoEmail = document.getElementById('adminlider-email');
-    if (campoEmail && s.email) campoEmail.value = s.email;
+    var emailDoPedido = s.email || (membro && membro.email) || '';
+    if (campoEmail && emailDoPedido) campoEmail.value = emailDoPedido;
     var alvo = document.getElementById('admin-nova-lideranca');
     if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -5906,7 +5914,8 @@
             ? '<div style="margin-top:8px;max-height:160px;overflow:auto;display:flex;flex-direction:column;gap:5px">' +
               vals.adminLiderBusca.map(function (m) {
                 return '<button type="button" ' + cb(vals.pickAdminLiderExistente(m)) + ' style="text-align:left;padding:8px 10px;border:1px solid #e2e9f2;border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px">' +
-                  '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.posicao) + (m.celula ? ' · ' + escHtml(celulaLabel(m.celula)) : '') + '</span></button>';
+                  '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.posicao) + (m.celula ? ' · ' + escHtml(celulaLabel(m.celula)) : '') +
+                  (m.email ? ' · ' + escHtml(m.email) : '') + '</span></button>';
               }).join('') + '</div>'
             : (f.query.trim() ? '<div style="margin-top:8px;font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : ''))) +
         '</div>';
