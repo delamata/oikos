@@ -3204,7 +3204,7 @@
       '</div></div>' +
       (v.souFull
         ? '<div class="home-filters">' +
-          '<div class="home-filter"><label for="home-obreiro">Obreiro</label>' +
+          '<div class="home-filter"><label for="home-obreiro">Obreiro / Pastor</label>' +
           '<select id="home-obreiro" ' + cb(v.onObreiro, 'change') + '>' + opt('', 'Todos', !v.filtros.obreiro) +
           v.obreiroOptions.map(function (o) { return opt(o.v, o.label, v.filtros.obreiro === o.v); }).join('') + '</select></div>' +
           '<div class="home-filter"><label for="home-discipulador">Discipulador</label>' +
