@@ -71,7 +71,7 @@ Antes de usar, rode `supabase/add_relatorios_acesso.sql` (veja
 
 ### Quadros de indicadores filtram
 
-Na tela **Cadastro de Membros** (e na versão pública, sem login), clicar
+Na tela **Cadastro de Membros**, clicar
 num dos seis quadros do topo — Total de Membros, Total de Adultos,
 Frequentadores Assíduos, Visitantes, Jovens, Kids e Juvenis — filtra as
 listas, as tabelas e os gráficos abaixo por aquele grupo. O quadro
@@ -264,24 +264,27 @@ formulário é simplificado (nome, tipo, célula, nascimento, telefone) e
 sempre grava a pessoa como "Visitante" — o RLS no banco garante isso
 mesmo que alguém tente forçar outro valor.
 
-## Cadastro de Membros sem login (versão limitada)
+## Sem login, só a tela de entrada
 
-Quem abre o site sem estar logado cai direto numa versão limitada do
-**Cadastro de Membros** — não precisa de login pra consultar quem já
-está cadastrado. Só mostra **nome, célula, posição e idade**; não
-mostra telefone, data de nascimento exata, estado civil, nem abre a
-ficha detalhada de cada pessoa (isso continua exigindo login). As
-outras abas aparecem trancadas na barra lateral — clicar em qualquer
-uma delas abre o formulário de login.
+Quem abre o endereço do sistema vê **a tela de login**, e nada mais. Não
+existe mais a consulta pública do Cadastro de Membros que existia antes
+(a view `members_publico` foi removida do banco por
+`supabase/remover_acesso_publico.sql`): nenhum nome, célula ou posição
+sai do banco sem sessão — nem pela tela, nem pela API.
 
-Isso é garantido por uma **view** separada no banco
-(`members_publico`, ver `supabase/add_public_cadastro_view.sql`) que só
-expõe essas colunas pra quem não está logado — a tabela `members`
-inteira continua 100% bloqueada pra quem não tem sessão, então não dá
-pra "pedir mais campos" burlando a tela: o telefone e a data de
-nascimento de ninguém saem do banco sem login.
+As únicas três coisas que continuam fora do login, cada uma na sua tela
+e de propósito:
 
-Um botão **"Entrar"** na barra lateral abre o login normal de sempre.
+- **Cadastro de visitante** — `index.html?cadastro` ou o link "Sou
+  visitante, quero me cadastrar" na tela de login (veja a seção acima).
+  Só grava; não lê nada.
+- **"Já sou líder"** — cria um pedido de acesso. Para a pessoa achar o
+  próprio nome, duas funções substituem a view antiga:
+  `liderancas_publicas()` lista **só** Discipulador, Obreiro, Pastor de
+  Rede e Pastor, e `lider_ja_cadastrado(nome)` confere um nome de líder
+  devolvendo só aquela pessoa, sem listar ninguém.
+- **Frequência por link** — `index.html?frequencia=CODIGO`, com o código
+  de cada célula (veja "Frequência por link").
 
 ## Acesso por nível de liderança
 
@@ -493,7 +496,7 @@ sistema.
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
    - Rode [`supabase/add_relatorios_acesso.sql`](supabase/add_relatorios_acesso.sql) uma vez, depois do `add_rede_conjuge.sql` — Pastor de Rede deixa de ter acesso total (passa a ver as redes que acompanha, como o Obreiro), a supervisão de discipuladores passa a contar no acesso, e cria `minhas_celulas()`, usada pelo Relatórios. Antes, rode a consulta de conferência que está no fim do arquivo para ver o que cada Pastor de Rede vai passar a enxergar.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
-6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` (cria a view que libera o Cadastro de Membros sem login em versão limitada — veja acima). Também é um passo pra **todo mundo**.
+6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` — e **logo em seguida** [`supabase/remover_acesso_publico.sql`](supabase/remover_acesso_publico.sql), que apaga essa view (o sistema não tem mais consulta pública) e cria as funções `liderancas_publicas()` e `lider_ja_cadastrado()` usadas pelo "Já sou líder". Em instalação nova dá para pular o `add_public_cadastro_view.sql` e rodar só o `remover_acesso_publico.sql`. É um passo pra **todo mundo**.
 7. Rode [`supabase/add_social_login.sql`](supabase/add_social_login.sql) uma vez, depois do `add_public_cadastro_view.sql` (convites por e-mail + auto-cadastro seguro pra quem entra com Google — veja "Login com Google" abaixo). Também é um passo pra **todo mundo**.
 8. (Opcional) Ative o **login com Google** — veja "Login com Google" abaixo. Sem isso, o botão "Continuar com Google" aparece mas dá erro; o login por e-mail/senha continua funcionando normalmente.
 9. (Opcional, mas recomendado) Publique a Edge Function `admin-create-user` — veja "Criar login com senha inicial" acima. Sem isso, a aba Administração continua funcionando, só sem o botão de criar senha na hora.

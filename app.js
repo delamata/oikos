@@ -102,22 +102,8 @@
     kids: { label: 'Kids e Juvenis', testa: function (p) { return p.tipo === 'Kids e Juvenis'; } },
   };
 
-  // Na tela pública (sem login) não existe o campo tipo confiável para
-  // Kids: lá o quadro conta por idade, e o filtro acompanha.
-  function ehKidsPorIdade(p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; }
-  var GRUPOS_KPI_ANON = Object.assign({}, GRUPOS_KPI, {
-    kids: { label: 'Kids e Juvenis', testa: ehKidsPorIdade },
-    principal: {
-      label: 'Total de Membros — Adultos e Kids',
-      testa: function (p) {
-        return (POSICOES_REDE.indexOf(p.posicao) >= 0 && p.tipo === 'Adultos')
-          || ehKidsPorIdade(p) || p.posicao === 'Frequentador Assíduo';
-      },
-    },
-  });
-
-  function filtraGrupo(pessoas, grupo, mapa) {
-    var g = (mapa || GRUPOS_KPI)[grupo];
+  function filtraGrupo(pessoas, grupo) {
+    var g = GRUPOS_KPI[grupo];
     return g ? pessoas.filter(g.testa) : pessoas;
   }
 
@@ -198,12 +184,10 @@
     loginForm: { email: '', senha: '' },
     loginError: null,
     loginLoading: false,
-    showLoginForm: false,   // sem sessão: mostra o formulário de login em vez do Cadastro de Membros público
-
-    // Cadastro de Membros sem login (versão limitada — ver members_publico)
-    membersPublicos: [],
-    membersPublicosStatus: 'idle',
-    anonFilters: { q: '', tipo: '', celula: '', posicao: '', grupo: '' },
+    // Liderança visível sem login, só para o "Já sou líder" escolher o
+    // próprio nome (liderancas_publicas()).
+    liderancas: [],
+    liderancasStatus: 'idle',
 
     // vínculo login → cadastro (profiles)
     profile: null,          // null = ainda verificando; false = sem vínculo; objeto = vinculado
@@ -428,15 +412,6 @@
     });
   }
 
-  function toggleGrupoKpiAnon(grupo) {
-    setState(function (s) {
-      var f = Object.assign({}, s.anonFilters);
-      f.grupo = f.grupo === grupo ? '' : grupo;
-      return { anonFilters: f };
-    });
-  }
-
-  function setAnonF(key, val) { setState(function (s) { var f = Object.assign({}, s.anonFilters); f[key] = val; return { anonFilters: f }; }); }
   function setTF(key, val) { setState(function (s) { var f = Object.assign({}, s.trilhoFilters); f[key] = val; return { trilhoFilters: f }; }); }
   function setNF(key, val) { setState(function (s) { var f = Object.assign({}, s.novoForm); f[key] = val; return { novoForm: f, novoSalvo: false }; }); }
 
@@ -518,16 +493,12 @@
   function doLogout() {
     pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], showLoginForm: false, tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
       relPresencaPedida = '';
       relUltimo = null;
     });
   }
 
-  // Alterna entre a tela pública (Cadastro de Membros sem login) e o
-  // formulário de login, quando não há sessão nenhuma.
-  function pedirLogin() { setState({ showLoginForm: true }); }
-  function voltarDoLogin() { setState({ showLoginForm: false }); }
 
   // ---------------------------------------------------------------------
   // Vínculo login → cadastro (profiles) e hierarquia célula → discipulador/obreiro
@@ -978,7 +949,7 @@
   function abrirSolicitacaoLideranca() {
     setState({ lidAberto: true, lidForm: Object.assign({}, lidFormDefaults), lidErro: null, lidResultado: null, lidSaving: false });
     loadCelulasPublicas();
-    loadMembersPublicos();
+    loadLiderancasPublicas();
   }
 
   function fecharSolicitacaoLideranca() { setState({ lidAberto: false, lidErro: null }); }
@@ -1027,15 +998,20 @@
     if (f.funcao !== 'Líder') { setLidEtapa('lista'); return; }
 
     if (!f.celula) { setState({ lidErro: 'Escolha a célula que você lidera.' }); return; }
-    // Valida o nome contra o cadastro (a mesma lista pública de nomes).
-    var alvo = normalizarNome(nome);
-    var achado = (state.membersPublicos || []).filter(function (p) { return normalizarNome(p.nome) === alvo; })[0] || null;
-    enviarSolicitacao({
-      nome: achado ? (achado.nomeOriginal || achado.nome) : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
-      member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
-    }, achado
-      ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
-      : { titulo: 'Pedido enviado', texto: 'Recebemos seus dados como líder da célula ' + celulaLabel(f.celula) + '. Procure o administrador do sistema para liberar o seu acesso.' });
+    // Confere o nome no cadastro pela function lider_ja_cadastrado(), que
+    // devolve só essa pessoa — sem listar líder nenhum para quem está fora.
+    setState({ lidSaving: true, lidErro: null });
+    sb.rpc('lider_ja_cadastrado', { p_nome: nome }).then(function (res) {
+      if (res.error) console.warn('Não deu para conferir o nome:', res.error.message);
+      var achado = (Array.isArray(res.data) ? res.data[0] : res.data) || null;
+      setState({ lidSaving: false });
+      enviarSolicitacao({
+        nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
+        member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
+      }, achado
+        ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
+        : { titulo: 'Pedido enviado', texto: 'Recebemos seus dados como líder da célula ' + celulaLabel(f.celula) + '. Procure o administrador do sistema para liberar o seu acesso.' });
+    });
   }
 
   function escolherNomeNaLista(pessoa) {
@@ -1132,17 +1108,18 @@
   }
 
   function irParaCadastroPublico() { setState({ isPublicCadastro: true }); loadCelulasPublicas(); }
-  function voltarParaLogin() { setState({ isPublicCadastro: false, publicSalvo: false, publicError: null, showLoginForm: true }); }
+  function voltarParaLogin() { setState({ isPublicCadastro: false, publicSalvo: false, publicError: null }); }
 
-  // Cadastro de Membros sem login (versão limitada): lê a view
-  // members_publico (add_public_cadastro_view.sql) — só nome, célula,
-  // tipo, posição e idade, nunca telefone/nascimento exato/etc.
-  function loadMembersPublicos() {
+  // Lista para o "Já sou líder" tocar no próprio nome: só Discipulador,
+  // Obreiro, Pastor de Rede e Pastor, via liderancas_publicas()
+  // (remover_acesso_publico.sql). Sem login, nenhuma outra pessoa do
+  // cadastro é visível — nem pela tela, nem pela API.
+  function loadLiderancasPublicas() {
     if (!sb) return;
-    setState({ membersPublicosStatus: 'loading' });
-    sb.from('members_publico').select('*').order('nome').then(function (res) {
-      if (res.error) { console.warn('Erro ao carregar cadastro público:', res.error.message); setState({ membersPublicosStatus: 'error' }); return; }
-      setState({ membersPublicos: (res.data || []).map(comNomeMaiusculo), membersPublicosStatus: 'ok' });
+    setState({ liderancasStatus: 'loading' });
+    sb.rpc('liderancas_publicas').then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar a liderança:', res.error.message); setState({ liderancasStatus: 'error' }); return; }
+      setState({ liderancas: (res.data || []).map(comNomeMaiusculo), liderancasStatus: 'ok' });
     });
   }
 
@@ -2649,17 +2626,8 @@
   }
 
   function sidebarHtml(vals) {
-    var items = vals.anonMode
-      ? [
-        { icon: 'home', label: 'Início', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'cadastro', label: 'Cadastro de Membros', active: true, onClick: function () {}, show: true, locked: false },
-        { icon: 'freq', label: 'Frequência', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'rel', label: 'Relatórios', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'trilho', label: 'Trilho do Vencedor', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'mov', label: 'Movimentações', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-        { icon: 'novo', label: '+ Novo Cadastro', active: false, onClick: vals.pedirLogin, show: true, locked: true },
-      ]
-      : [
+    // O menu só existe para quem entrou: sem sessão a tela é o login.
+    var items = [
         { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
@@ -2671,14 +2639,7 @@
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
         { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull, badge: vals.souFull ? (vals.solicitacoes || []).length : 0 },
       ];
-    var footer = vals.anonMode
-      ? '<div style="display:flex;align-items:baseline;gap:8px;padding:4px 2px 0">' +
-        '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:22px;color:#fff;line-height:1">' + vals.totalAll + '</div>' +
-        '<div style="font-size:11px;color:rgba(255,255,255,.62);font-weight:500">pessoas cadastradas</div>' +
-        '</div>' +
-        '<button ' + cb(vals.pedirLogin) + ' style="margin-top:12px;width:100%;padding:9px 12px;border:none;border-radius:9px;background:#149C88;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Entrar</button>' +
-        '<button ' + cb(vals.irParaCadastroPublico) + ' style="margin-top:10px;width:100%;padding:0;border:none;background:none;color:rgba(255,255,255,.62);font-size:11.5px;font-weight:600;cursor:pointer">Sou visitante, quero me cadastrar</button>'
-      : '<button ' + cb(vals.onRefresh) + ' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);border-radius:20px;padding:7px 12px;cursor:pointer;width:100%">' +
+    var footer = '<button ' + cb(vals.onRefresh) +' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);border-radius:20px;padding:7px 12px;cursor:pointer;width:100%">' +
         '<span style="width:7px;height:7px;border-radius:50%;background:' + vals.sync.dot + '"></span>' +
         '<span style="font-size:11.5px;color:#fff;font-weight:600">' + escHtml(vals.sync.text) + '</span>' +
         '</button>' +
@@ -2924,179 +2885,6 @@
       '</tbody></table></div></div>';
 
     if (vals.selected) html += detailDrawerHtml(vals);
-
-    html += '</div>';
-    return html;
-  }
-
-  // ---------------------------------------------------------------------
-  // Cadastro de Membros sem login (versão limitada) — lê members_publico
-  // (só nome, célula, tipo, posição, idade), nunca a tabela members.
-  // ---------------------------------------------------------------------
-  function anonCadastroVals() {
-    var all = state.membersPublicos || [];
-    var f = state.anonFilters;
-    var q = (f.q || '').trim().toLowerCase();
-    var filtered = all.filter(function (p) {
-      if (f.tipo && p.tipo !== f.tipo) return false;
-      if (f.celula && p.celula !== f.celula) return false;
-      if (f.posicao && p.posicao !== f.posicao) return false;
-      if (q && !p.nome.toLowerCase().includes(q)) return false;
-      return true;
-    });
-
-    var pessoasRede = filtered.filter(function (p) { return POSICOES_REDE.indexOf(p.posicao) >= 0; });
-    var membrosRede = pessoasRede.length;
-    var totalFA = filtered.filter(function (p) { return p.posicao === 'Frequentador Assíduo'; }).length;
-    var totalVisitantes = filtered.filter(function (p) { return p.posicao === 'Visitante'; }).length;
-    var totalKids = filtered.filter(ehKidsPorIdade).length;
-    var totalJovens = contaTipo(filtered, 'Jovens');
-
-    // Os quadros seguem mostrando o total de cada grupo; a lista e os
-    // gráficos abaixo respondem ao quadro clicado.
-    filtered = filtraGrupo(filtered, f.grupo, GRUPOS_KPI_ANON);
-
-    var posCounts = {};
-    filtered.forEach(function (p) { posCounts[p.posicao] = (posCounts[p.posicao] || 0) + 1; });
-    var posExtras = Object.keys(posCounts).filter(function (p) { return posicaoOrder.indexOf(p) < 0; }).sort();
-    var posMax = Math.max(1, Object.values(posCounts).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var posBars = posicaoOrder.concat(posExtras).filter(function (p) { return posCounts[p]; }).map(function (p) {
-      var active = f.posicao === p;
-      return {
-        label: p, n: posCounts[p], w: Math.round(posCounts[p] / posMax * 100) + '%',
-        color: posicaoColor[p] || '#94a3b8', bg: active ? '#eaf1fa' : 'transparent', weight: active ? 700 : 500,
-        onClick: function () { setAnonF('posicao', active ? '' : p); },
-      };
-    });
-
-    var perfilOrder = ['Membro', 'Frequentador Assíduo', 'Visitante'];
-    var perfilLabels = { 'Membro': 'Membros', 'Frequentador Assíduo': 'Freq. Assíduos', 'Visitante': 'Visitantes' };
-    var perfilColor = { 'Membro': '#1B2344', 'Frequentador Assíduo': '#149C88', 'Visitante': '#8A63C9' };
-    var perfCelStats = {};
-    filtered.forEach(function (p) {
-      if (perfilOrder.indexOf(p.posicao) < 0) return;
-      var c = perfCelStats[p.celula] || (perfCelStats[p.celula] = { total: 0, byPerfil: {} });
-      c.total++; c.byPerfil[p.posicao] = (c.byPerfil[p.posicao] || 0) + 1;
-    });
-    var perfCelMax = Math.max(1, Object.values(perfCelStats).map(function (c) { return c.total; }).reduce(function (a, b) { return Math.max(a, b); }, 0));
-    var celulaListPublica = (state.celulasPublicas && state.celulasPublicas.length) ? state.celulasPublicas : celOrder;
-    var perfilBars = celulaListPublica.filter(function (cel) { return perfCelStats[cel]; }).map(function (cel) {
-      var st = perfCelStats[cel];
-      var segs = perfilOrder.filter(function (p) { return st.byPerfil[p]; }).map(function (p) {
-        return { w: Math.round(st.byPerfil[p] / st.total * 100) + '%', color: perfilColor[p], title: st.byPerfil[p] + ' ' + perfilLabels[p] };
-      });
-      var summary = perfilOrder.filter(function (p) { return st.byPerfil[p]; }).map(function (p) { return st.byPerfil[p] + ' ' + perfilLabels[p]; }).join(' · ');
-      return { label: celulaLabel(cel), summary: summary, totalW: Math.round(st.total / perfCelMax * 100) + '%', segs: segs };
-    });
-
-    var sorted = filtered.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
-    var rows = sorted.map(function (p) {
-      return { nome: p.nome, celulaLabel: celulaLabel(p.celula), posicao: p.posicao, idadeLabel: p.idade != null ? String(p.idade) : '—' };
-    });
-
-    return {
-      q: f.q, filters: f,
-      onSearch: function (e) { setAnonF('q', e.target.value); },
-      onTipo: function (e) { setAnonF('tipo', e.target.value); },
-      onCelula: function (e) { setAnonF('celula', e.target.value); },
-      onPosicao: function (e) { setAnonF('posicao', e.target.value); },
-      celulaOptions: celulaListPublica.map(function (c) { return { v: c, label: celulaLabel(c) }; }),
-      membrosRede: membrosRede, membrosRedeLabel: tipoResumo(pessoasRede),
-      adultosMembros: contaTipo(pessoasRede, 'Adultos'),
-      principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), totalKids, totalFA),
-      totalFA: totalFA, totalVisitantes: totalVisitantes, totalKids: totalKids, totalJovens: totalJovens,
-      posBars: posBars, perfilBars: perfilBars, rows: rows,
-      grupoAtivo: f.grupo,
-      grupoLabel: (GRUPOS_KPI_ANON[f.grupo] || {}).label || '',
-      onGrupo: function (g) { return function () { toggleGrupoKpiAnon(g); }; },
-      loading: state.membersPublicosStatus === 'loading' && !all.length,
-    };
-  }
-
-  function anonCadastroHtml(vals) {
-    var html = '<div>';
-    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 20px">' +
-      '<div style="position:relative;flex:1;min-width:230px">' +
-      '<svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%)" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>' +
-      '<input type="text" placeholder="Buscar por nome…" value="' + escHtml(vals.q) + '" ' + cb(vals.onSearch, 'input') + ' style="width:100%;padding:10px 12px 10px 36px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:14px;color:#14243a;outline:none">' +
-      '</div>' +
-      '<select ' + cb(vals.onTipo, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      tipoFilterOptions(vals.filters.tipo) +
-      '</select>' +
-      '<select ' + cb(vals.onCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todas as células', vals.filters.celula === '') +
-      vals.celulaOptions.map(function (o) { return opt(o.v, o.label, vals.filters.celula === o.v); }).join('') +
-      '</select>' +
-      '<select ' + cb(vals.onPosicao, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todas as posições', vals.filters.posicao === '') +
-      posicaoOptions().map(function (o) { return opt(o.v, o.label, vals.filters.posicao === o.v); }).join('') +
-      '</select>' +
-      '</div>';
-
-    var kpiOpts = function (g) { return { onClick: vals.onGrupo(g), ativo: vals.grupoAtivo === g }; };
-    html += '<div class="home-kpis" style="margin:0 0 16px">' +
-      homeKpi('rede', vals.principal.valor, 'Total de Membros - Adultos e Kids', vals.principal.sub, kpiOpts('principal')) +
-      homeKpi('adultos', vals.adultosMembros, 'Total de Adultos', 'membros adultos', kpiOpts('adultos')) +
-      homeKpi('fa', vals.totalFA, 'Frequentadores Assíduos', 'na seleção', kpiOpts('fa')) +
-      homeKpi('visit', vals.totalVisitantes, 'Visitantes', 'na seleção', kpiOpts('visit')) +
-      homeKpi('jovens', vals.totalJovens, 'Jovens', 'jovens na seleção', kpiOpts('jovens')) +
-      homeKpi('kids', vals.totalKids, 'Kids e Juvenis', 'Kids e Juvenis na seleção', kpiOpts('kids')) +
-      '</div>' +
-      (vals.grupoAtivo
-        ? '<div class="kpi-filtro-aviso">Mostrando só <b>' + escHtml(vals.grupoLabel) + '</b> — ' + vals.rows.length + (vals.rows.length === 1 ? ' pessoa' : ' pessoas') +
-          '<button type="button" ' + cb(vals.onGrupo(vals.grupoAtivo)) + '>Ver todos</button></div>'
-        : '');
-
-    html += '<div class="grid-2b" style="margin-bottom:16px">' +
-      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Composição por posição</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Clique para filtrar</div>' +
-      '<div style="display:flex;flex-direction:column;gap:10px">' +
-      vals.posBars.map(function (b) {
-        return '<div ' + cb(b.onClick) + ' style="display:grid;grid-template-columns:132px 1fr 30px;align-items:center;gap:10px;cursor:pointer;padding:3px 4px;border-radius:7px;background:' + b.bg + '">' +
-          '<div style="font-size:12.5px;color:#334;font-weight:' + b.weight + '">' + escHtml(b.label) + '</div>' +
-          '<div style="height:16px;background:#eef2f7;border-radius:5px;overflow:hidden"><div style="height:100%;width:' + b.w + ';background:' + b.color + ';border-radius:5px"></div></div>' +
-          '<div style="font-size:12.5px;font-weight:600;color:#1B2344;text-align:right">' + b.n + '</div></div>';
-      }).join('') +
-      (vals.posBars.length ? '' : '<div style="font-size:12.5px;color:#8a99ab">Nada na seleção atual.</div>') +
-      '</div></div>' +
-
-      '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Membros · Frequentadores · Visitantes por célula</div>' +
-      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:16px">Composição de cada célula por perfil</div>' +
-      '<div style="display:flex;flex-direction:column;gap:13px">' +
-      vals.perfilBars.map(function (c) {
-        return '<div style="padding:2px 5px">' +
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">' +
-          '<div style="font-size:13px;color:#14243a;font-weight:600">' + escHtml(c.label) + '</div>' +
-          '<div style="font-size:12px;color:#6b7c93">' + escHtml(c.summary) + '</div></div>' +
-          '<div style="height:20px;background:#eef2f7;border-radius:6px;overflow:hidden;display:flex;width:' + c.totalW + '">' +
-          c.segs.map(function (s) { return '<div title="' + escHtml(s.title) + '" style="height:100%;width:' + s.w + ';background:' + s.color + '"></div>'; }).join('') +
-          '</div></div>';
-      }).join('') +
-      (vals.perfilBars.length ? '' : '<div style="font-size:12.5px;color:#8a99ab">Nada na seleção atual.</div>') +
-      '</div></div></div>';
-
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div style="display:flex;align-items:baseline;justify-content:space-between;padding:18px 22px 14px">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px">Pessoas <span style="color:#6b7c93;font-weight:500;font-family:\'Libre Franklin\'">· ' + vals.rows.length + ' na seleção</span></div>' +
-      '<div style="font-size:12px;color:#6b7c93">Faça login para ver mais detalhes (telefone, nascimento, histórico)</div></div>' +
-      '<div class="table-scroll" style="max-height:520px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
-      '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Posição</th>' +
-      '<th style="text-align:right;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Idade</th>' +
-      '</tr></thead><tbody>' +
-      vals.rows.map(function (p) {
-        return '<tr style="border-bottom:1px solid #f0f4f9">' +
-          '<td style="padding:11px 22px;font-weight:600;color:#14243a">' + escHtml(p.nome) + '</td>' +
-          '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(p.celulaLabel) + '</td>' +
-          '<td style="padding:11px 12px;color:#4a5b70">' + escHtml(p.posicao) + '</td>' +
-          '<td style="padding:11px 22px;text-align:right;color:#4a5b70;font-variant-numeric:tabular-nums">' + escHtml(p.idadeLabel) + '</td></tr>';
-      }).join('') +
-      (vals.rows.length ? '' : '<tr><td colspan="4" style="padding:20px 22px;color:#8a99ab;font-size:12.5px">' + (vals.loading ? 'Carregando…' : 'Nada na seleção atual.') + '</td></tr>') +
-      '</tbody></table></div></div>';
 
     html += '</div>';
     return html;
@@ -5118,12 +4906,10 @@
     novo: ['Novo Cadastro', 'Preencha os dados da pessoa. Fica salvo no banco e soma aos totais e gráficos.'],
     editar: ['Editar Cadastro', 'Mudanças de célula, posição, batismo ou encontro ficam registradas em Movimentações.'],
     hierarquia: ['Administração', 'Células, liderança e quem responde por cada célula'],
-    anon: ['Cadastro de Membros', 'Consulta pública · entre para ver telefone, nascimento e histórico'],
   };
 
   function pageHeaderHtml(vals) {
-    var key = vals.anonMode ? 'anon'
-      : vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
+    var key = vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
       : vals.isFreq ? 'freq' : vals.isIa ? 'ia'
       : vals.isTrilho ? 'trilho'
       : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
@@ -5530,8 +5316,7 @@
       '<button ' + cb(vals.loginComGoogle) + ' style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:11px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13.5px;font-weight:600;color:#14243a;cursor:pointer">' +
       googleIcon + ' Continuar com Google</button>' +
       '<div style="margin-top:16px;text-align:center;display:flex;flex-direction:column;gap:8px">' +
-      (vals.voltarDoLogin ? '<button ' + cb(vals.voltarDoLogin) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Ver cadastro sem entrar</button>' : '') +
-      '<button ' + cb(vals.irParaCadastroPublico) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Sou visitante, quero me cadastrar</button>' +
+      '<button ' + cb(vals.irParaCadastroPublico) +' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Sou visitante, quero me cadastrar</button>' +
       '</div></div></div>';
   }
 
@@ -5566,7 +5351,7 @@
         '<div style="background:#e2f2ea;color:#237a5a;border-radius:12px;padding:14px;font-size:13.5px;font-weight:600;line-height:1.5">' + escHtml(v.lidResultado.texto) + '</div>';
     } else if (f.etapa === 'lista') {
       var posicoes = POSICOES_DA_FUNCAO[f.funcao] || [];
-      var lista = (v.membersPublicos || []).filter(function (p) { return posicoes.indexOf(p.posicao) >= 0; })
+      var lista = (v.liderancas || []).filter(function (p) { return posicoes.indexOf(p.posicao) >= 0; })
         .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt'); });
       var plural = { 'Discipulador': 'discipuladores', 'Obreiro': 'obreiros e pastores de rede', 'Pastor': 'pastores' }[f.funcao] || 'líderes';
       corpo = titulo('Encontre o seu nome', 'Estes são os ' + plural + ' cadastrados. Toque no seu nome.') + erro +
@@ -5575,7 +5360,7 @@
           return '<button type="button" ' + cb(v.escolher(p)) + (v.lidSaving ? ' disabled' : '') + ' style="text-align:left;padding:12px 14px;border:1px solid #e2e9f2;border-radius:11px;background:#fff;cursor:pointer;font-size:14px;font-weight:700;color:#14243a">' +
             escHtml(p.nome) + ' <span style="font-size:11.5px;font-weight:600;color:#8a99ab">· ' + escHtml(p.posicao) + '</span></button>';
         }).join('') +
-        (lista.length ? '' : '<div style="font-size:12.5px;color:#8a99ab;padding:8px 2px">' + (v.membersPublicosStatus === 'loading' ? 'Carregando…' : 'Ninguém cadastrado com essa função ainda.') + '</div>') +
+        (lista.length ? '' : '<div style="font-size:12.5px;color:#8a99ab;padding:8px 2px">' + (v.liderancasStatus === 'loading' ? 'Carregando…' : 'Ninguém cadastrado com essa função ainda.') + '</div>') +
         '</div>' +
         '<button type="button" ' + cb(v.naoEstou) + ' style="width:100%;margin-top:14px;padding:11px;border:1px dashed #c9d6ea;border-radius:11px;background:#fff;font-size:13px;font-weight:700;color:#0E7A68;cursor:pointer">Meu nome não está na lista</button>' +
         '<div style="margin-top:12px;text-align:center"><button type="button" ' + cb(v.voltarInicio) + ' style="border:none;background:none;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">← Voltar</button></div>';
@@ -6065,8 +5850,8 @@
     } else if (state.isPublicCadastro && state.lidAberto) {
       html = solicitacaoLiderancaHtml({
         lidForm: state.lidForm, lidSaving: state.lidSaving, lidErro: state.lidErro, lidResultado: state.lidResultado,
-        celulasPublicas: state.celulasPublicas, membersPublicos: state.membersPublicos,
-        membersPublicosStatus: state.membersPublicosStatus,
+        celulasPublicas: state.celulasPublicas, liderancas: state.liderancas,
+        liderancasStatus: state.liderancasStatus,
         onLid: function (key) { return function (e) { setLidField(key, e.target.value); }; },
         continuar: function (e) { if (e && e.preventDefault) e.preventDefault(); continuarSolicitacao(); },
         escolher: function (p) { return function () { escolherNomeNaLista(p); }; },
@@ -6085,32 +5870,16 @@
         submitPublico: function (e) { if (e && e.preventDefault) e.preventDefault(); submitPublico(); },
         voltarParaLogin: function () { voltarParaLogin(); },
       });
-    } else if (!state.session && state.showLoginForm) {
+    } else if (!state.session) {
+      // Sem sessão o sistema não mostra nada: a porta de entrada é sempre
+      // o login. Só o cadastro de visitante (?cadastro), o "Já sou líder"
+      // e o link de frequência (?frequencia=) vivem fora dele.
       html = loginHtml({
         loginForm: state.loginForm, loginError: state.loginError, loginLoading: state.loginLoading,
         doLogin: function (e) { if (e && e.preventDefault) e.preventDefault(); doLogin(); },
         loginComGoogle: function () { loginComGoogle(); },
         irParaCadastroPublico: function () { irParaCadastroPublico(); },
-        voltarDoLogin: function () { voltarDoLogin(); },
       });
-    } else if (!state.session) {
-      // Sem login: só a versão limitada de Cadastro de Membros (ver
-      // members_publico) — as outras abas ficam trancadas até entrar.
-      var anonVals = anonCadastroVals();
-      anonVals.anonMode = true;
-      anonVals.sidebarOpen = state.sidebarOpen;
-      anonVals.openSidebar = function () { setState({ sidebarOpen: true }); };
-      anonVals.closeSidebar = function () { setState({ sidebarOpen: false }); };
-      anonVals.pedirLogin = function () { pedirLogin(); setState({ sidebarOpen: false }); };
-      anonVals.irParaCadastroPublico = function () { irParaCadastroPublico(); setState({ sidebarOpen: false }); };
-      anonVals.totalAll = (state.membersPublicos || []).length;
-      html = '<div class="app-shell">' +
-        sidebarHtml(anonVals) +
-        '<main class="main-content">' +
-        mobileTopbarHtml(anonVals) +
-        pageHeaderHtml(anonVals) +
-        anonCadastroHtml(anonVals) +
-        '</main></div>';
     } else if (state.profile === null || state.profileStatus === 'loading') {
       html = carregandoHtml();
     } else if (state.profile === false && isSocialSession()) {
@@ -6189,11 +5958,9 @@
       if (state.fpToken) { abrirFrequenciaPublica(); render(); return; }
       checkSession();
       tryBridgeSessionFromTrilho();
-      loadCelulasPublicas();
-      // Sem sessão, a tela padrão é o Cadastro de Membros público — já
-      // carrega os dados dele. Se acabar logado, esse fetch só fica sem
-      // uso (a policy de anon nem devolveria nada de graça caro).
-      if (!state.isPublicCadastro) loadMembersPublicos();
+      // Lista de células: usada pelo cadastro de visitante (?cadastro) e
+      // pelo "Já sou líder". Fora isso, sem sessão não se carrega nada.
+      if (state.isPublicCadastro) loadCelulasPublicas();
     }
     render();
   });
