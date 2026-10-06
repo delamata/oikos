@@ -878,10 +878,15 @@
     };
 
     if (f.modo === 'existente') {
-      sb.from('members').update({
+      var patch = {
         posicao: f.posicao, funcao: f.posicao, status_pessoa: 'Membro',
         celula: precisaCelula ? (f.celula || null) : null,
-      }).eq('id', f.memberId).then(function (res) {
+      };
+      // Quem ainda não tem e-mail no cadastro recebe o do login; quem já
+      // tem algo digitado na ficha fica como está.
+      var jaCadastrado = memberById(f.memberId);
+      if (emailValido(email) && !(jaCadastrado && jaCadastrado.email)) patch.email = emailValido(email);
+      sb.from('members').update(patch).eq('id', f.memberId).then(function (res) {
         if (res.error) { setState({ adminLiderSaving: false, adminLiderError: friendlyMemberInsertError(res.error) }); return; }
         afterMember(f.memberId);
       });
