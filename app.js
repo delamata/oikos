@@ -170,7 +170,7 @@
 
   var state = {
     q: '',
-    filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '' },
+    filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '', rede: null },
     sort: { key: 'idade', dir: 1 },
     selected: null,
     tab: 'home',
@@ -2011,6 +2011,8 @@
     var q = state.q.trim().toLowerCase();
 
     var filtered = all.filter(function (p) {
+      // Recorte de rede herdado do Início (ver abrirCadastroDoGrupo).
+      if (f.rede && f.rede.celulas.indexOf(p.celula) < 0) return false;
       if (f.tipo && p.tipo !== f.tipo) return false;
       if (f.celula && p.celula !== f.celula) return false;
       if (f.posicao && p.posicao !== f.posicao) return false;
@@ -2550,6 +2552,12 @@
       filters: f,
       grupoAtivo: f.grupo,
       grupoLabel: (GRUPOS_KPI[f.grupo] || {}).label || '',
+      rede: f.rede,
+      // Com um recorte de rede ativo, o filtro de célula só oferece as
+      // células dessa rede — nenhum filtro da tela escapa do recorte.
+      celulaFiltroOptions: (f.rede ? currentCelulaList().filter(function (c) { return f.rede.celulas.indexOf(c) >= 0; }) : currentCelulaList())
+        .map(function (c) { return { v: c, label: celulaLabel(c) }; }),
+      limparRede: function () { setState(function (s2) { return { filters: Object.assign({}, s2.filters, { rede: null }) }; }); },
       totalFiltrado: total,
       onGrupo: function (g) { return function () { toggleGrupoKpi(g); }; },
       k: k, civilBars: civilBars, posBars: posBars, celulaBars: celulaBars, perfilBars: perfilBars, people: people, visitantes: visitantes, kids3a12: kids3a12,
@@ -2562,7 +2570,7 @@
       onPosicao: function (e) { setF('posicao', e.target.value); },
       onBatizado: function (e) { setF('batizado', e.target.value); },
       onEncontro: function (e) { setF('encontro', e.target.value); },
-      clearFilters: function () { setState({ q: '', filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '' } }); },
+      clearFilters: function () { setState({ q: '', filters: filtrosZerados() }); },
       shareMembrosWhatsapp: function () { shareMembrosWhatsapp(); },
       shareAdultosWhatsapp: function () { shareListWhatsapp('Adultos — Nome e Nascimento', people, 'nome', 'nascLabel'); },
       shareVisitantesWhatsapp: function () { shareListWhatsapp('Visitantes — Nome e Nascimento', visitantes, 'nome', 'nascLabel'); },
@@ -2706,8 +2714,8 @@
       tipoFilterOptions(vals.filters.tipo) +
       '</select>' +
       '<select ' + cb(vals.onCelula, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
-      opt('', 'Todas as células', vals.filters.celula === '') +
-      vals.celulaOptionsForm.map(function (o) { return opt(o.v, o.label, vals.filters.celula === o.v); }).join('') +
+      opt('', vals.rede ? 'Todas as células da rede' : 'Todas as células', vals.filters.celula === '') +
+      vals.celulaFiltroOptions.map(function (o) { return opt(o.v, o.label, vals.filters.celula === o.v); }).join('') +
       '</select>' +
       '<select ' + cb(vals.onPosicao, 'change') + ' style="padding:10px 12px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#14243a;font-weight:500;cursor:pointer">' +
       opt('', 'Todas as posições', vals.filters.posicao === '') +
@@ -2724,6 +2732,11 @@
       '</div>';
 
     // KPI row
+    if (vals.rede) {
+      html += '<div class="kpi-filtro-aviso" style="margin:0 0 16px">Dentro da <b>' + escHtml(vals.rede.label) + '</b> — ' +
+        vals.rede.celulas.length + (vals.rede.celulas.length === 1 ? ' célula' : ' células') +
+        '<button type="button" ' + cb(vals.limparRede) + '>Ver a igreja toda</button></div>';
+    }
     var kpiOpts = function (g) { return { onClick: vals.onGrupo(g), ativo: vals.grupoAtivo === g }; };
     html += '<div class="home-kpis" style="margin:0 0 16px">' +
       homeKpi('rede', vals.k.principal.valor, 'Total de Membros - Adultos e Kids', vals.k.principal.sub, kpiOpts('principal')) +
@@ -2907,14 +2920,28 @@
     });
   }
 
-  function abrirCadastroDaCelula(celula) {
-    setState({ tab: 'cadastro', q: '', filters: { tipo: '', celula: celula || '', posicao: '', batizado: '', encontro: '', grupo: '' }, sidebarOpen: false });
+  // `rede` ({ label, celulas }) é o recorte do Início: quando o Pastor
+  // está filtrando por um discipulador, o Cadastro abre dentro da mesma
+  // rede. Só com "Todos" no Início é que o Cadastro abre com todo mundo.
+  function filtrosZerados(extra) {
+    return Object.assign({ tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '', rede: null }, extra || {});
   }
 
-  function abrirCadastroDoGrupo(grupo) {
+  function redeValida(rede) {
+    return rede && rede.celulas && rede.celulas.length ? rede : null;
+  }
+
+  function abrirCadastroDaCelula(celula, rede) {
     setState({
       tab: 'cadastro', q: '', selected: null, sidebarOpen: false,
-      filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: grupo },
+      filters: filtrosZerados({ celula: celula || '', rede: celula ? null : redeValida(rede) }),
+    });
+  }
+
+  function abrirCadastroDoGrupo(grupo, rede) {
+    setState({
+      tab: 'cadastro', q: '', selected: null, sidebarOpen: false,
+      filters: filtrosZerados({ grupo: grupo, rede: redeValida(rede) }),
     });
   }
 
@@ -3081,9 +3108,17 @@
       })
       .sort(function (a, b) { return a.dia - b.dia; });
 
+    // Um filtro respeita o outro: escolhido o obreiro, a lista de
+    // discipuladores mostra só os da rede dele; escolhido o discipulador,
+    // a lista de obreiros mostra só quem responde pelas células dele.
     var discipuladorOptions = hf.obreiro
       ? vals.discipuladores.filter(function (d) { return hier.some(function (h) { return mesmoCasal(h.obreiro_id, hf.obreiro) && mesmoCasal(h.discipulador_id, d.v); }); })
       : vals.discipuladores;
+    var obreiroOptions = hf.discipulador
+      ? vals.obreiros.filter(function (o) { return hier.some(function (h) { return mesmoCasal(h.discipulador_id, hf.discipulador) && mesmoCasal(h.obreiro_id, o.v); }); })
+      : vals.obreiros;
+    // Recorte atual, para as telas abertas a partir daqui continuarem nele.
+    var recorte = celulas ? { label: escopoTitulo, celulas: celulas.slice() } : null;
 
     var dataLabel = hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     return {
@@ -3092,11 +3127,11 @@
       papel: state.profile && state.profile.is_admin ? 'Administrador' : (meu ? meu.posicao : ''),
       escopoTitulo: escopoTitulo, escopoSub: escopoSub,
       souFull: vals.souFull, filtros: hf, filtrando: !!(hf.obreiro || hf.discipulador),
-      obreiroOptions: vals.obreiros, discipuladorOptions: discipuladorOptions,
+      obreiroOptions: obreiroOptions, discipuladorOptions: discipuladorOptions,
       onObreiro: function (e) { setHomeFiltro('obreiro', e.target.value); },
       onDiscipulador: function (e) { setHomeFiltro('discipulador', e.target.value); },
       limparFiltros: function () { setState({ homeFilters: { obreiro: '', discipulador: '' } }); },
-      abrirGrupo: function (g) { return function () { abrirCadastroDoGrupo(g); }; },
+      abrirGrupo: function (g) { return function () { abrirCadastroDoGrupo(g, recorte); }; },
       carregando: !todos.length && state.membersStatus !== 'ok' && state.membersStatus !== 'error',
       semRede: !!celulas && !celulas.length,
       total: total, nCelulas: listaCelulas.length, lideres: lideres,
@@ -3112,7 +3147,7 @@
       encPct: pct(encN, total), faltamEnc: total - encN,
       posicoes: posicoes, civil: civil, cells: cells,
       porDiscipulador: porDiscipulador, aniversariantes: aniversariantes, mesLabel: MESES_PT[mesAtual - 1].toLowerCase(),
-      verCadastro: function () { abrirCadastroDaCelula(''); },
+      verCadastro: function () { abrirCadastroDaCelula('', recorte); },
     };
   }
 

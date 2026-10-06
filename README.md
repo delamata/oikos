@@ -71,6 +71,15 @@ Antes de usar, rode `supabase/add_relatorios_acesso.sql` (veja
 
 ### Quadros de indicadores filtram
 
+Os filtros do Início conversam entre si: escolhido o **Obreiro /
+Pastor**, a lista de discipuladores mostra só os da rede dele; escolhido
+o **Discipulador**, a lista de obreiros mostra só quem responde pelas
+células dele. E o recorte viaja junto: clicar num quadro de indicadores
+ou em "Ver cadastro completo" abre o Cadastro de Membros **dentro
+daquela rede** (uma faixa no topo diz em qual, com "Ver a igreja toda"
+para sair), e lá o filtro de célula só oferece as células da rede. Só
+com "Todos" nos dois filtros é que o Cadastro abre com a igreja inteira.
+
 Na tela **Cadastro de Membros**, clicar
 num dos seis quadros do topo — Total de Membros, Total de Adultos,
 Frequentadores Assíduos, Visitantes, Jovens, Kids e Juvenis — filtra as
