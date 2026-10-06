@@ -1,6 +1,7 @@
 // Edge Function: cria um login (e-mail + senha inicial) para alguém já
-// cadastrado em `members`, e vincula esse login ao cadastro em
-// `profiles`. Só quem tem acesso total (Pastor/admin)
+// cadastrado em `members` e vincula esse login ao cadastro em
+// `profiles`; e, com `acao: 'reset'`, troca a senha de um login que já
+// existe (Administração → Reset de senha). Só quem tem acesso total (Pastor/admin)
 // pode chamar isso — é a única parte do app que usa a chave secreta
 // (service_role) do Supabase, e por isso precisa rodar aqui, nunca no
 // navegador. Veja o passo a passo de deploy em README.md.
@@ -46,19 +47,42 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
+    const acao = body.acao === 'reset' ? 'reset' : 'criar';
     const email = (body.email || '').trim();
     const password = body.password || '';
     const memberId = body.member_id;
-    if (!email || !password || !memberId) {
+    if (!email || !password || (acao === 'criar' && !memberId)) {
       return json({ error: 'Preencha e-mail, senha e a pessoa vinculada.' }, 400);
     }
     if (password.length < 6) {
-      return json({ error: 'A senha inicial precisa ter pelo menos 6 caracteres.' }, 400);
+      return json({ error: 'A senha precisa ter pelo menos 6 caracteres.' }, 400);
     }
 
     // Daqui em diante usa a chave secreta — só essa function tem
     // acesso a ela, nunca o navegador.
     const adminClient = createClient(supabaseUrl, serviceKey);
+
+    // Reset: acha o login pelo e-mail, troca a senha e marca que a
+    // pessoa precisa criar a própria senha no próximo acesso.
+    if (acao === 'reset') {
+      let alvo: { id: string; email?: string } | null = null;
+      for (let page = 1; page <= 10 && !alvo; page++) {
+        const { data: lista, error: listErr } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
+        if (listErr) return json({ error: listErr.message }, 400);
+        const usuarios = lista?.users || [];
+        alvo = usuarios.find((u) => (u.email || '').toLowerCase() === email.toLowerCase()) || null;
+        if (usuarios.length < 200) break;
+      }
+      if (!alvo) {
+        return json({ error: 'Não existe login com esse e-mail. Confira o endereço ou crie o acesso em Nova Liderança.' }, 404);
+      }
+      const { error: resetErr } = await adminClient.auth.admin.updateUserById(alvo.id, { password });
+      if (resetErr) return json({ error: resetErr.message || 'Não foi possível trocar a senha.' }, 400);
+      // Se a coluna ainda não existe (migração não rodada), o reset da
+      // senha já valeu — só não força a troca no próximo acesso.
+      await adminClient.from('profiles').update({ senha_trocada: false }).eq('user_id', alvo.id);
+      return json({ user_id: alvo.id, reset: true });
+    }
 
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email,

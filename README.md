@@ -374,6 +374,27 @@ Na aba **Administração** (só acesso total):
   - Tem a opção de já criar o **login** da pessoa (e-mail + senha
     inicial) na mesma tela, em vez de convidar depois pelo painel.
 
+### Reset de senha (Administração)
+
+Em **Administração → Reset de senha**, o administrador escolhe a pessoa
+(a busca mostra o e-mail do cadastro), define uma senha temporária — o
+botão "Gerar senha" sugere uma fácil de ditar — e clica em **Resetar
+senha**. O sistema não envia e-mail: ele devolve a mensagem pronta, com
+o endereço, o e-mail e a senha temporária, para mandar por WhatsApp ou
+copiar.
+
+Quando a pessoa entrar com essa senha, cai direto na tela "Crie a sua
+senha" (o reset marca `profiles.senha_trocada` como `false`), então a
+senha temporária serve uma vez só.
+
+Vale para login com **e-mail e senha**. Quem entra com Google não tem
+senha no Oikos — nesse caso a pessoa recupera pela própria conta Google.
+
+Usa a mesma Edge Function do item abaixo (`admin-create-user`, agora com
+a ação `reset`): **se você já tinha publicado essa function antes desta
+versão, publique de novo** — senão o botão avisa que não conseguiu falar
+com ela.
+
 ### Criar login com senha inicial (Edge Function)
 
 A chave que o site usa no navegador (anon key) não tem permissão de criar

@@ -228,6 +228,13 @@
     adminLinkSaving: false,
     adminLinkCopiado: false,
 
+    // Administração → Reset de senha
+    adminResetForm: { query: '', memberId: '', nome: '', email: '' },
+    adminResetSaving: false,
+    adminResetErro: null,
+    adminResetFeito: null,     // { nome, email, senha } com o reset pronto
+    adminResetCopiado: false,
+
     adminLiderForm: Object.assign({}, adminLiderFormDefaults),
     adminLiderSaving: false,
     adminLiderError: null,
@@ -825,6 +832,121 @@
     });
   }
 
+  // Mensagem de erro de sb.functions.invoke(): quando a function responde
+  // (mesmo com erro), dá pra ler o corpo JSON via error.context.json().
+  // Quando a chamada nem chega numa function de verdade (não publicada,
+  // nome errado, etc.), o supabase-js só devolve "Failed to send a
+  // request to the Edge Function" — aí a gente troca por uma explicação
+  // que dá pra agir.
+  function edgeFunctionErro(raw) {
+    if (raw && raw.context && typeof raw.context.json === 'function') {
+      return raw.context.json().then(function (body) { return (body && body.error) || raw.message || 'Não foi possível falar com o servidor.'; })
+        .catch(function () { return raw.message || 'Não foi possível falar com o servidor.'; });
+    }
+    var msg = (raw && raw.message) || '';
+    if (/failed to send a request/i.test(msg)) {
+      return Promise.resolve('Não consegui falar com a Edge Function "admin-create-user". Ela provavelmente ainda não foi publicada no seu projeto Supabase, ou está numa versão antiga — veja "Criar login com senha inicial" no README e publique de novo.');
+    }
+    return Promise.resolve(msg || 'Não foi possível falar com o servidor.');
+  }
+
+  // ---- Reset de senha (Administração) ----
+  function setAdminResetQuery(valor) {
+    setState(function (s) {
+      return { adminResetForm: Object.assign({}, s.adminResetForm, { query: valor, memberId: '', nome: '' }), adminResetErro: null };
+    });
+  }
+
+  function pickAdminReset(member) {
+    setState(function (s) {
+      return {
+        adminResetForm: Object.assign({}, s.adminResetForm, { memberId: member.id, nome: member.nomeOriginal || member.nome, query: member.nome, email: member.email || '' }),
+        adminResetErro: null, adminResetFeito: null,
+      };
+    });
+    // O campo de e-mail não guarda estado (igual ao login) — preenche direto.
+    var campo = document.getElementById('adminreset-email');
+    if (campo) campo.value = member.email || '';
+  }
+
+  function limparAdminReset() {
+    setState({ adminResetForm: { query: '', memberId: '', nome: '', email: '' }, adminResetErro: null, adminResetFeito: null, adminResetCopiado: false });
+  }
+
+  // Senha temporária fácil de ditar no telefone.
+  function gerarSenhaTemporaria() {
+    var letras = 'abcdefghijkmnpqrstuvwxyz';
+    var palavra = '';
+    for (var i = 0; i < 4; i++) palavra += letras.charAt(Math.floor(Math.random() * letras.length));
+    var numero = String(Math.floor(Math.random() * 9000) + 1000);
+    var senha = 'oikos' + palavra + numero;
+    var campo = document.getElementById('adminreset-senha');
+    if (campo) { campo.value = senha; campo.focus(); }
+    return senha;
+  }
+
+  function textoResetSenha(nome, email, senha) {
+    var link = window.location.origin + window.location.pathname;
+    return [
+      'Oi' + (nome ? ' ' + String(nome).split(/\s+/)[0] : '') + '! Sua senha do Sistema OIKOS foi redefinida.',
+      '',
+      'Para entrar:',
+      '1. Abra ' + link,
+      '2. E-mail: ' + email,
+      '3. Senha temporária: ' + senha,
+      '',
+      'Assim que entrar, o sistema vai pedir para você criar a sua própria senha.',
+    ].join('\n');
+  }
+
+  function compartilharResetWhatsapp() {
+    var r = state.adminResetFeito;
+    if (!r) return;
+    window.open('https://wa.me/?text=' + encodeURIComponent(textoResetSenha(r.nome, r.email, r.senha)), '_blank');
+  }
+
+  function copiarReset() {
+    var r = state.adminResetFeito;
+    if (!r) return;
+    var texto = textoResetSenha(r.nome, r.email, r.senha);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () { setState({ adminResetCopiado: true }); },
+        function () { window.prompt('Copie a mensagem:', texto); });
+      return;
+    }
+    window.prompt('Copie a mensagem:', texto);
+  }
+
+  function resetarSenha() {
+    if (!sb) return;
+    var f = state.adminResetForm;
+    var campoEmail = document.getElementById('adminreset-email');
+    var campoSenha = document.getElementById('adminreset-senha');
+    var email = emailValido((campoEmail && campoEmail.value) || f.email || '');
+    var senha = (campoSenha && campoSenha.value) || '';
+    if (!email) { setState({ adminResetErro: 'Digite o e-mail de login da pessoa.' }); return; }
+    if (senha.length < 6) { setState({ adminResetErro: 'A senha temporária precisa ter pelo menos 6 caracteres.' }); return; }
+    setState({ adminResetSaving: true, adminResetErro: null, adminResetFeito: null });
+    sb.functions.invoke('admin-create-user', { body: { acao: 'reset', email: email, password: senha } }).then(function (res) {
+      if (res.error) {
+        edgeFunctionErro(res.error).then(function (msg) { setState({ adminResetSaving: false, adminResetErro: msg }); });
+        return;
+      }
+      if (res.data && res.data.error) { setState({ adminResetSaving: false, adminResetErro: res.data.error }); return; }
+      setState({
+        adminResetSaving: false, adminResetCopiado: false,
+        adminResetFeito: { nome: f.nome || '', email: email, senha: senha },
+        adminResetForm: { query: '', memberId: '', nome: '', email: '' },
+      });
+      // Depois do setState a tela é redesenhada: limpa os campos novos,
+      // não os antigos (que já saíram do documento).
+      var novoEmail = document.getElementById('adminreset-email');
+      var novaSenha = document.getElementById('adminreset-senha');
+      if (novoEmail) novoEmail.value = '';
+      if (novaSenha) novaSenha.value = '';
+    });
+  }
+
   function submitAdminLider() {
     if (!sb) return;
     var f = state.adminLiderForm;
@@ -853,24 +975,6 @@
     }
 
     setState({ adminLiderSaving: true, adminLiderError: null });
-
-    // Mensagem de erro de sb.functions.invoke(): quando a function responde
-    // (mesmo com erro), dá pra ler o corpo JSON via error.context.json().
-    // Quando a chamada nem chega numa function de verdade (não publicada,
-    // nome errado, etc.), o supabase-js só devolve "Failed to send a
-    // request to the Edge Function" — aí a gente troca por uma explicação
-    // que dá pra agir.
-    var edgeFunctionErrorMessage = function (raw) {
-      if (raw && raw.context && typeof raw.context.json === 'function') {
-        return raw.context.json().then(function (body) { return (body && body.error) || raw.message || 'Não foi possível criar o login.'; })
-          .catch(function () { return raw.message || 'Não foi possível criar o login.'; });
-      }
-      var msg = (raw && raw.message) || '';
-      if (/failed to send a request/i.test(msg)) {
-        return Promise.resolve('Não consegui falar com a Edge Function "admin-create-user". Ela provavelmente ainda não foi publicada no seu projeto Supabase (ou o nome está diferente) — veja "Criar login com senha inicial" no README. O cadastro da pessoa já foi salvo; assim que publicar a function, é só clicar em Cadastrar de novo pra criar o login.');
-      }
-      return Promise.resolve(msg || 'Não foi possível criar o login.');
-    };
 
     var afterMember = function (memberId) {
       // Trava o formulário em "pessoa já cadastrada" apontando pra quem
@@ -906,7 +1010,7 @@
       }
       sb.functions.invoke('admin-create-user', { body: { email: email, password: senha, member_id: memberId } }).then(function (res) {
         if (res.error) {
-          edgeFunctionErrorMessage(res.error).then(function (msg) { setState({ adminLiderSaving: false, adminLiderError: msg }); });
+          edgeFunctionErro(res.error).then(function (msg) { setState({ adminLiderSaving: false, adminLiderError: msg }); });
           return;
         }
         if (res.data && res.data.error) { setState({ adminLiderSaving: false, adminLiderError: res.data.error }); return; }
@@ -2547,6 +2651,21 @@
       onAdminCelulaEdit: function (key) { return function (e) { setAdminCelulaEdit(key, e.target.value); }; },
       salvarEdicaoCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); salvarEdicaoCelula(); },
       cancelarEdicaoCelula: function () { cancelarEdicaoCelula(); },
+      adminResetForm: state.adminResetForm,
+      adminResetSaving: state.adminResetSaving, adminResetErro: state.adminResetErro,
+      adminResetFeito: state.adminResetFeito, adminResetCopiado: state.adminResetCopiado,
+      adminResetTexto: state.adminResetFeito ? textoResetSenha(state.adminResetFeito.nome, state.adminResetFeito.email, state.adminResetFeito.senha) : '',
+      adminResetBusca: (state.adminResetForm.query || '').trim() && !state.adminResetForm.memberId
+        ? allPessoas.filter(function (p) { return p.nome.toLowerCase().indexOf(state.adminResetForm.query.trim().toLowerCase()) >= 0; }).slice(0, 20)
+        : [],
+      onAdminResetQuery: function (e) { setAdminResetQuery(e.target.value); },
+      pickAdminReset: function (m) { return function () { pickAdminReset(m); }; },
+      limparAdminReset: function () { limparAdminReset(); },
+      gerarSenhaTemporaria: function () { gerarSenhaTemporaria(); },
+      resetarSenha: function (e) { if (e && e.preventDefault) e.preventDefault(); resetarSenha(); },
+      compartilharReset: function () { compartilharResetWhatsapp(); },
+      copiarReset: function () { copiarReset(); },
+      fecharReset: function () { setState({ adminResetFeito: null, adminResetCopiado: false }); },
       adminLiderForm: alf, adminLiderSaving: state.adminLiderSaving,
       adminLiderError: state.adminLiderError, adminLiderSalvo: state.adminLiderSalvo,
       adminLiderBusca: adminLiderBusca, adminLiderSemDiscipulador: adminLiderSemDiscipulador,
@@ -5708,6 +5827,51 @@
       '</div></div>';
   }
 
+  // Reset de senha: o admin escolhe a pessoa, define uma senha
+  // temporária e entrega a mensagem pronta. No primeiro acesso com essa
+  // senha, a pessoa é obrigada a criar a dela (senha_trocada volta a false).
+  function adminResetSenhaHtml(vals) {
+    var f = vals.adminResetForm;
+    var campo = 'width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box';
+    var r = vals.adminResetFeito;
+    var body = '' +
+      (vals.adminResetErro ? adminBanner('error', vals.adminResetErro) : '') +
+      (r
+        ? '<div style="background:#e2f2ea;border:1px solid #b9ded0;border-radius:11px;padding:14px 16px;margin-bottom:14px">' +
+          '<div style="font-size:13px;font-weight:700;color:#237a5a">Senha redefinida para ' + escHtml(r.email) + '</div>' +
+          '<div style="font-size:12px;color:#3f6b5b;margin-top:5px">O sistema não avisa ninguém. Mande a mensagem abaixo — ao entrar, a pessoa vai criar a própria senha.</div>' +
+          '<pre style="white-space:pre-wrap;background:#fff;border:1px solid #d3e7dd;border-radius:8px;padding:10px 12px;font-size:11.5px;color:#14243a;margin:10px 0 0;font-family:inherit">' + escHtml(vals.adminResetTexto) + '</pre>' +
+          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+          '<button type="button" ' + cb(vals.compartilharReset) + ' style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #149C88;border-radius:9px;background:#fff;font-size:12.5px;color:#0E7A68;font-weight:700;cursor:pointer">' + whatsappIcon + ' Enviar por WhatsApp</button>' +
+          '<button type="button" ' + cb(vals.copiarReset) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#4a5b70;font-weight:600;cursor:pointer">' + (vals.adminResetCopiado ? 'Copiado!' : 'Copiar mensagem') + '</button>' +
+          '<button type="button" ' + cb(vals.fecharReset) + ' style="padding:8px 14px;border:none;background:none;font-size:12.5px;color:#6b7c93;font-weight:600;cursor:pointer">Fechar</button>' +
+          '</div></div>'
+        : '') +
+      '<form ' + cb(vals.resetarSenha, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Pessoa (opcional — só para achar o e-mail)</label>' +
+      '<input type="text" id="adminreset-busca" value="' + escHtml(f.query) + '" ' + cb(vals.onAdminResetQuery, 'input') + ' placeholder="Digite o nome" style="' + campo + '">' +
+      (f.memberId ? '<div style="font-size:12px;color:#237a5a;font-weight:700;margin-top:6px">' + escHtml(f.nome) + ' selecionado(a) · <button type="button" ' + cb(vals.limparAdminReset) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12px;font-weight:600;cursor:pointer">trocar</button></div>' : '') +
+      (vals.adminResetBusca.length
+        ? '<div style="margin-top:8px;border:1px solid #e2e9f2;border-radius:10px;max-height:190px;overflow:auto">' +
+          vals.adminResetBusca.map(function (m) {
+            return '<button type="button" ' + cb(vals.pickAdminReset(m)) + ' style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid #f0f4f9;background:#fff;font-size:13px;cursor:pointer">' +
+              '<b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.email || 'sem e-mail no cadastro') + '</span></button>';
+          }).join('') + '</div>'
+        : '') +
+      '</div>' +
+      '<div class="grid-form2">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">E-mail de login</label>' +
+      '<input type="text" inputmode="email" autocomplete="off" autocapitalize="none" id="adminreset-email" placeholder="email@da.pessoa" style="' + campo + '"></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Senha temporária</label>' +
+      '<input type="text" id="adminreset-senha" autocomplete="off" placeholder="pelo menos 6 caracteres" style="' + campo + '">' +
+      '<button type="button" ' + cb(vals.gerarSenhaTemporaria) + ' style="margin-top:6px;border:none;background:none;padding:0;color:#2E4FC7;font-size:12px;font-weight:700;cursor:pointer">Gerar senha</button></div>' +
+      '</div>' +
+      '<button type="submit"' + (vals.adminResetSaving ? ' disabled' : '') + ' style="align-self:flex-start;padding:11px 20px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' +
+      (vals.adminResetSaving ? 'Redefinindo…' : 'Resetar senha') + '</button>' +
+      '</form>';
+    return adminCard('Reset de senha', 'Para quem esqueceu a senha ou precisa de uma nova. Vale só para login com e-mail e senha — quem entra com Google resolve pela própria conta Google.', body);
+  }
+
   function adminNovaCelulaHtml(vals) {
     var f = vals.adminCelulaForm;
     var body = '' +
@@ -5880,6 +6044,7 @@
     html += adminSolicitacoesHtml(vals);
     html += adminNovaCelulaHtml(vals);
     html += '<div id="admin-nova-lideranca">' + adminNovaLiderancaHtml(vals) + '</div>';
+    html += adminResetSenhaHtml(vals);
     html += '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin:20px 0 4px">Células cadastradas</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:12px">Clique em Editar para mudar o nome da célula ou quem responde por ela.</div>';
     if (vals.adminCelulaEditSalvo) html += adminBanner('ok', vals.adminCelulaEditSalvo);
@@ -5926,7 +6091,7 @@
   // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
   // nascimento). Por isso preservamos o valor atual antes de trocar o
   // HTML e devolvemos ele depois.
-  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'nova-senha', 'nova-senha2', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'nova-senha', 'nova-senha2', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha', 'adminreset-email', 'adminreset-senha'];
 
   function render() {
     var root = document.getElementById('app');
