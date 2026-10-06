@@ -295,6 +295,28 @@ e de propósito:
 - **Frequência por link** — `index.html?frequencia=CODIGO`, com o código
   de cada célula (veja "Frequência por link").
 
+## Troca de senha no primeiro acesso
+
+Quando o administrador cria um login com senha inicial, essa senha é
+conhecida por outra pessoa. No **primeiro acesso**, antes de qualquer
+tela do sistema, aparece "Crie a sua senha": a pessoa escolhe a própria
+senha (mínimo 6 caracteres, digitada duas vezes) e já entra. Nos acessos
+seguintes, entra direto.
+
+Vale só para quem entra com **e-mail e senha**. Quem entra com Google
+nunca vê essa tela — a senha dessa conta é da Google, não do Oikos.
+
+A marca fica em `profiles.senha_trocada`
+(`supabase/add_troca_senha_primeiro_acesso.sql`): nasce `false` e vira
+`true` quando a pessoa cria a senha. Quem já usava o sistema quando a
+migração rodou foi marcado como resolvido e não é incomodado. Para
+pedir a troca de novo a alguém (por exemplo, depois de você redefinir a
+senha dessa pessoa na mão), rode no SQL Editor:
+
+```sql
+update profiles set senha_trocada = false where member_id = 'ID-DA-PESSOA';
+```
+
 ## Acesso por nível de liderança
 
 Cada login vê nos relatórios só o que está no seu escopo, decidido pela
@@ -505,6 +527,7 @@ sistema.
    - Rode [`supabase/add_frequencia_separada.sql`](supabase/add_frequencia_separada.sql) uma vez, depois do `add_frequencia.sql` — separa o lançamento do culto do lançamento da célula (cada um com a sua data), já que as duas coisas acontecem em dias diferentes. Nenhuma presença já lançada é apagada.
    - Rode [`supabase/add_email_membro.sql`](supabase/add_email_membro.sql) uma vez — cria a coluna `email` em members (contato opcional do cadastro, não é login).
    - Rode [`supabase/preencher_email_membros.sql`](supabase/preencher_email_membros.sql) uma vez, logo depois — copia para o cadastro o e-mail de quem o sistema já conhece (login em auth.users, convite em member_invites, pedido aprovado em solicitacoes_lideranca). Não sobrescreve e-mail digitado na ficha, e rodar de novo não muda nada.
+   - Rode [`supabase/add_troca_senha_primeiro_acesso.sql`](supabase/add_troca_senha_primeiro_acesso.sql) uma vez — cria `profiles.senha_trocada` e marca quem já usa o sistema como resolvido; só os logins criados daqui para frente passam pela tela de criar a própria senha (veja "Troca de senha no primeiro acesso").
    - Rode [`supabase/add_relatorios_acesso.sql`](supabase/add_relatorios_acesso.sql) uma vez, depois do `add_rede_conjuge.sql` — Pastor de Rede deixa de ter acesso total (passa a ver as redes que acompanha, como o Obreiro), a supervisão de discipuladores passa a contar no acesso, e cria `minhas_celulas()`, usada pelo Relatórios. Antes, rode a consulta de conferência que está no fim do arquivo para ver o que cada Pastor de Rede vai passar a enxergar.
 5. Rode [`supabase/add_admin_area.sql`](supabase/add_admin_area.sql) uma vez, depois do `add_rbac.sql` (célula deixa de ser obrigatória pra liderança sênior, e vira uma tabela de verdade em vez de lista fixa — veja "Administração" acima). É um passo pra **todo mundo**, novo ou existente, não só quem já tinha o app rodando antes.
 6. Rode [`supabase/add_public_cadastro_view.sql`](supabase/add_public_cadastro_view.sql) uma vez, depois do `add_admin_area.sql` — e **logo em seguida** [`supabase/remover_acesso_publico.sql`](supabase/remover_acesso_publico.sql), que apaga essa view (o sistema não tem mais consulta pública) e cria as funções `liderancas_publicas()` e `lider_ja_cadastrado()` usadas pelo "Já sou líder". Em instalação nova dá para pular o `add_public_cadastro_view.sql` e rodar só o `remover_acesso_publico.sql`. É um passo pra **todo mundo**.

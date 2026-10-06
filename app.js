@@ -189,6 +189,10 @@
     liderancas: [],
     liderancasStatus: 'idle',
 
+    // primeiro acesso com senha criada pelo admin: a pessoa cria a dela
+    trocaSenhaSaving: false,
+    trocaSenhaErro: null,
+
     // vínculo login → cadastro (profiles)
     profile: null,          // null = ainda verificando; false = sem vínculo; objeto = vinculado
     profileStatus: 'idle',
@@ -493,7 +497,7 @@
   function doLogout() {
     pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, trocaSenhaErro: null, trocaSenhaSaving: false, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
       relPresencaPedida = '';
       relUltimo = null;
     });
@@ -518,6 +522,40 @@
       if (res.error || !Array.isArray(res.data)) return;
       setState({
         minhasCelulas: res.data.map(function (r) { return typeof r === 'string' ? r : (r.minhas_celulas || r.celula); }).filter(Boolean),
+      });
+    });
+  }
+
+  // Primeiro acesso de quem entrou com e-mail e senha: enquanto
+  // profiles.senha_trocada for false, a pessoa ainda está com a senha
+  // que o administrador criou e precisa trocar antes de ver o sistema.
+  // Quem entra com Google não tem senha aqui, então nunca passa por isso;
+  // se a migração ainda não rodou, a coluna vem indefinida e nada muda.
+  function precisaTrocarSenha() {
+    return !!(state.profile && state.profile.senha_trocada === false && !isSocialSession());
+  }
+
+  function setTrocaSenhaErro(msg) { setState({ trocaSenhaSaving: false, trocaSenhaErro: msg }); }
+
+  function salvarNovaSenha() {
+    if (!sb || !state.session) return;
+    var campo = document.getElementById('nova-senha');
+    var campo2 = document.getElementById('nova-senha2');
+    var senha = (campo && campo.value) || '';
+    var repetida = (campo2 && campo2.value) || '';
+    if (senha.length < 6) { setTrocaSenhaErro('A senha precisa ter pelo menos 6 caracteres.'); return; }
+    if (senha !== repetida) { setTrocaSenhaErro('As duas senhas estão diferentes.'); return; }
+    setState({ trocaSenhaSaving: true, trocaSenhaErro: null });
+    sb.auth.updateUser({ password: senha }).then(function (res) {
+      if (res.error) { setTrocaSenhaErro(res.error.message || 'Não foi possível trocar a senha.'); return; }
+      sb.from('profiles').update({ senha_trocada: true }).eq('user_id', state.session.user.id).then(function (up) {
+        if (up.error) { setTrocaSenhaErro(up.error.message); return; }
+        setState(function (st) {
+          return {
+            trocaSenhaSaving: false, trocaSenhaErro: null,
+            profile: Object.assign({}, st.profile, { senha_trocada: true }),
+          };
+        });
       });
     });
   }
@@ -5563,6 +5601,29 @@
     return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div style="font-size:13px;color:#6b7c93">Carregando…</div></div>';
   }
 
+  // Primeiro acesso: a pessoa cria a própria senha antes de entrar.
+  function trocarSenhaHtml(vals) {
+    var campo = 'width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box';
+    return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">' +
+      '<div style="width:100%;max-width:380px;background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(20,36,58,.08)">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:40px;width:auto;margin-bottom:16px">' +
+      '<div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#0E7A68;font-weight:800;margin-bottom:6px">Primeiro acesso</div>' +
+      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:20px;margin-bottom:4px">Crie a sua senha</div>' +
+      '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Você entrou com a senha que o administrador criou. Escolha agora uma senha só sua — é com ela que você vai entrar daqui para frente.</div>' +
+      (vals.trocaSenhaErro ? '<div style="background:#f7e2e2;color:#a02020;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:14px">' + escHtml(vals.trocaSenhaErro) + '</div>' : '') +
+      '<form ' + cb(vals.salvarSenha, 'submit') + ' style="display:flex;flex-direction:column;gap:12px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nova senha</label>' +
+      '<input type="password" id="nova-senha" autocomplete="new-password" placeholder="pelo menos 6 caracteres" style="' + campo + '"></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Repita a nova senha</label>' +
+      '<input type="password" id="nova-senha2" autocomplete="new-password" style="' + campo + '"></div>' +
+      '<button type="submit"' + (vals.trocaSenhaSaving ? ' disabled' : '') + ' style="margin-top:4px;padding:12px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' +
+      (vals.trocaSenhaSaving ? 'Salvando…' : 'Salvar e entrar') + '</button>' +
+      '</form>' +
+      '<div style="margin-top:16px;text-align:center">' +
+      '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Sair</button>' +
+      '</div></div></div>';
+  }
+
   function selfLinkHtml(vals) {
     var q = (vals.selfLinkQuery || '').toLowerCase();
     var results = (vals.directory || []).filter(function (m) { return !q || m.nome.toLowerCase().indexOf(q) >= 0; }).slice(0, 30);
@@ -5865,7 +5926,7 @@
   // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
   // nascimento). Por isso preservamos o valor atual antes de trocar o
   // HTML e devolvemos ele depois.
-  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'nova-senha', 'nova-senha2', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha'];
 
   function render() {
     var root = document.getElementById('app');
@@ -5936,6 +5997,12 @@
       });
     } else if (state.profile === null || state.profileStatus === 'loading') {
       html = carregandoHtml();
+    } else if (precisaTrocarSenha()) {
+      html = trocarSenhaHtml({
+        trocaSenhaSaving: state.trocaSenhaSaving, trocaSenhaErro: state.trocaSenhaErro,
+        salvarSenha: function (e) { if (e && e.preventDefault) e.preventDefault(); salvarNovaSenha(); },
+        logout: function () { doLogout(); },
+      });
     } else if (state.profile === false && isSocialSession()) {
       // Login social sem convite de admin: só pode criar o próprio
       // cadastro (nunca escolher alguém que já existe na lista).
