@@ -56,11 +56,15 @@ mesmo número de meses anteriores. A tela traz:
   nos últimos 8 encontros, destacando quem faltou 3 vezes seguidas.
 - **Movimentações por célula** — quem entrou (cadastros novos e quem
   chegou de outra célula), quem saiu (transferidos e inativos), perdidos
-  e o saldo. Numa célula só, mês a mês. Abaixo do gráfico, uma tabela abre
-  quem saiu pessoa a pessoa: nome, posição, célula, tipo de saída
-  (mudou de célula, transferido, inativo ou perdido) e mês. A tabela
-  entra também no PDF, mas não na imagem do WhatsApp.
-- **Perdidos** — por mês, com a lista de nomes, célula e o motivo anotado.
+  e o saldo. Numa célula só, mês a mês. Abaixo do gráfico, uma lista mostra
+  **quem a igreja perdeu no período** — só quem foi transferido para
+  outra igreja e quem se perdeu — com nome, posição, célula, motivo
+  anotado e mês. Tocar numa barra do gráfico troca a lista para aquela
+  célula: o lado esquerdo mostra quem saiu dela, o direito mostra quem
+  entrou (cadastro novo ou vindo de outra célula); tocar de novo, ou em
+  "Ver todas", volta ao normal. A lista entra no PDF, mas não na imagem
+  do WhatsApp.
+- **Perdidos** — quantos por mês. Os nomes ficam na lista de Movimentações, logo acima, para não repetir.
 
 Compartilhar: cada gráfico tem um botão que gera uma **imagem** pronta
 para o WhatsApp (no celular abre o compartilhar; no computador baixa o
