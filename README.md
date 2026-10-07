@@ -56,7 +56,10 @@ mesmo número de meses anteriores. A tela traz:
   nos últimos 8 encontros, destacando quem faltou 3 vezes seguidas.
 - **Movimentações por célula** — quem entrou (cadastros novos e quem
   chegou de outra célula), quem saiu (transferidos e inativos), perdidos
-  e o saldo. Numa célula só, mês a mês.
+  e o saldo. Numa célula só, mês a mês. Abaixo do gráfico, uma tabela abre
+  quem saiu pessoa a pessoa: nome, posição, célula, tipo de saída
+  (mudou de célula, transferido, inativo ou perdido) e mês. A tabela
+  entra também no PDF, mas não na imagem do WhatsApp.
 - **Perdidos** — por mês, com a lista de nomes, célula e o motivo anotado.
 
 Compartilhar: cada gráfico tem um botão que gera uma **imagem** pronta

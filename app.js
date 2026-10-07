@@ -4248,7 +4248,7 @@
     if (!sb) return;
     setState({ relMovsStatus: 'loading' });
     sb.from('movimentacoes')
-      .select('member_id, campo, valor_anterior, valor_novo, data, members(nome, celula, saida_detalhe)')
+      .select('member_id, campo, valor_anterior, valor_novo, data, members(nome, celula, posicao, saida_detalhe)')
       .neq('campo', 'nota').gte('data', relMeses(24, 0)[0] + '-01')
       .order('data', { ascending: false }).limit(5000)
       .then(function (res) {
@@ -4483,6 +4483,28 @@
         return r;
       });
 
+    // Quem saiu no período, com nome e posição — é o lado esquerdo do
+    // gráfico de movimentações, aberto pessoa a pessoa.
+    var ondeEstava = function (m) { return m.campo === 'celula' ? m.valor_anterior : (m.members && m.members.celula); };
+    var linhaSaida = function (m, tipo, cor) {
+      return {
+        nome: (m.members && m.members.nome) || '—',
+        posicao: (m.members && m.members.posicao) || '—',
+        celula: celulaLabel(ondeEstava(m)) || '—',
+        tipo: tipo, cor: cor,
+        mes: relMesCurto(mesDe(m.data)) + '/' + mesDe(m.data).slice(2, 4),
+        ordem: mesDe(m.data),
+      };
+    };
+    var saidasLista = []
+      .concat(trocas.filter(function (m) { return noPeriodo(m.data) && naCel(m.valor_anterior); })
+        .map(function (m) { return linhaSaida(m, 'Foi para ' + celulaLabel(m.valor_novo), REL_COR.saiu); }))
+      .concat(saidas.filter(function (m) { return noPeriodo(m.data) && naCel(m.members && m.members.celula); })
+        .map(function (m) { return linhaSaida(m, SITUACAO_LABELS[m.valor_novo] || m.valor_novo, REL_COR.saiu); }))
+      .concat(perdidos.filter(function (m) { return noPeriodo(m.data) && naCel(m.members && m.members.celula); })
+        .map(function (m) { return linhaSaida(m, 'Perdido', REL_COR.perdido); }))
+      .sort(function (a, b) { return b.ordem.localeCompare(a.ordem) || a.nome.localeCompare(b.nome, 'pt'); });
+
     var perdidosLista = perdidos.filter(function (m) { return noPeriodo(m.data); }).map(function (m) {
       return {
         nome: (m.members && m.members.nome) || '—',
@@ -4496,7 +4518,7 @@
       meses: meses, antes: antes, kpis: kpis, freqSerie: freqSerie, crescimento: crescimento,
       jornada: jornada, comparativo: comparativo, movimentacoes: movimentacoes,
       perdidosSerie: meses.map(function (m) { return perdidos.filter(function (x) { return mesDe(x.data) === m; }).length; }),
-      perdidosLista: perdidosLista, temFrequencia: regs.length > 0,
+      perdidosLista: perdidosLista, saidasLista: saidasLista, temFrequencia: regs.length > 0,
     };
   }
 
@@ -4852,7 +4874,7 @@
     var ordem = ['freq', 'cresc', 'kids', 'jornada', 'comp', 'mov', 'perd'];
     relUltimo = {
       graficos: graficos, ordem: ordem, recorte: recorte, periodoLabel: periodoLabel, nivel: nivel,
-      kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, comparativo: d.comparativo,
+      kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, saidasLista: d.saidasLista, comparativo: d.comparativo,
     };
 
     var discOptions = esc.discIds.map(function (id) { return { v: id, label: relNomePessoa(id) || 'Discipulador sem nome' }; })
@@ -4939,10 +4961,21 @@
       }).join('') + '</div>'
       : '<div class="rel-ok">✓ Nenhum perdido no período.</div>';
 
+    var saidas = d.saidasLista.length
+      ? '<div class="rel-tabela-wrap"><table class="rel-tabela">' +
+        '<thead><tr><th>Quem saiu</th><th>Posição</th><th>Célula</th><th>Saída</th><th>Mês</th></tr></thead><tbody>' +
+        d.saidasLista.map(function (p) {
+          return '<tr><td class="rel-tabela-nome">' + escHtml(p.nome) + '</td><td>' + escHtml(p.posicao) + '</td>' +
+            '<td>' + escHtml(p.celula) + '</td>' +
+            '<td><span class="rel-tag" style="color:' + p.cor + ';background:' + (p.cor === REL_COR.perdido ? REL_COR.ruimFundo : REL_COR.neutroFundo) + '">' + escHtml(p.tipo) + '</span></td>' +
+            '<td class="rel-tabela-mes">' + escHtml(p.mes) + '</td></tr>';
+        }).join('') + '</tbody></table></div>'
+      : '<div class="rel-ok">✓ Ninguém saiu no período.</div>';
+
     var g = v.graficos;
     html += '<div class="rel-grid">' +
       relCardHtml(g.freq) + relCardHtml(g.cresc) + relCardHtml(g.kids) + relCardHtml(g.jornada) + relCardHtml(g.comp) +
-      relCardHtml(g.mov) + relCardHtml(g.perd, perdLista) +
+      relCardHtml(g.mov, saidas) + relCardHtml(g.perd, perdLista) +
       '</div></div>';
     return html;
   }
@@ -5075,6 +5108,12 @@
         (g.vazio ? '<p>' + escHtml(g.vazio) + '</p>' : g.svg) +
         (g.legenda.length ? '<div class="leg">' + g.legenda.map(function (l) { return '<i style="background:' + l.cor + (l.borda ? ';border:1px solid ' + l.borda : '') + '"></i>' + escHtml(l.label); }).join('') + '</div>' : '') +
         '</div>';
+      if (id === 'mov' && u.saidasLista.length) {
+        body += '<table><thead><tr><th>Quem saiu</th><th>Posição</th><th>Célula</th><th>Saída</th><th>Mês</th></tr></thead><tbody>' +
+          u.saidasLista.map(function (x) {
+            return '<tr><td>' + escHtml(x.nome) + '</td><td>' + escHtml(x.posicao) + '</td><td>' + escHtml(x.celula) + '</td><td>' + escHtml(x.tipo) + '</td><td>' + escHtml(x.mes) + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
       if (id === 'perd' && u.perdidosLista.length) {
         body += '<table><thead><tr><th>Perdido</th><th>Célula</th><th>Mês</th><th>Motivo anotado</th></tr></thead><tbody>' +
           u.perdidosLista.map(function (p) {
