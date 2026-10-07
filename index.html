@@ -185,16 +185,27 @@
   .home-bday-hoje{background:#f5b82e;color:#fff}
   /* ---- Relatórios ---- */
   .home-kpis.rel-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
-  .rel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:start}
-  .rel-card{display:flex;flex-direction:column;gap:10px;min-width:0}
-  .rel-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  /* duas colunas que terminam na mesma linha: o cartão ocupa a altura
+     toda da faixa e o gráfico cresce no meio, com a nota colada embaixo */
+  .rel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:stretch}
+  .rel-card{display:flex;flex-direction:column;gap:10px;min-width:0;height:100%}
+  .rel-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;min-height:46px}
+  .rel-card-head .home-card-title{line-height:1.25}
   .rel-share{flex:none;width:38px;height:38px;border-radius:11px;border:1px solid #d4deea;background:#fff;color:#44546a;display:flex;align-items:center;justify-content:center;cursor:pointer}
   .rel-share:hover{border-color:#b9c6d8;color:#14243a}
+  .rel-corpo{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-height:0}
+  /* cartão sozinho na última linha ocupa a faixa toda e divide o espaço */
+  .rel-grid>.rel-card:last-child:nth-child(odd){grid-column:1/-1}
+  @media (min-width:1001px){
+    .rel-grid>.rel-card:last-child:nth-child(odd) .rel-corpo{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:center}
+    .rel-grid>.rel-card:last-child:nth-child(odd) .rel-perd-lista{border-top:none;max-height:260px}
+  }
+  .rel-chart{flex:1 1 auto;display:flex;align-items:center;min-height:0}
   .rel-chart svg{display:block;width:100%;height:auto}
   .rel-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#44546a;font-weight:600}
   .rel-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;box-sizing:border-box}
-  .rel-nota{font-size:11.5px;color:#8a99ab}
-  .rel-vazio{font-size:13px;color:#7b8aa0;background:#f7f9fc;border-radius:12px;padding:16px;text-align:center}
+  .rel-nota{font-size:11.5px;color:#8a99ab;margin-top:auto;padding-top:2px}
+  .rel-vazio{flex:1 1 auto;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7b8aa0;background:#f7f9fc;border-radius:12px;padding:16px;text-align:center}
   .rel-ok{font-size:13px;color:#0E7A68;font-weight:700;background:#e0f4ef;border-radius:12px;padding:10px 12px}
   .rel-trend{display:inline-block;margin-top:6px;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
   .rel-trend-up{color:#0E7A68;background:#e0f4ef}
@@ -205,24 +216,7 @@
   .rel-btn:hover{background:rgba(255,255,255,.18)}
   .rel-btn-claro{background:#fff;color:#1B2344;border-color:#fff}
   .rel-btn-claro:hover{background:#eef2f7}
-  /* lista de pessoas embaixo do gráfico de movimentações */
-  .rel-lista{border-top:1px solid #e6ecf4;margin-top:4px;padding-top:12px}
-  .rel-lista-topo{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-  .rel-lista-titulo{font-size:13px;font-weight:800;color:#14243a}
-  .rel-lista-sub{font-size:11.5px;color:#8a99ab;margin-top:1px}
-  .rel-lista-limpar{border:1px solid #d4deea;background:#fff;color:#2E4FC7;font-family:inherit;font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
-  .rel-lista-limpar:hover{border-color:#b9c6d8;background:#f4f7fb}
-  .rel-lista-vazio{font-size:12.5px;color:#7b8aa0;background:#f7f9fc;border-radius:10px;padding:12px;text-align:center}
-  .rel-tabela-wrap{overflow-x:auto;margin-top:2px}
-  .rel-tabela{width:100%;border-collapse:collapse;font-size:12.5px;min-width:430px}
-  .rel-tabela th{text-align:left;padding:8px 10px 6px 2px;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:#7b8aa0;font-weight:700;border-bottom:1px solid #e6ecf4;white-space:nowrap}
-  .rel-tabela td{padding:9px 10px 9px 2px;border-bottom:1px solid #f0f4f9;color:#44546a;vertical-align:middle}
-  .rel-tabela tr:last-child td{border-bottom:none}
-  .rel-tabela-nome{font-weight:800;color:#14243a;overflow-wrap:anywhere}
-  .rel-tabela-motivo{font-weight:600;font-size:11.5px;color:#8a99ab;margin-top:2px;overflow-wrap:anywhere}
-  .rel-tabela-mes{white-space:nowrap;font-variant-numeric:tabular-nums}
-  .rel-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:800;white-space:nowrap}
-  .rel-perd-lista{display:flex;flex-direction:column;border-top:1px solid #e6ecf4}
+  .rel-perd-lista{display:flex;flex-direction:column;border-top:1px solid #e6ecf4;max-height:230px;overflow:auto}
   .rel-perd-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:9px 2px;border-bottom:1px solid #e6ecf4;font-size:13px}
   .rel-perd-row:last-child{border-bottom:none}
   .rel-perd-nome{font-weight:800;color:#14243a}
@@ -230,7 +224,10 @@
   .rel-perd-mes{font-weight:700;color:#44546a;white-space:nowrap}
   .rel-tip{position:fixed;z-index:100;pointer-events:none;background:#1B2344;color:#fff;font:600 12.5px/1.45 'Plus Jakarta Sans',system-ui,sans-serif;padding:8px 11px;border-radius:10px;white-space:pre-line;max-width:260px;box-shadow:0 10px 24px -10px rgba(20,36,58,.6)}
   @media (max-width:1100px){
+    /* 5 quadros em 3 colunas deixariam uma linha pela metade: o primeiro
+       ocupa duas colunas e as linhas fecham certinho */
     .home-kpis.rel-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .home-kpis.rel-kpis>:first-child{grid-column:span 2}
     .rel-grid{grid-template-columns:1fr}
   }
   @media (max-width:700px){
@@ -281,7 +278,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=50"></script>
-<script src="app.js?v=50"></script>
+<script src="config.js?v=51"></script>
+<script src="app.js?v=51"></script>
 </body>
 </html>

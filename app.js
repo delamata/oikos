@@ -332,8 +332,6 @@
 
     // Relatórios
     relFiltros: { periodo: '6', discipulador: '', celula: '' },
-    // barra clicada no gráfico de movimentações: { celula, lado: 'saiu'|'entrou' }
-    relMovFoco: null,
     relMovs: [],                  // movimentações dos últimos 24 meses (sem notas)
     relMovsStatus: 'idle',
     relPresenca: null,            // { celula, status, encontros: [{ data, presencas_celula }] }
@@ -506,7 +504,7 @@
   function doLogout() {
     pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, trocaSenhaErro: null, trocaSenhaSaving: false, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovFoco: null, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, trocaSenhaErro: null, trocaSenhaSaving: false, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
       relPresencaPedida = '';
       relUltimo = null;
     });
@@ -4250,7 +4248,7 @@
     if (!sb) return;
     setState({ relMovsStatus: 'loading' });
     sb.from('movimentacoes')
-      .select('member_id, campo, valor_anterior, valor_novo, data, members(nome, celula, posicao, saida_detalhe)')
+      .select('member_id, campo, valor_anterior, valor_novo, data, members(nome, celula, saida_detalhe)')
       .neq('campo', 'nota').gte('data', relMeses(24, 0)[0] + '-01')
       .order('data', { ascending: false }).limit(5000)
       .then(function (res) {
@@ -4282,21 +4280,12 @@
     if (!souFull && state.directoryStatus === 'idle') loadDirectory();
   }
 
-  // Clicar numa barra abre a lista daquele lado; clicar de novo fecha.
-  function focarMovimentacao(chave, rotulo, lado) {
-    setState(function (s) {
-      var atual = s.relMovFoco;
-      if (atual && atual.chave === chave && atual.lado === lado) return { relMovFoco: null };
-      return { relMovFoco: { chave: chave, rotulo: rotulo, lado: lado } };
-    });
-  }
-
   function setRelFiltro(key, val) {
     setState(function (s) {
       var f = Object.assign({}, s.relFiltros);
       f[key] = val;
       if (key === 'discipulador') f.celula = '';
-      return { relFiltros: f, relMovFoco: null };
+      return { relFiltros: f };
     });
   }
 
@@ -4486,61 +4475,13 @@
       ? meses.map(function (m) {
         var r = movPor(function (iso) { return mesDe(iso) === m; }, naCel);
         r.rotulo = relMesCurto(m); r.tip = relMesLongo(m);
-        r.chave = 'mes:' + m; r.rotuloFoco = relMesLongo(m);
         return r;
       })
       : esc.celulas.map(function (c) {
         var r = movPor(noPeriodo, function (x) { return x === c; });
         r.rotulo = celulaLabel(c); r.tip = celulaLabel(c);
-        r.chave = c; r.rotuloFoco = celulaLabel(c);
         return r;
       });
-
-    // Quem saiu no período, com nome e posição — é o lado esquerdo do
-    // gráfico de movimentações, aberto pessoa a pessoa.
-    var ondeEstava = function (m) { return m.campo === 'celula' ? m.valor_anterior : (m.members && m.members.celula); };
-    var linhaSaida = function (m, tipo, cor) {
-      return {
-        nome: (m.members && m.members.nome) || '—',
-        posicao: (m.members && m.members.posicao) || '—',
-        celula: celulaLabel(ondeEstava(m)) || '—',
-        celulaBruta: ondeEstava(m),
-        detalhe: (m.members && m.members.saida_detalhe) || '',
-        tipo: tipo, cor: cor,
-        mes: relMesCurto(mesDe(m.data)) + '/' + mesDe(m.data).slice(2, 4),
-        ordem: mesDe(m.data),
-      };
-    };
-    // Na tabela entram só as saídas que a igreja perde de fato: quem foi
-    // para outra igreja e quem se perdeu. Mudança de célula e inatividade
-    // continuam no gráfico, mas não viram lista.
-    var porData = function (a, b) { return b.ordem.localeCompare(a.ordem) || a.nome.localeCompare(b.nome, 'pt'); };
-    var saidasLista = saidas.filter(function (m) {
-      return noPeriodo(m.data) && m.valor_novo === 'transferido_igreja' && naCel(m.members && m.members.celula);
-    }).map(function (m) { return linhaSaida(m, 'Foi para outra igreja', REL_COR.saiu); })
-      .concat(perdidos.filter(function (m) { return noPeriodo(m.data) && naCel(m.members && m.members.celula); })
-        .map(function (m) { return linhaSaida(m, 'Perdido', REL_COR.perdido); }))
-      .sort(porData);
-
-    // Quem entrou: cadastro novo no período ou chegada de outra célula.
-    var entradasLista = novos.filter(function (x) { return noPeriodo(x.data) && naCel(x.celula); })
-      .map(function (x) {
-        var pessoa = memberById(x.id) || {};
-        return {
-          nome: pessoa.nome || '—', posicao: pessoa.posicao || '—', celula: celulaLabel(x.celula),
-          celulaBruta: x.celula, tipo: 'Cadastro novo', cor: REL_COR.linha,
-          mes: relMesCurto(mesDe(x.data)) + '/' + mesDe(x.data).slice(2, 4), ordem: mesDe(x.data),
-        };
-      })
-      .concat(trocas.filter(function (m) { return noPeriodo(m.data) && naCel(m.valor_novo); }).map(function (m) {
-        return {
-          nome: (m.members && m.members.nome) || '—', posicao: (m.members && m.members.posicao) || '—',
-          celula: celulaLabel(m.valor_novo), celulaBruta: m.valor_novo,
-          tipo: 'Veio de ' + celulaLabel(m.valor_anterior), cor: REL_COR.linha,
-          mes: relMesCurto(mesDe(m.data)) + '/' + mesDe(m.data).slice(2, 4), ordem: mesDe(m.data),
-        };
-      }))
-      .sort(porData);
 
     var perdidosLista = perdidos.filter(function (m) { return noPeriodo(m.data); }).map(function (m) {
       return {
@@ -4555,7 +4496,7 @@
       meses: meses, antes: antes, kpis: kpis, freqSerie: freqSerie, crescimento: crescimento,
       jornada: jornada, comparativo: comparativo, movimentacoes: movimentacoes,
       perdidosSerie: meses.map(function (m) { return perdidos.filter(function (x) { return mesDe(x.data) === m; }).length; }),
-      perdidosLista: perdidosLista, saidasLista: saidasLista, entradasLista: entradasLista, temFrequencia: regs.length > 0,
+      perdidosLista: perdidosLista, temFrequencia: regs.length > 0,
     };
   }
 
@@ -4697,9 +4638,7 @@
     return relSvg(W, H, 'Comparativo de células', corpo);
   }
 
-  // `aoClicar(celula, lado)` devolve o atributo de clique da barra; `foco`
-  // marca a barra escolhida. Sem eles (imagem e PDF) o gráfico sai igual.
-  function relSvgMov(linhas, aoClicar, foco) {
+  function relSvgMov(linhas) {
     var W = 560, rowH = 38, L = 150, R = 58, T = 24, pad = 26;
     var H = T + Math.max(1, linhas.length) * rowH;
     var maxL = Math.max(1, Math.max.apply(null, linhas.map(function (r) { return r.sairam + r.perdidos; })));
@@ -4721,18 +4660,7 @@
       corpo += relTexto(cx + r.entraram * unit + 6, yy + 23, r.entraram, { size: 13, weight: 800, cor: REL_COR.tinta });
       corpo += '<rect x="' + (W - 50) + '" y="' + y0 + '" width="46" height="22" rx="11" fill="' + (saldo > 0 ? REL_COR.bomFundo : saldo < 0 ? REL_COR.ruimFundo : REL_COR.neutroFundo) + '"></rect>' +
         relTexto(W - 27, yy + 23, (saldo > 0 ? '+' : '') + saldo, { anchor: 'middle', size: 13, weight: 800, cor: saldo > 0 ? REL_COR.bom : saldo < 0 ? REL_COR.ruim : REL_COR.suave });
-      // Duas áreas de clique por linha: o lado de quem saiu e o de quem
-      // entrou. Cada uma abre a lista daquela célula embaixo do gráfico.
-      var destaque = function (lado) { return foco && foco.chave === r.chave && foco.lado === lado; };
-      var zona = function (x, largura, lado, dica) {
-        var marcada = destaque(lado);
-        return (marcada ? '<rect x="' + x + '" y="' + yy + '" width="' + largura + '" height="' + rowH + '" rx="8" fill="#eef3ff"></rect>' : '') +
-          '<rect x="' + x + '" y="' + yy + '" width="' + largura + '" height="' + rowH + '" fill="transparent"' +
-          (aoClicar && r.chave ? ' ' + aoClicar(r.chave, r.rotuloFoco, lado) + ' style="cursor:pointer"' : '') +
-          ' data-tip="' + relAttr(dica) + '"></rect>';
-      };
-      corpo += zona(0, cx, 'saiu', r.tip + '\n' + r.sairam + ' transferidos ou inativos\n' + r.perdidos + ' perdidos' + (r.celula ? '\nToque para ver quem saiu' : '')) +
-        zona(cx, W - cx, 'entrou', r.tip + '\n' + r.entraram + ' entraram\nSaldo: ' + (saldo > 0 ? '+' : '') + saldo + (r.celula ? '\nToque para ver quem entrou' : ''));
+      corpo += '<rect x="0" y="' + yy + '" width="' + W + '" height="' + rowH + '" fill="transparent" data-tip="' + relAttr(r.tip + '\n' + r.entraram + ' entraram\n' + r.sairam + ' transferidos ou inativos\n' + r.perdidos + ' perdidos\nSaldo: ' + (saldo > 0 ? '+' : '') + saldo) + '"></rect>';
     });
     return relSvg(W, H, 'Entradas e saídas', corpo);
   }
@@ -4810,8 +4738,12 @@
       '<div class="home-card-sub">' + escHtml(g.sub) + '</div></div>' +
       '<button type="button" class="rel-share" title="Compartilhar como imagem" aria-label="Compartilhar ' + relAttr(g.titulo) + ' como imagem" ' + cb(g.compartilhar) + '>' + REL_SHARE_ICON + '</button></div>' +
       relLegendaHtml(g.legenda) +
+      // chart + lista ficam juntos: num cartão de largura inteira eles
+      // passam a dividir a linha, em vez de empilhar e esticar o cartão.
+      '<div class="rel-corpo">' +
       (g.vazio ? '<div class="rel-vazio">' + escHtml(g.vazio) + '</div>' : '<div class="rel-chart">' + g.svg + '</div>') +
       (extra || '') +
+      '</div>' +
       (g.nota ? '<div class="rel-nota">' + escHtml(g.nota) + '</div>' : '') +
       '</div>';
   }
@@ -4847,7 +4779,7 @@
     };
     var semHistorico = d.crescimento.some(function (r) { return !r; });
     graficos.cresc = {
-      titulo: 'Visitantes, FAs e membros por mês', sub: 'Total de pessoas ativas em cada situação no fim de cada mês — sem Kids e Juvenis',
+      titulo: 'Visitantes, FAs e membros por mês', sub: 'Pessoas ativas no fim de cada mês, sem Kids e Juvenis',
       svg: relSvgColunas(d.meses, d.crescimento, [
         ['visit', 'visitantes', REL_COR.visit], ['fa', 'FAs', REL_COR.fa], ['membro', 'membros', REL_COR.membro],
       ], 'Total de visitantes, FAs e membros por mês'),
@@ -4857,7 +4789,7 @@
       compartilhar: compartilhar('cresc'),
     };
     graficos.kids = {
-      titulo: 'Kids e Juvenis por mês', sub: 'Total de Kids e Juvenis ativos no fim de cada mês',
+      titulo: 'Kids e Juvenis por mês', sub: 'Kids e Juvenis ativos no fim de cada mês',
       svg: relSvgColunas(d.meses, d.crescimento, [
         ['kids', 'Kids e Juvenis no total', REL_COR.kids], ['kidsVisit', 'visitantes', null, true],
         ['kidsFa', 'FAs', null, true], ['kidsMembro', 'membros', null, true],
@@ -4896,7 +4828,7 @@
     } else {
       var semDados = d.comparativo.filter(function (c) { return c.atual == null; }).length;
       graficos.comp = {
-        titulo: 'Comparativo de células', sub: 'Presentes por encontro no período e a variação contra o período anterior',
+        titulo: 'Comparativo de células', sub: 'Presentes por encontro, e a variação contra o período anterior',
         svg: relSvgComparativo(d.comparativo), legenda: [],
         vazio: d.comparativo.some(function (c) { return c.atual != null; }) ? '' : 'Nenhuma célula do recorte tem lançamentos no período.',
         nota: semDados ? semDados + (semDados === 1 ? ' célula sem lançamento no período ficou de fora.' : ' células sem lançamento no período ficaram de fora.') : 'Toque numa barra para ver os detalhes.',
@@ -4906,13 +4838,10 @@
     graficos.mov = {
       titulo: esc.unica ? 'Movimentações da célula' : 'Movimentações por célula',
       sub: esc.unica ? 'Quem entrou e quem saiu, mês a mês' : 'Quem entrou e quem saiu de cada célula no período',
-      svg: relSvgMov(d.movimentacoes, function (chave, rotulo, lado) {
-        return cb(function () { focarMovimentacao(chave, rotulo, lado); });
-      }, state.relMovFoco),
-      legenda: [{ cor: REL_COR.linha, label: 'Entraram' }, { cor: REL_COR.saiu, label: 'Saíram (transferidos e inativos)' }, { cor: REL_COR.perdido, label: 'Perdidos' }],
+      svg: relSvgMov(d.movimentacoes),
+      legenda: [{ cor: REL_COR.linha, label: 'Entraram' }, { cor: REL_COR.saiu, label: 'Saíram' }, { cor: REL_COR.perdido, label: 'Perdidos' }],
       vazio: d.movimentacoes.length ? '' : 'Nenhuma célula no recorte.',
-      nota: 'Entraram = cadastros novos e quem chegou de outra célula. O número à direita é o saldo.',
-      svgLimpo: relSvgMov(d.movimentacoes),
+      nota: 'Entraram = cadastros novos e quem chegou de outra célula. Saíram = transferidos e inativos. À direita, o saldo.',
       compartilhar: compartilhar('mov'),
     };
     var totalPerdidos = d.perdidosSerie.reduce(function (a, b) { return a + b; }, 0);
@@ -4920,14 +4849,14 @@
       titulo: 'Perdidos',
       sub: totalPerdidos ? totalPerdidos + (totalPerdidos > 1 ? ' pessoas saíram e não seguem' : ' pessoa saiu e não segue') + ' em outra igreja no período' : 'Quem saiu e não segue em outra igreja, mês a mês',
       svg: relSvgPerdidos(d.meses, d.perdidosSerie), legenda: [],
-      nota: 'Os nomes estão na lista de Movimentações, acima. A imagem para o WhatsApp leva apenas os números.',
+      nota: 'Os nomes aparecem só aqui e no PDF — a imagem para o WhatsApp leva apenas os números.',
       compartilhar: compartilhar('perd'),
     };
 
     var ordem = ['freq', 'cresc', 'kids', 'jornada', 'comp', 'mov', 'perd'];
     relUltimo = {
       graficos: graficos, ordem: ordem, recorte: recorte, periodoLabel: periodoLabel, nivel: nivel,
-      kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, saidasLista: d.saidasLista, comparativo: d.comparativo,
+      kpis: d.kpis, n: n, perdidosLista: d.perdidosLista, comparativo: d.comparativo,
     };
 
     var discOptions = esc.discIds.map(function (id) { return { v: id, label: relNomePessoa(id) || 'Discipulador sem nome' }; })
@@ -4941,8 +4870,6 @@
       discOptions: discOptions.length > 1 ? discOptions : [],
       celulaOptions: esc.doDisc.length > 1 ? esc.doDisc.map(function (c) { return { v: c, label: celulaLabel(c) }; }) : [],
       filtrando: !!(esc.disc || esc.cel),
-      movFoco: state.relMovFoco,
-      limparFoco: function () { setState({ relMovFoco: null }); },
       onPeriodo: function (e) { setRelFiltro('periodo', e.target.value); },
       onDisc: function (e) { setRelFiltro('discipulador', e.target.value); },
       onCelula: function (e) { setRelFiltro('celula', e.target.value); },
@@ -5008,48 +4935,18 @@
       relKpi('perdidos', k.perdidos[0], 'Perdidos', 'saíram e não seguem em outra igreja', relTrend(k.perdidos[0], k.perdidos[1], true)) +
       '</div>';
 
-    var perdLista = d.perdidosLista.length ? '' : '<div class="rel-ok">✓ Nenhum perdido no período.</div>';
-
-    // Lista embaixo do gráfico: por padrão, quem a igreja perdeu no
-    // período; ao tocar numa barra, só aquela célula (ou mês), do lado
-    // que foi tocado.
-    var foco = v.movFoco;
-    var daChave = function (x) {
-      if (!foco) return true;
-      return foco.chave.indexOf('mes:') === 0 ? x.ordem === foco.chave.slice(4) : x.celulaBruta === foco.chave;
-    };
-    var entrou = !!foco && foco.lado === 'entrou';
-    var lista = (entrou ? d.entradasLista : d.saidasLista).filter(daChave);
-    var tituloLista = entrou
-      ? 'Quem entrou · ' + foco.rotulo
-      : (foco ? 'Quem saiu · ' + foco.rotulo : 'Quem a igreja perdeu no período');
-    var subLista = entrou
-      ? 'Cadastros novos e quem chegou de outra célula'
-      : 'Transferidos para outra igreja e perdidos' + (foco ? '' : ' — toque numa barra para ver só uma célula');
-    var mostraCelula = !foco || foco.chave.indexOf('mes:') === 0;
-    var vazioLista = entrou ? 'Ninguém entrou nesse recorte.' : 'Ninguém saiu para outra igreja nem foi perdido aqui.';
-    var saidas = '<div class="rel-lista">' +
-      '<div class="rel-lista-topo"><div><div class="rel-lista-titulo">' + escHtml(tituloLista) + '</div>' +
-      '<div class="rel-lista-sub">' + escHtml(subLista) + '</div></div>' +
-      (foco ? '<button type="button" class="rel-lista-limpar" ' + cb(v.limparFoco) + '>Ver todas</button>' : '') +
-      '</div>' +
-      (lista.length
-        ? '<div class="rel-tabela-wrap"><table class="rel-tabela">' +
-          '<thead><tr><th>Nome</th><th>Posição</th>' + (mostraCelula ? '<th>Célula</th>' : '') + '<th>' + (entrou ? 'Entrada' : 'Saída') + '</th><th>Mês</th></tr></thead><tbody>' +
-          lista.map(function (p) {
-            return '<tr><td class="rel-tabela-nome">' + escHtml(p.nome) +
-              (p.detalhe ? '<div class="rel-tabela-motivo">“' + escHtml(p.detalhe) + '”</div>' : '') + '</td><td>' + escHtml(p.posicao) + '</td>' +
-              (mostraCelula ? '<td>' + escHtml(p.celula) + '</td>' : '') +
-              '<td><span class="rel-tag" style="color:' + p.cor + ';background:' + (p.cor === REL_COR.perdido ? REL_COR.ruimFundo : (p.cor === REL_COR.linha ? REL_COR.bomFundo : REL_COR.neutroFundo)) + '">' + escHtml(p.tipo) + '</span></td>' +
-              '<td class="rel-tabela-mes">' + escHtml(p.mes) + '</td></tr>';
-          }).join('') + '</tbody></table></div>'
-        : '<div class="rel-lista-vazio">' + escHtml(vazioLista) + '</div>') +
-      '</div>';
+    var perdLista = d.perdidosLista.length
+      ? '<div class="rel-perd-lista">' + d.perdidosLista.map(function (p) {
+        return '<div class="rel-perd-row"><div><div class="rel-perd-nome">' + escHtml(p.nome) + '</div>' +
+          '<div class="rel-perd-meta">' + escHtml(p.celula) + (p.detalhe ? ' · “' + escHtml(p.detalhe) + '”' : '') + '</div></div>' +
+          '<div class="rel-perd-mes">' + escHtml(p.mes) + '</div></div>';
+      }).join('') + '</div>'
+      : '<div class="rel-ok">✓ Nenhum perdido no período.</div>';
 
     var g = v.graficos;
     html += '<div class="rel-grid">' +
       relCardHtml(g.freq) + relCardHtml(g.cresc) + relCardHtml(g.kids) + relCardHtml(g.jornada) + relCardHtml(g.comp) +
-      relCardHtml(g.mov, saidas) + relCardHtml(g.perd, perdLista) +
+      relCardHtml(g.mov) + relCardHtml(g.perd, perdLista) +
       '</div></div>';
     return html;
   }
@@ -5087,7 +4984,7 @@
     var g = relUltimo && relUltimo.graficos[id];
     if (!g) return;
     if (g.vazio) { window.alert(g.vazio); return; }
-    var svg = (g.svgLimpo || g.svg).replace(/ style="[^"]*"/, '');
+    var svg = g.svg.replace(/ style="[^"]*"/, '');
     var img = new Image();
     img.onload = function () {
       var W = 1080, pad = 60, cw = W - pad * 2;
@@ -5179,14 +5076,13 @@
     u.ordem.forEach(function (id) {
       var g = u.graficos[id];
       body += '<div class="graf"><h2>' + escHtml(g.titulo) + '</h2><p>' + escHtml(g.sub) + '</p>' +
-        (g.vazio ? '<p>' + escHtml(g.vazio) + '</p>' : (g.svgLimpo || g.svg)) +
+        (g.vazio ? '<p>' + escHtml(g.vazio) + '</p>' : g.svg) +
         (g.legenda.length ? '<div class="leg">' + g.legenda.map(function (l) { return '<i style="background:' + l.cor + (l.borda ? ';border:1px solid ' + l.borda : '') + '"></i>' + escHtml(l.label); }).join('') + '</div>' : '') +
         '</div>';
-      if (id === 'mov' && u.saidasLista.length) {
-        body += '<h2 style="font-size:13px;margin:10px 0 4px">Quem a igreja perdeu no período</h2>' +
-          '<table><thead><tr><th>Nome</th><th>Posição</th><th>Célula</th><th>Saída</th><th>Motivo anotado</th><th>Mês</th></tr></thead><tbody>' +
-          u.saidasLista.map(function (x) {
-            return '<tr><td>' + escHtml(x.nome) + '</td><td>' + escHtml(x.posicao) + '</td><td>' + escHtml(x.celula) + '</td><td>' + escHtml(x.tipo) + '</td><td>' + escHtml(x.detalhe || '—') + '</td><td>' + escHtml(x.mes) + '</td></tr>';
+      if (id === 'perd' && u.perdidosLista.length) {
+        body += '<table><thead><tr><th>Perdido</th><th>Célula</th><th>Mês</th><th>Motivo anotado</th></tr></thead><tbody>' +
+          u.perdidosLista.map(function (p) {
+            return '<tr><td>' + escHtml(p.nome) + '</td><td>' + escHtml(p.celula) + '</td><td>' + escHtml(p.mes) + '</td><td>' + escHtml(p.detalhe || '—') + '</td></tr>';
           }).join('') + '</tbody></table>';
       }
     });
