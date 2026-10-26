@@ -18,8 +18,53 @@
   /* ---- layout: menu lateral + conteúdo ---- */
   .app-shell{display:flex;align-items:stretch;min-height:100vh}
   /* cursor de seta e sem seleção de texto: o menu é para clicar, não para ler/copiar */
-  .sidebar{flex:0 0 252px;width:252px;background:linear-gradient(180deg,#1B2344,#161c38);color:#fff;display:flex;flex-direction:column;padding:20px 16px 22px;position:sticky;top:0;height:100vh;overflow-y:auto;cursor:default;user-select:none;-webkit-user-select:none}
+  .sidebar{flex:0 0 252px;width:252px;background:linear-gradient(180deg,#1B2344,#161c38);color:#fff;display:flex;flex-direction:column;padding:20px 16px 22px;position:sticky;top:0;height:100vh;overflow-y:auto;overflow-x:hidden;cursor:default;user-select:none;-webkit-user-select:none;transition:flex-basis .22s ease,width .22s ease,padding .22s ease}
   .sidebar button{cursor:pointer}
+  .sidebar.collapsed{flex-basis:68px;width:68px;padding:20px 10px 16px}
+  .brand-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sidebar.collapsed .brand-top{justify-content:center}
+  .brand-logo{height:32px;width:auto;max-width:140px;object-fit:contain}
+  .sidebar.collapsed .brand-logo{display:none}
+  .collapse-btn{border:none;background:rgba(255,255,255,.1);color:#fff;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;transition:transform .2s ease,background .15s ease}
+  .collapse-btn:hover{background:rgba(255,255,255,.18)}
+  .sidebar.collapsed .collapse-btn{transform:rotate(180deg)}
+  .sys{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)}
+  .sidebar.collapsed .sys{display:none}
+  .sys-title{font-family:'Spectral',serif;font-weight:700;font-size:21px;color:#fff;line-height:1.25;letter-spacing:.01em}
+  .sys-sub-row{display:flex;align-items:center;gap:6px;margin-top:2px}
+  .sys-sub{font-size:11px;color:rgba(255,255,255,.55);font-weight:600;overflow-wrap:anywhere}
+  .edit-btn{border:none;background:none;color:rgba(255,255,255,.4);padding:3px;cursor:pointer;display:flex;align-items:center;border-radius:4px;flex:0 0 auto}
+  .edit-btn:hover{color:#fff;background:rgba(255,255,255,.1)}
+  .sys-sub-input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);border-radius:6px;color:#fff;font-size:11px;font-weight:600;padding:4px 7px;width:100%}
+  .sys-sub-input:focus{outline:none;border-color:#149C88}
+  .sidebar>nav{margin-top:22px}
+  .nav-group{display:flex;flex-direction:column;gap:2px;margin-bottom:14px}
+  .nav-group:last-child{margin-bottom:0}
+  .nav-label{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.38);padding:0 12px 6px}
+  .sidebar.collapsed .nav-label{height:1px;padding:0;margin:4px 10px 10px;background:rgba(255,255,255,.14);font-size:0;color:transparent;overflow:hidden}
+  .nav-item{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:none;border-left:3px solid transparent;border-radius:0 9px 9px 0;background:transparent;color:rgba(255,255,255,.7);font-size:13.5px;font-weight:600;position:relative;transition:background .15s ease,color .15s ease,border-color .15s ease,transform .15s ease}
+  .nav-item:hover{background:rgba(255,255,255,.08);color:#fff;transform:translateX(2px)}
+  .nav-item svg{flex:0 0 auto;transition:transform .15s ease}
+  .nav-item:hover svg{transform:scale(1.08)}
+  .nav-item.active{background:rgba(255,255,255,.14);border-left-color:#149C88;color:#fff}
+  .nav-item.locked{color:rgba(255,255,255,.4)}
+  .nav-item .lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sidebar.collapsed .nav-item{justify-content:center;padding:10px 0;border-left:none;border-radius:9px;gap:0}
+  .sidebar.collapsed .nav-item .lbl{display:none}
+  .sidebar.collapsed .nav-item .nav-alerta{position:absolute;top:4px;right:14px;min-width:9px;width:9px;height:9px;padding:0;font-size:0;box-shadow:0 0 0 2px #1B2344}
+  .footer{margin-top:auto;padding-top:18px;display:flex;flex-direction:column}
+  .sync{display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);border-radius:20px;padding:7px 12px;width:100%}
+  .sync-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .sync-label{font-size:11.5px;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .total-row{display:flex;align-items:baseline;gap:8px;padding:12px 2px 0}
+  .total-row b{font-family:'Spectral',serif;font-weight:700;font-size:22px;color:#fff;line-height:1}
+  .total-row span{font-size:11px;color:rgba(255,255,255,.62);font-weight:500}
+  .who{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.14)}
+  .who .email{font-size:12px;color:#fff;font-weight:600;overflow-wrap:anywhere}
+  .logout-btn{border:none;background:none;padding:0;color:#8fd6c6;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:3px}
+  .sidebar.collapsed .footer{align-items:center}
+  .sidebar.collapsed .sync{width:auto;padding:8px;border-radius:50%;justify-content:center}
+  .sidebar.collapsed .sync-label,.sidebar.collapsed .total-row,.sidebar.collapsed .who{display:none}
   /* alerta de pendências no item do menu (ex: pedidos de acesso) */
   .nav-alerta{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#f5b82e;color:#1B2344;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px rgba(245,184,46,.25);animation:nav-alerta-pulso 2s ease-in-out infinite}
   .nav-alerta-ponto{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:#f5b82e;box-shadow:0 0 0 2px #eef2f7}
@@ -276,6 +321,13 @@
     .app-shell{display:block}
     .sidebar{position:fixed;left:0;top:0;height:100vh;transform:translateX(-100%);transition:transform .22s ease;z-index:50;box-shadow:8px 0 30px rgba(20,36,58,.32)}
     .sidebar.sidebar-open{transform:translateX(0)}
+    .sidebar.collapsed{flex-basis:252px;width:252px;padding:20px 16px 22px}
+    .sidebar.collapsed .brand-logo{display:inline-block}
+    .sidebar.collapsed .sys,.sidebar.collapsed .total-row,.sidebar.collapsed .who{display:block}
+    .sidebar.collapsed .nav-item .lbl,.sidebar.collapsed .sync-label{display:inline}
+    .sidebar.collapsed .nav-item{justify-content:flex-start;padding:10px 12px;gap:11px}
+    .sidebar.collapsed .sync{width:100%;padding:7px 12px;border-radius:20px}
+    .collapse-btn{display:none}
     .sidebar-close-btn{display:flex !important;align-items:center;justify-content:center}
     .sidebar-backdrop.show{display:block;position:fixed;inset:0;background:rgba(20,36,58,.42);z-index:45}
     .mobile-topbar{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fff;border-bottom:1px solid #e2e9f2;position:sticky;top:0;z-index:10;margin:0 -14px 16px}
@@ -306,7 +358,7 @@
 <body>
 <div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=52"></script>
-<script src="app.js?v=52"></script>
+<script src="config.js?v=53"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>

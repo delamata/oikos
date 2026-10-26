@@ -175,6 +175,14 @@
     selected: null,
     tab: 'home',
     sidebarOpen: false,
+    // Menu colapsado (vira trilho de ícones) — lembrado entre sessões.
+    sidebarCollapsed: (function () {
+      try { return localStorage.getItem('oikos-menu-colapsado') === '1'; } catch (e) { return false; }
+    })(),
+    // Subtítulo do sidebar (tabela configuracoes) — valor inicial até carregar do banco.
+    subtitulo: 'Videira Igreja em Células',
+    editandoSubtitulo: false,
+    subtituloSalvando: false,
     // Início: Pastor/Admin podem recortar a rede por Obreiro e Discipulador
     homeFilters: { obreiro: '', discipulador: '' },
     trilhoFilters: { celula: '', curso: '' },
@@ -1071,6 +1079,43 @@
     sb.from('celula_hierarquia').select('celula').order('celula').then(function (res) {
       if (res.error) { console.warn('Erro ao carregar células:', res.error.message); setState({ celulasPublicasStatus: 'error' }); return; }
       setState({ celulasPublicas: res.data.map(function (r) { return r.celula; }), celulasPublicasStatus: 'ok' });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Configurações (supabase/add_configuracoes.sql) — por enquanto só o
+  // subtítulo do menu lateral, editável por quem tem acesso total.
+  // ---------------------------------------------------------------------
+  function loadConfiguracoes() {
+    if (!sb) return;
+    sb.from('configuracoes').select('subtitulo').eq('id', 1).maybeSingle().then(function (res) {
+      if (res.error || !res.data) return; // mantém o valor padrão se a tabela ainda não existir
+      setState({ subtitulo: res.data.subtitulo });
+    });
+  }
+
+  function toggleSidebarCollapsed() {
+    setState(function (s) {
+      var colapsado = !s.sidebarCollapsed;
+      try { localStorage.setItem('oikos-menu-colapsado', colapsado ? '1' : '0'); } catch (e) {}
+      return { sidebarCollapsed: colapsado };
+    });
+  }
+
+  function iniciarEdicaoSubtitulo() { setState({ editandoSubtitulo: true }); }
+  function cancelarEdicaoSubtitulo() { setState({ editandoSubtitulo: false }); }
+
+  function salvarSubtitulo(novoTexto) {
+    var texto = String(novoTexto || '').trim();
+    if (!texto || !sb) { setState({ editandoSubtitulo: false }); return; }
+    setState({ subtituloSalvando: true });
+    sb.from('configuracoes').update({ subtitulo: texto }).eq('id', 1).then(function (res) {
+      if (res.error) {
+        console.warn('Erro ao salvar subtítulo:', res.error.message);
+        setState({ subtituloSalvando: false, editandoSubtitulo: false });
+        return;
+      }
+      setState({ subtitulo: texto, subtituloSalvando: false, editandoSubtitulo: false });
     });
   }
 
@@ -2629,6 +2674,14 @@
       sidebarOpen: state.sidebarOpen,
       openSidebar: function () { setState({ sidebarOpen: true }); },
       closeSidebar: function () { setState({ sidebarOpen: false }); },
+      sidebarCollapsed: state.sidebarCollapsed,
+      toggleSidebarCollapsed: toggleSidebarCollapsed,
+      subtitulo: state.subtitulo,
+      editandoSubtitulo: state.editandoSubtitulo,
+      subtituloSalvando: state.subtituloSalvando,
+      iniciarEdicaoSubtitulo: iniciarEdicaoSubtitulo,
+      cancelarEdicaoSubtitulo: cancelarEdicaoSubtitulo,
+      salvarSubtitulo: salvarSubtitulo,
       isTrilho: isTrilho, isNovo: isNovo, isMov: isMov, isHierarquia: isHierarquia,
       souFull: souFull,
       tabTrilhoColor: isTrilho ? '#1B2344' : '#8a99ab',
@@ -2799,62 +2852,80 @@
   var lockIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;opacity:.7"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
   var sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>';
   var chatIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+  var collapseIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>';
+  var pencilIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
 
   // badge: número de pendências (ex: pedidos de acesso) — aparece como
   // alerta ao lado do item do menu.
   function sideNavItem(iconKey, label, active, onClick, locked, badge) {
-    var bg = active ? 'rgba(255,255,255,.14)' : 'transparent';
-    var color = locked ? 'rgba(255,255,255,.4)' : (active ? '#fff' : 'rgba(255,255,255,.7)');
-    var borderColor = active ? '#149C88' : 'transparent';
     var alerta = badge
       ? '<span class="nav-alerta" title="' + badge + (badge === 1 ? ' pedido de acesso novo' : ' pedidos de acesso novos') + '">' + (badge > 99 ? '99+' : badge) + '</span>'
       : '';
-    return '<button ' + cb(onClick) + (locked ? ' title="Faça login para acessar"' : '') + ' style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:none;border-left:3px solid ' + borderColor + ';border-radius:0 9px 9px 0;background:' + bg + ';color:' + color + ';font-size:13.5px;font-weight:600;cursor:pointer">' +
-      navIcon(iconKey) + '<span style="flex:1">' + escHtml(label) + '</span>' + alerta + (locked ? lockIcon : '') + '</button>';
+    return '<button ' + cb(onClick) + ' title="' + escHtml(locked ? 'Faça login para acessar' : label) + '"' +
+      ' class="nav-item' + (active ? ' active' : '') + (locked ? ' locked' : '') + '">' +
+      navIcon(iconKey) + '<span class="lbl">' + escHtml(label) + '</span>' + alerta + (locked ? lockIcon : '') + '</button>';
   }
 
   function sidebarHtml(vals) {
     // O menu só existe para quem entrou: sem sessão a tela é o login.
-    var items = [
+    var grupos = [
+      { label: 'Menu', items: [
         { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
         { icon: 'cadastro', label: 'Cadastro de Membros', active: vals.isCadastro, onClick: vals.goCadastro, show: true },
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
         { icon: 'rel', label: 'Relatórios', active: vals.isRel, onClick: vals.goRel, show: true },
+        { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
+      ] },
+      { label: 'Trilho do Vencedor', items: [
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
         { icon: 'externo', label: 'Trilho — Turmas e Presença', active: false, onClick: vals.abrirTrilhoApp, show: true },
-        { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
+      ] },
+      { label: 'Ferramentas e gestão', items: [
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
         { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull, badge: vals.souFull ? (vals.solicitacoes || []).length : 0 },
-      ];
-    var footer = '<button ' + cb(vals.onRefresh) +' title="Sincronizar agora com a planilha" style="display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);border-radius:20px;padding:7px 12px;cursor:pointer;width:100%">' +
-        '<span style="width:7px;height:7px;border-radius:50%;background:' + vals.sync.dot + '"></span>' +
-        '<span style="font-size:11.5px;color:#fff;font-weight:600">' + escHtml(vals.sync.text) + '</span>' +
-        '</button>' +
-        '<div style="display:flex;align-items:baseline;gap:8px;padding:12px 2px 0">' +
-        '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:22px;color:#fff;line-height:1">' + vals.totalAll + '</div>' +
-        '<div style="font-size:11px;color:rgba(255,255,255,.62);font-weight:500">pessoas cadastradas</div>' +
-        '</div>' +
-        '<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.14)">' +
-        '<div style="font-size:12px;color:#fff;font-weight:600;overflow-wrap:anywhere">' + escHtml(vals.userEmail) + '</div>' +
-        '<button ' + cb(vals.logout) + ' style="border:none;background:none;padding:0;color:#8fd6c6;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:3px">Sair</button>' +
+      ] },
+    ];
+    var nav = grupos.map(function (g) {
+      var itens = g.items.filter(function (it) { return it.show; });
+      if (!itens.length) return '';
+      return '<div class="nav-group"><div class="nav-label">' + escHtml(g.label) + '</div>' +
+        itens.map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge); }).join('') +
         '</div>';
+    }).join('');
+
+    var subtituloHtml = vals.editandoSubtitulo
+      ? '<form ' + cb(function (e) { if (e && e.preventDefault) e.preventDefault(); vals.salvarSubtitulo(document.getElementById('sidebar-subtitulo-input').value); }, 'submit') + ' class="sys-sub-row">' +
+        '<input id="sidebar-subtitulo-input" class="sys-sub-input" value="' + escHtml(vals.subtitulo) + '" maxlength="60" ' + cb(vals.cancelarEdicaoSubtitulo, 'blur') + '>' +
+        '</form>'
+      : '<div class="sys-sub-row"><span class="sys-sub">' + escHtml(vals.subtitulo) + '</span>' +
+        (vals.souFull ? '<button type="button" class="edit-btn" ' + cb(vals.iniciarEdicaoSubtitulo) + ' title="Editar subtítulo">' + pencilIcon + '</button>' : '') +
+        '</div>';
+
+    var footer = '<div class="footer">' +
+        '<button class="sync" ' + cb(vals.onRefresh) + ' title="Sincronizar agora com a planilha">' +
+        '<span class="sync-dot" style="background:' + vals.sync.dot + '"></span>' +
+        '<span class="sync-label">' + escHtml(vals.sync.text) + '</span>' +
+        '</button>' +
+        '<div class="total-row"><b>' + vals.totalAll + '</b><span>pessoas cadastradas</span></div>' +
+        '<div class="who">' +
+        '<div class="email">' + escHtml(vals.userEmail) + '</div>' +
+        '<button ' + cb(vals.logout) + ' class="logout-btn">Sair</button>' +
+        '</div></div>';
+
     return '' +
-      '<aside class="sidebar' + (vals.sidebarOpen ? ' sidebar-open' : '') + '">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between">' +
-      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" style="height:36px;width:auto">' +
+      '<aside class="sidebar' + (vals.sidebarOpen ? ' sidebar-open' : '') + (vals.sidebarCollapsed ? ' collapsed' : '') + '">' +
+      '<div class="brand-top">' +
+      '<img src="assets/logo-videira.png" alt="Videira Igreja em Células" class="brand-logo">' +
+      '<button ' + cb(vals.toggleSidebarCollapsed) + ' class="collapse-btn" title="' + (vals.sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu') + '" aria-label="' + (vals.sidebarCollapsed ? 'Mostrar menu' : 'Esconder menu') + '">' + collapseIcon + '</button>' +
       '<button ' + cb(vals.closeSidebar) + ' class="sidebar-close-btn" style="border:none;background:rgba(255,255,255,.1);color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1">✕</button>' +
       '</div>' +
-      '<div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">' +
-      '<div style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;color:#fff;line-height:1.25;letter-spacing:.01em">Sistema OIKOS</div>' +
-      '<div style="font-size:11px;color:rgba(255,255,255,.55);font-weight:600;margin-top:2px">Videira SCS</div>' +
+      '<div class="sys">' +
+      '<div class="sys-title">OIKOS</div>' +
+      subtituloHtml +
       '</div>' +
-      '<nav style="display:flex;flex-direction:column;gap:3px;margin-top:22px">' +
-      items.filter(function (it) { return it.show; }).map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge); }).join('') +
-      '</nav>' +
-      '<div style="margin-top:auto;padding-top:18px">' +
+      '<nav>' + nav + '</nav>' +
       footer +
-      '</div>' +
       '</aside>' +
       '<div class="sidebar-backdrop' + (vals.sidebarOpen ? ' show' : '') + '" ' + cb(vals.closeSidebar) + '></div>';
   }
@@ -6283,6 +6354,7 @@
       if (state.fpToken) { abrirFrequenciaPublica(); render(); return; }
       checkSession();
       tryBridgeSessionFromTrilho();
+      loadConfiguracoes();
       // Lista de células: usada pelo cadastro de visitante (?cadastro) e
       // pelo "Já sou líder". Fora isso, sem sessão não se carrega nada.
       if (state.isPublicCadastro) loadCelulasPublicas();
