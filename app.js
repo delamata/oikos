@@ -2797,6 +2797,8 @@
   }
 
   var lockIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;opacity:.7"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
+  var sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>';
+  var chatIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
 
   // badge: número de pendências (ex: pedidos de acesso) — aparece como
   // alerta ao lado do item do menu.
@@ -4123,38 +4125,62 @@
   function oikosIaHtml(vals) {
     var html = '<div class="home">';
 
-    html += '<div class="home-card" style="margin-top:16px">' +
-      '<div class="home-card-title">Pergunte sobre a rede</div>' +
-      '<div class="home-card-sub">As respostas saem só dos dados lançados no Oikos, dentro do que a sua permissão alcança. Sem dado, o Oikos IA diz que não sabe — não inventa.</div>' +
-      '<form ' + cb(vals.enviarIa, 'submit') + ' style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
-      '<input type="text" id="ia-pergunta" value="' + escHtml(vals.iaPergunta) + '" ' + cb(vals.onIaPergunta, 'input') + ' placeholder="Ex: quais células caíram de frequência no último mês?" style="flex:1;min-width:220px;padding:12px 14px;border:1px solid #d4deea;border-radius:12px;font-size:14px;background:#fff">' +
-      '<button type="submit"' + (vals.iaCarregando ? ' disabled' : '') + ' style="padding:12px 20px;border:none;border-radius:999px;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (vals.iaCarregando ? 'Consultando…' : 'Perguntar') + '</button>' +
+    // Compositor: fica fixo (position:sticky) no topo da área de conteúdo
+    // — não some de vista conforme a conversa cresce. Em telas estreitas
+    // vira position:static (ver CSS), pra não disputar espaço com a
+    // barra superior do celular.
+    html += '<div class="ia-composer">' +
+      '<form ' + cb(vals.enviarIa, 'submit') + ' class="ia-composer-row">' +
+      '<div class="ia-avatar">' + navIcon('ia') + '</div>' +
+      '<div class="ia-input-wrap">' +
+      '<input type="text" id="ia-pergunta" value="' + escHtml(vals.iaPergunta) + '" ' + cb(vals.onIaPergunta, 'input') + ' placeholder="Ex: quais células caíram de frequência no último mês?">' +
+      '</div>' +
+      '<button type="submit" class="ia-send"' + (vals.iaCarregando ? ' disabled' : '') + ' aria-label="' + (vals.iaCarregando ? 'Consultando' : 'Perguntar') + '">' + sendIcon + '</button>' +
       '</form>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+      '<div class="ia-note">' +
+      '<span>As respostas saem só dos dados lançados no Oikos, dentro do que a sua permissão alcança. Sem dado, o Oikos IA diz que não sabe — não inventa.</span>' +
+      (vals.iaConversa.length ? '<button type="button" ' + cb(vals.limparIa) + '>Limpar conversa</button>' : '') +
+      '</div>' +
+      '<div class="ia-chips">' +
       vals.iaSugestoes.map(function (s) {
-        return '<button type="button" ' + cb(vals.perguntarSugestao(s)) + ' style="padding:8px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;font-size:12.5px;font-weight:600;color:#2E4FC7;cursor:pointer">' + escHtml(s) + '</button>';
+        return '<button type="button" class="ia-chip" ' + cb(vals.perguntarSugestao(s)) + '>' + escHtml(s) + '</button>';
       }).join('') +
       '</div></div>';
 
-    if (vals.iaConversa.length) {
-      html += '<div style="display:flex;justify-content:flex-end;margin:14px 0 0">' +
-        '<button type="button" ' + cb(vals.limparIa) + ' style="border:none;background:none;color:#6b7c93;font-size:12.5px;font-weight:600;cursor:pointer">Limpar conversa</button></div>';
+    // Conversa em ordem cronológica (a mais antiga primeiro — mesma ordem
+    // em que state.iaConversa é preenchida), pergunta à direita em balão,
+    // resposta à esquerda com o ícone do Oikos IA.
+    if (!vals.iaConversa.length && !vals.iaCarregando) {
+      html += '<div class="ia-thread"><div class="ia-empty">' +
+        '<div class="ia-empty-ico">' + chatIcon + '</div>' +
+        '<h3>Escolha uma sugestão ou digite sua pergunta</h3>' +
+        '<p>O campo acima fica sempre visível — mesmo depois que a conversa começar a rolar.</p>' +
+        '</div></div>';
+      return html + '</div>';
     }
 
-    html += vals.iaConversa.slice().reverse().map(function (item) {
-      return '<div class="home-card" style="margin-top:12px">' +
-        '<div style="font-size:13.5px;font-weight:800;color:#2E4FC7;margin-bottom:8px">' + escHtml(item.pergunta) + '</div>' +
+    html += '<div class="ia-thread">';
+    html += vals.iaConversa.map(function (item) {
+      return '<div class="ia-turn">' +
+        '<div class="ia-q-row"><div class="ia-q-bubble">' + escHtml(item.pergunta) + '</div></div>' +
+        '<div class="ia-a-row">' +
+        '<div class="ia-a-avatar">' + navIcon('ia') + '</div>' +
+        '<div class="ia-a-card">' +
         (item.erro
           ? '<div style="background:#f7e2e2;color:#a02020;border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:600">' + escHtml(item.erro) + '</div>'
           : iaTextoHtml(item.resposta)) +
-        '</div>';
+        '</div></div></div>';
     }).join('');
 
     if (vals.iaCarregando) {
-      html += '<div class="home-card" style="margin-top:12px;color:#7b8aa0;font-size:13px">Consultando os dados do Oikos…</div>';
+      html += '<div class="ia-turn">' +
+        '<div class="ia-a-row">' +
+        '<div class="ia-a-avatar">' + navIcon('ia') + '</div>' +
+        '<div class="ia-a-card" style="color:#7b8aa0;font-size:13px">Consultando os dados do Oikos…</div>' +
+        '</div></div>';
     }
 
-    return html + '</div>';
+    return html + '</div></div>';
   }
 
   // Cabeçalho das demais telas, no mesmo padrão do destaque do Início.
