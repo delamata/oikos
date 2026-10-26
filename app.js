@@ -3570,7 +3570,7 @@
       '</div>' +
       '<div class="home-cells">' + v.cells.map(function (c) {
         return '<button class="home-card home-cell" ' + cb(c.onClick) + '>' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+          '<div class="home-cell-head">' +
           '<div style="min-width:0"><div class="home-cell-name">' + escHtml(c.label) + '</div>' +
           '<div class="home-card-sub">' + (c.lideres ? 'Líder: ' + escHtml(c.lideres) : 'Sem líder cadastrado') + '</div></div>' +
           '<div style="text-align:right"><div class="home-cell-total">' + c.n + '</div><div class="home-muted" style="font-size:11px">' + (c.n === 1 ? 'pessoa' : 'pessoas') + '</div></div>' +
