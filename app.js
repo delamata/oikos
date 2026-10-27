@@ -350,6 +350,30 @@
     movFilters: { celula: '', campo: '' },
     movLista: 'fora',             // qual lista está aberta: fora da contagem | inativos
     novaNota: '',
+
+    // Apoio ao Líder: Mural de Avisos (QG)
+    muralPosts: [],
+    muralStatus: 'idle',
+    muralLeitura: null,           // ISO da última leitura do usuário logado (null = nunca leu)
+    muralTexto: '',
+    muralSaving: false,
+
+    // Apoio ao Líder: Palavras do Culto (esboços em PDF, só Admin publica)
+    esbocos: [],
+    esbocosStatus: 'idle',
+    esbocoBusca: '',
+    esbocoFormAberto: false,
+    esbocoForm: { titulo: '', data: '' },
+    esbocoSaving: false,
+    esbocoErro: null,
+
+    // Apoio ao Líder: Encontro com Deus (palavras por edição, só Admin publica)
+    encontroEdicoes: [],
+    encontroStatus: 'idle',
+    encontroFormAberto: false,
+    encontroForm: { edicaoId: '', novaEdicaoTitulo: '', novaEdicaoPeriodo: '', titulo: '' },
+    encontroSaving: false,
+    encontroErro: null,
   };
 
   function setState(patch) {
@@ -512,7 +536,7 @@
   function doLogout() {
     pararVigiaSolicitacoes();
     sb.auth.signOut().then(function () {
-      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, trocaSenhaErro: null, trocaSenhaSaving: false, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null });
+      setState({ session: false, solicitacoes: [], members: [], movimentacoes: [], profile: null, meuPerfil: null, meuNome: '', meuConjugeId: null, directory: [], directoryStatus: 'idle', celulaHierarquia: [], tab: 'home', homeFilters: { obreiro: '', discipulador: '' }, trocaSenhaErro: null, trocaSenhaSaving: false, minhasCelulas: null, relFiltros: { periodo: '6', discipulador: '', celula: '' }, relMovs: [], relMovsStatus: 'idle', relPresenca: null, muralPosts: [], muralStatus: 'idle', muralLeitura: null, esbocos: [], esbocosStatus: 'idle', encontroEdicoes: [], encontroStatus: 'idle' });
       relPresencaPedida = '';
       relUltimo = null;
     });
@@ -525,6 +549,7 @@
   function afterLinked() {
     loadMembers(); loadMovimentacoes(); loadCelulaHierarquia(); loadFrequencia(); loadSolicitacoesLideranca();
     loadMinhasCelulas();
+    loadMural(); loadEsbocos(); loadEncontro();
     vigiarSolicitacoes();
   }
 
@@ -2074,6 +2099,214 @@
 
   function setMF(key, val) { setState(function (s) { var f = Object.assign({}, s.movFilters); f[key] = val; return { movFilters: f }; }); }
 
+  // ---------------------------------------------------------------------
+  // Apoio ao Líder: Mural de Avisos (QG), Palavras do Culto e Encontro com
+  // Deus. Quem pode publicar é garantido pela RLS (add_apoio_lider.sql);
+  // estas funções só refletem isso na UI.
+  // ---------------------------------------------------------------------
+  function meuMembroAtual() {
+    return (state.profile && (state.members || []).filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
+  }
+  function souAdminSistemaAtual() { return !!(state.profile && state.profile.is_admin); }
+  function souPastorOuAdminAtual() {
+    var m = meuMembroAtual();
+    return souAdminSistemaAtual() || !!(m && m.posicao === 'Pastor');
+  }
+  function slugFilename(nome) {
+    return (nome || 'arquivo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9.\-]+/g, '_');
+  }
+  function tempoRelativo(iso) {
+    var diffMs = Date.now() - new Date(iso).getTime();
+    var min = Math.floor(diffMs / 60000);
+    if (min < 1) return 'agora';
+    if (min < 60) return 'há ' + min + ' min';
+    var h = Math.floor(min / 60);
+    if (h < 24) return 'há ' + h + (h === 1 ? ' hora' : ' horas');
+    var d = Math.floor(h / 24);
+    if (d < 30) return 'há ' + d + (d === 1 ? ' dia' : ' dias');
+    return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  // ---- Mural de Avisos (QG) ----
+  function loadMural() {
+    if (!sb) return;
+    setState({ muralStatus: 'loading' });
+    sb.from('mural_posts').select('*').order('criado_em', { ascending: false }).limit(200).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar o mural:', res.error.message); setState({ muralStatus: 'error' }); return; }
+      setState({ muralPosts: res.data || [], muralStatus: 'ok' });
+    });
+    if (state.session) {
+      sb.from('mural_leituras').select('lido_em').eq('user_id', state.session.user.id).maybeSingle().then(function (res) {
+        if (!res.error) setState({ muralLeitura: res.data ? res.data.lido_em : null });
+      });
+    }
+  }
+  // Ao abrir o Mural a pessoa já leu os recados: apaga o indicador na
+  // hora (otimista) e grava lido_em pra valer no banco.
+  function marcarMuralLido() {
+    if (!sb || !state.session) return;
+    var agora = new Date().toISOString();
+    setState({ muralLeitura: agora });
+    sb.from('mural_leituras').upsert({ user_id: state.session.user.id, lido_em: agora }, { onConflict: 'user_id' }).then(function (res) {
+      if (res.error) console.warn('Erro ao marcar o mural como lido:', res.error.message);
+    });
+  }
+  function setMuralTexto(v) { setState({ muralTexto: v }); }
+  function publicarMural() {
+    if (!sb || !state.session) return;
+    var texto = (state.muralTexto || '').trim().slice(0, 280);
+    if (!texto) return;
+    var meu = meuMembroAtual();
+    var souAdmin = souAdminSistemaAtual();
+    var ehPastor = !!(meu && meu.posicao === 'Pastor');
+    var nome = ehPastor ? meu.nome : (souAdmin ? 'Administração' : (meu ? meu.nome : 'Administração'));
+    var cargo = ehPastor ? 'Pastor' : 'Admin';
+    setState({ muralSaving: true });
+    sb.from('mural_posts').insert({
+      autor_user_id: state.session.user.id, autor_nome: nome, autor_cargo: cargo, texto: texto,
+    }).select().single().then(function (res) {
+      if (res.error) { setState({ muralSaving: false }); console.warn('Erro ao publicar recado:', res.error.message); return; }
+      setState(function (s) { return { muralSaving: false, muralTexto: '', muralPosts: [res.data].concat(s.muralPosts || []) }; });
+    });
+  }
+  function excluirMuralPost(id) {
+    if (!sb) return;
+    sb.from('mural_posts').delete().eq('id', id).then(function (res) {
+      if (res.error) { console.warn('Erro ao excluir recado:', res.error.message); return; }
+      setState(function (s) { return { muralPosts: (s.muralPosts || []).filter(function (p) { return p.id !== id; }) }; });
+    });
+  }
+  function curtirMuralPost(id) {
+    if (!sb) return;
+    setState(function (s) { return { muralPosts: (s.muralPosts || []).map(function (p) { return p.id === id ? Object.assign({}, p, { curtidas: (p.curtidas || 0) + 1 }) : p; }) }; });
+    sb.rpc('curtir_mural_post', { post_id: id }).then(function (res) {
+      if (res.error) console.warn('Erro ao curtir recado:', res.error.message);
+    });
+  }
+
+  // ---- Palavras do Culto (repositório de esboços em PDF) ----
+  function loadEsbocos() {
+    if (!sb) return;
+    setState({ esbocosStatus: 'loading' });
+    sb.from('esbocos').select('*').order('data_culto', { ascending: false }).limit(300).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar esboços:', res.error.message); setState({ esbocosStatus: 'error' }); return; }
+      setState({ esbocos: res.data || [], esbocosStatus: 'ok' });
+    });
+  }
+  function setEsbocoBusca(v) { setState({ esbocoBusca: v }); }
+  function setEsbocoForm(key, v) { setState(function (s) { var f = Object.assign({}, s.esbocoForm); f[key] = v; return { esbocoForm: f }; }); }
+  function abrirFormEsboco() { setState({ esbocoFormAberto: true, esbocoErro: null }); }
+  function fecharFormEsboco() { setState({ esbocoFormAberto: false, esbocoErro: null, esbocoForm: { titulo: '', data: '' } }); }
+  function publicarEsboco() {
+    if (!sb || !state.session) return;
+    var arquivoEl = document.getElementById('esb-arquivo');
+    var titulo = (state.esbocoForm.titulo || '').trim();
+    var dataCulto = state.esbocoForm.data || '';
+    var arquivo = arquivoEl && arquivoEl.files && arquivoEl.files[0];
+    if (!titulo || !dataCulto || !arquivo) { setState({ esbocoErro: 'Preencha título, data do culto e escolha o arquivo PDF.' }); return; }
+    setState({ esbocoSaving: true, esbocoErro: null });
+    var path = 'esbocos/' + Date.now() + '-' + slugFilename(arquivo.name);
+    sb.storage.from('apoio-lider').upload(path, arquivo, { contentType: arquivo.type || 'application/pdf' }).then(function (up) {
+      if (up.error) { setState({ esbocoSaving: false, esbocoErro: up.error.message }); return; }
+      sb.from('esbocos').insert({
+        titulo: titulo, data_culto: dataCulto, arquivo_path: path, arquivo_nome: arquivo.name,
+        autor_user_id: state.session.user.id, autor_nome: 'Administração',
+      }).select().single().then(function (res) {
+        if (res.error) { setState({ esbocoSaving: false, esbocoErro: res.error.message }); return; }
+        setState(function (s) {
+          return { esbocoSaving: false, esbocoFormAberto: false, esbocoForm: { titulo: '', data: '' }, esbocoErro: null, esbocos: [res.data].concat(s.esbocos || []) };
+        });
+        var arquivoElReset = document.getElementById('esb-arquivo');
+        if (arquivoElReset) arquivoElReset.value = '';
+      });
+    });
+  }
+  function excluirEsboco(id, path) {
+    if (!sb) return;
+    sb.storage.from('apoio-lider').remove([path]).then(function () {
+      sb.from('esbocos').delete().eq('id', id).then(function (res) {
+        if (res.error) { console.warn('Erro ao excluir esboço:', res.error.message); return; }
+        setState(function (s) { return { esbocos: (s.esbocos || []).filter(function (e) { return e.id !== id; }) }; });
+      });
+    });
+  }
+  function abrirArquivoApoioLider(path) {
+    if (!sb) return;
+    sb.storage.from('apoio-lider').createSignedUrl(path, 3600).then(function (res) {
+      if (res.error || !res.data) { console.warn('Erro ao abrir arquivo:', res.error && res.error.message); return; }
+      window.open(res.data.signedUrl, '_blank');
+    });
+  }
+
+  // ---- Encontro com Deus (palavras agrupadas por edição) ----
+  function loadEncontro() {
+    if (!sb) return;
+    setState({ encontroStatus: 'loading' });
+    sb.from('encontro_edicoes').select('*, encontro_palavras(*)').order('criado_em', { ascending: false }).then(function (res) {
+      if (res.error) { console.warn('Erro ao carregar o Encontro com Deus:', res.error.message); setState({ encontroStatus: 'error' }); return; }
+      var edicoes = (res.data || []).map(function (ed) {
+        var palavras = (ed.encontro_palavras || []).slice().sort(function (a, b) {
+          return new Date(b.data_palavra || b.criado_em) - new Date(a.data_palavra || a.criado_em);
+        });
+        return Object.assign({}, ed, { encontro_palavras: palavras });
+      });
+      setState({ encontroEdicoes: edicoes, encontroStatus: 'ok' });
+    });
+  }
+  function setEncontroForm(key, v) { setState(function (s) { var f = Object.assign({}, s.encontroForm); f[key] = v; return { encontroForm: f }; }); }
+  function abrirFormEncontro() { setState({ encontroFormAberto: true, encontroErro: null }); }
+  function fecharFormEncontro() {
+    setState({ encontroFormAberto: false, encontroErro: null, encontroForm: { edicaoId: '', novaEdicaoTitulo: '', novaEdicaoPeriodo: '', titulo: '' } });
+  }
+  function publicarPalavraEncontro() {
+    if (!sb || !state.session) return;
+    var arquivoEl = document.getElementById('enc-arquivo');
+    var f = state.encontroForm;
+    var edicaoId = f.edicaoId || '';
+    var titulo = (f.titulo || '').trim();
+    var arquivo = arquivoEl && arquivoEl.files && arquivoEl.files[0];
+    if (!titulo || !arquivo || !edicaoId) { setState({ encontroErro: 'Escolha a edição, o título e o arquivo.' }); return; }
+    setState({ encontroSaving: true, encontroErro: null });
+
+    function comEdicaoId(id) {
+      var path = 'encontro/' + id + '/' + Date.now() + '-' + slugFilename(arquivo.name);
+      sb.storage.from('apoio-lider').upload(path, arquivo, { contentType: arquivo.type || 'application/pdf' }).then(function (up) {
+        if (up.error) { setState({ encontroSaving: false, encontroErro: up.error.message }); return; }
+        sb.from('encontro_palavras').insert({
+          edicao_id: id, titulo: titulo, arquivo_path: path, arquivo_nome: arquivo.name,
+          autor_user_id: state.session.user.id,
+        }).then(function (res) {
+          if (res.error) { setState({ encontroSaving: false, encontroErro: res.error.message }); return; }
+          setState({ encontroSaving: false, encontroFormAberto: false, encontroForm: { edicaoId: '', novaEdicaoTitulo: '', novaEdicaoPeriodo: '', titulo: '' } });
+          var arquivoElReset = document.getElementById('enc-arquivo');
+          if (arquivoElReset) arquivoElReset.value = '';
+          loadEncontro();
+        });
+      });
+    }
+
+    if (edicaoId === '__nova__') {
+      var novoTitulo = (f.novaEdicaoTitulo || '').trim();
+      var novoPeriodo = (f.novaEdicaoPeriodo || '').trim();
+      if (!novoTitulo || !novoPeriodo) { setState({ encontroSaving: false, encontroErro: 'Preencha o nome e o período da nova edição.' }); return; }
+      sb.from('encontro_edicoes').insert({ titulo: novoTitulo, periodo: novoPeriodo }).select().single().then(function (res) {
+        if (res.error) { setState({ encontroSaving: false, encontroErro: res.error.message }); return; }
+        comEdicaoId(res.data.id);
+      });
+    } else {
+      comEdicaoId(edicaoId);
+    }
+  }
+  function excluirPalavraEncontro(id, path) {
+    if (!sb) return;
+    sb.storage.from('apoio-lider').remove([path]).then(function () {
+      sb.from('encontro_palavras').delete().eq('id', id).then(function (res) {
+        if (res.error) { console.warn('Erro ao excluir palavra:', res.error.message); return; }
+        loadEncontro();
+      });
+    });
+  }
+
   function setNota(val) { setState({ novaNota: val }); }
 
   function registrarNota(memberId) {
@@ -2467,12 +2700,23 @@
     var isMov = state.tab === 'mov';
     var isRel = state.tab === 'rel';
     var isHierarquia = state.tab === 'hierarquia';
+    var isMural = state.tab === 'mural';
+    var isEsbocos = state.tab === 'esbocos';
+    var isEncontro = state.tab === 'encontro';
 
     // ---- Acesso total (Pastor/admin) — só reflete a UI; quem garante de
     // verdade é a RLS no Supabase. Pastor de Rede vê só as redes que
     // acompanha, como o Obreiro (add_relatorios_acesso.sql). ----
     var meuMembro = (state.profile && allPessoas.filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
     var souFull = !!(state.profile && (state.profile.is_admin || (state.meuPerfil && state.meuPerfil.is_full) || (meuMembro && meuMembro.posicao === 'Pastor')));
+
+    // ---- Apoio ao Líder: permissões específicas (diferentes de souFull —
+    // Mural aceita Pastor OU Admin; upload de documentos é só Admin). ----
+    var souAdminSistema = !!(state.profile && state.profile.is_admin);
+    var souPastorOuAdmin = souAdminSistema || !!(meuMembro && meuMembro.posicao === 'Pastor');
+    var muralNaoLidas = (state.muralPosts || []).filter(function (p) {
+      return !state.muralLeitura || new Date(p.criado_em) > new Date(state.muralLeitura);
+    }).length;
 
     // ---- Hierarquia célula → discipulador/obreiro (só Pastor/Admin edita) ----
     // Quem responde por um discipulador pode ser um Obreiro, mas também
@@ -2603,6 +2847,59 @@
       };
     });
 
+    // ---- Apoio ao Líder: Mural de Avisos (QG) ----
+    var CARGO_CORES = {
+      Pastor: { bg: 'rgba(176,40,30,.12)', color: '#B0281E', avatar: 'linear-gradient(135deg,#B0281E,#7a1b14)' },
+      Admin: { bg: 'rgba(27,35,68,.08)', color: '#1B2344', avatar: 'linear-gradient(135deg,#1B2344,#2a4290)' },
+    };
+    var composeCargo = meuMembro && meuMembro.posicao === 'Pastor' ? 'Pastor' : 'Admin';
+    var composeCores = CARGO_CORES[composeCargo];
+    var composeNomeBase = (meuMembro && meuMembro.nome) || (souAdminSistema ? 'Administração' : 'Você');
+    var muralComposeIniciais = composeNomeBase.trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
+    var muralRows = (state.muralPosts || []).map(function (p) {
+      var cores = CARGO_CORES[p.autor_cargo] || CARGO_CORES.Admin;
+      var iniciais = (p.autor_nome || '?').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
+      return {
+        id: p.id, nome: p.autor_nome, cargo: p.autor_cargo,
+        badgeBg: cores.bg, badgeColor: cores.color, avatarBg: cores.avatar, iniciais: iniciais,
+        tempoLabel: tempoRelativo(p.criado_em), texto: p.texto, curtidas: p.curtidas || 0,
+        onCurtir: function () { curtirMuralPost(p.id); },
+        onExcluir: function () { excluirMuralPost(p.id); },
+      };
+    });
+
+    // ---- Apoio ao Líder: Palavras do Culto ----
+    var esbBusca = (state.esbocoBusca || '').trim().toLowerCase();
+    var esbocoRows = (state.esbocos || [])
+      .filter(function (e) { return !esbBusca || e.titulo.toLowerCase().indexOf(esbBusca) >= 0; })
+      .map(function (e) {
+        return {
+          id: e.id, titulo: e.titulo,
+          dataLabel: new Date(e.data_culto + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          autor: e.autor_nome,
+          onAbrir: function () { abrirArquivoApoioLider(e.arquivo_path); },
+          onExcluir: function () { excluirEsboco(e.id, e.arquivo_path); },
+        };
+      });
+
+    // ---- Apoio ao Líder: Encontro com Deus ----
+    var encontroRows = (state.encontroEdicoes || []).map(function (ed) {
+      return {
+        id: ed.id, titulo: ed.titulo, periodo: ed.periodo, cor: ed.cor,
+        total: (ed.encontro_palavras || []).length,
+        palavras: (ed.encontro_palavras || []).map(function (p) {
+          return {
+            id: p.id,
+            titulo: p.titulo,
+            dataLabel: p.data_palavra ? new Date(p.data_palavra + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date(p.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            onAbrir: function () { abrirArquivoApoioLider(p.arquivo_path); },
+            onExcluir: function () { excluirPalavraEncontro(p.id, p.arquivo_path); },
+          };
+        }),
+      };
+    });
+    var encontroEdicaoOptions = (state.encontroEdicoes || []).map(function (ed) { return { v: ed.id, label: ed.titulo + ' (' + ed.periodo + ')' }; });
+
     return {
       session: state.session,
       logout: function () { doLogout(); },
@@ -2671,6 +2968,28 @@
       isRel: isRel,
       goRel: function () { abrirRelatorios(souFull); },
       goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
+
+      // ---- Apoio ao Líder ----
+      isMural: isMural, isEsbocos: isEsbocos, isEncontro: isEncontro,
+      souAdminSistema: souAdminSistema, souPastorOuAdmin: souPastorOuAdmin, muralNaoLidas: muralNaoLidas,
+      goMural: function () { setState({ tab: 'mural', sidebarOpen: false }); marcarMuralLido(); },
+      goEsbocos: function () { setState({ tab: 'esbocos', sidebarOpen: false }); },
+      goEncontro: function () { setState({ tab: 'encontro', sidebarOpen: false }); },
+      muralRows: muralRows, muralStatus: state.muralStatus,
+      muralComposeAvatarBg: composeCores.avatar, muralComposeIniciais: muralComposeIniciais,
+      muralTexto: state.muralTexto, muralSaving: state.muralSaving,
+      onMuralTexto: function (e) { setMuralTexto(e.target.value); },
+      publicarMural: function () { publicarMural(); },
+      esbocoRows: esbocoRows, esbocosStatus: state.esbocosStatus,
+      esbocoBusca: state.esbocoBusca, onEsbocoBusca: function (e) { setEsbocoBusca(e.target.value); },
+      esbocoFormAberto: state.esbocoFormAberto, esbocoSaving: state.esbocoSaving, esbocoErro: state.esbocoErro,
+      esbocoForm: state.esbocoForm, onEsbocoForm: function (key) { return function (e) { setEsbocoForm(key, e.target.value); }; },
+      abrirFormEsboco: abrirFormEsboco, fecharFormEsboco: fecharFormEsboco, publicarEsboco: function () { publicarEsboco(); },
+      encontroRows: encontroRows, encontroEdicaoOptions: encontroEdicaoOptions, encontroStatus: state.encontroStatus,
+      encontroFormAberto: state.encontroFormAberto, encontroSaving: state.encontroSaving, encontroErro: state.encontroErro,
+      encontroForm: state.encontroForm, onEncontroForm: function (key) { return function (e) { setEncontroForm(key, e.target.value); }; },
+      abrirFormEncontro: abrirFormEncontro, fecharFormEncontro: fecharFormEncontro,
+      publicarPalavraEncontro: function () { publicarPalavraEncontro(); },
       sidebarOpen: state.sidebarOpen,
       openSidebar: function () { setState({ sidebarOpen: true }); },
       closeSidebar: function () { setState({ sidebarOpen: false }); },
@@ -2843,6 +3162,9 @@
     ia: '<path d="M12 3.5 13.6 8 18 9.6 13.6 11.2 12 15.6 10.4 11.2 6 9.6 10.4 8 12 3.5Z"></path><path d="M18 15.5 18.8 18l2.2.8-2.2.8-.8 2.4-.8-2.4-2.2-.8 2.2-.8.8-2.5Z"></path><path d="M5.5 14 6 16l2 .7-2 .7-.5 2-.5-2-2-.7 2-.7.5-2Z"></path>',
     hierarquia: '<circle cx="12" cy="4.5" r="2"></circle><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="18" r="2"></circle><path d="M12 6.5v4"></path><path d="M12 10.5 6 16"></path><path d="M12 10.5 18 16"></path>',
     externo: '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>',
+    mural: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
+    culto: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path>',
+    encontro: '<path d="M12 7c-1.7-1.6-4.3-2-7-1.5v12.5c2.7-.5 5.3-.1 7 1.5 1.7-1.6 4.3-2 7-1.5V5.5c-2.7-.5-5.3-.1-7 1.5Z"></path><path d="M12 7v12"></path>',
   };
 
   function navIcon(key) {
@@ -2857,9 +3179,9 @@
 
   // badge: número de pendências (ex: pedidos de acesso) — aparece como
   // alerta ao lado do item do menu.
-  function sideNavItem(iconKey, label, active, onClick, locked, badge) {
+  function sideNavItem(iconKey, label, active, onClick, locked, badge, badgeTitle) {
     var alerta = badge
-      ? '<span class="nav-alerta" title="' + badge + (badge === 1 ? ' pedido de acesso novo' : ' pedidos de acesso novos') + '">' + (badge > 99 ? '99+' : badge) + '</span>'
+      ? '<span class="nav-alerta" title="' + escHtml(badgeTitle || String(badge)) + '">' + (badge > 99 ? '99+' : badge) + '</span>'
       : '';
     return '<button ' + cb(onClick) + ' title="' + escHtml(locked ? 'Faça login para acessar' : label) + '"' +
       ' class="nav-item' + (active ? ' active' : '') + (locked ? ' locked' : '') + '">' +
@@ -2868,6 +3190,7 @@
 
   function sidebarHtml(vals) {
     // O menu só existe para quem entrou: sem sessão a tela é o login.
+    var solicitacoesN = vals.souFull ? (vals.solicitacoes || []).length : 0;
     var grupos = [
       { label: 'Menu', items: [
         { icon: 'home', label: 'Início', active: vals.isHome, onClick: vals.goHome, show: true },
@@ -2876,6 +3199,12 @@
         { icon: 'rel', label: 'Relatórios', active: vals.isRel, onClick: vals.goRel, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
       ] },
+      { label: 'Apoio ao Líder', items: [
+        { icon: 'culto', label: 'Palavras do Culto', active: vals.isEsbocos, onClick: vals.goEsbocos, show: true },
+        { icon: 'encontro', label: 'Encontro com Deus', active: vals.isEncontro, onClick: vals.goEncontro, show: true },
+        { icon: 'mural', label: 'Mural QG', active: vals.isMural, onClick: vals.goMural, show: true,
+          badge: vals.muralNaoLidas, badgeTitle: vals.muralNaoLidas === 1 ? '1 aviso não lido' : vals.muralNaoLidas + ' avisos não lidos' },
+      ] },
       { label: 'Trilho do Vencedor', items: [
         { icon: 'trilho', label: 'Trilho do Vencedor', active: vals.isTrilho, onClick: vals.goTrilho, show: true },
         { icon: 'externo', label: 'Trilho — Turmas e Presença', active: false, onClick: vals.abrirTrilhoApp, show: true },
@@ -2883,14 +3212,15 @@
       { label: 'Ferramentas e gestão', items: [
         { icon: 'ia', label: 'Oikos IA', active: vals.isIa, onClick: vals.goIa, show: vals.souFull },
         { icon: 'novo', label: '+ Novo Cadastro', active: vals.isNovo, onClick: vals.goNovo, show: true },
-        { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull, badge: vals.souFull ? (vals.solicitacoes || []).length : 0 },
+        { icon: 'hierarquia', label: 'Administração', active: vals.isHierarquia, onClick: vals.goHierarquia, show: vals.souFull, badge: solicitacoesN,
+          badgeTitle: solicitacoesN === 1 ? '1 pedido de acesso novo' : solicitacoesN + ' pedidos de acesso novos' },
       ] },
     ];
     var nav = grupos.map(function (g) {
       var itens = g.items.filter(function (it) { return it.show; });
       if (!itens.length) return '';
       return '<div class="nav-group"><div class="nav-label">' + escHtml(g.label) + '</div>' +
-        itens.map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge); }).join('') +
+        itens.map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge, it.badgeTitle); }).join('') +
         '</div>';
     }).join('');
 
@@ -5220,12 +5550,16 @@
     novo: ['Novo Cadastro', 'Preencha os dados da pessoa. Fica salvo no banco e soma aos totais e gráficos.'],
     editar: ['Editar Cadastro', 'Mudanças de célula, posição, batismo ou encontro ficam registradas em Movimentações.'],
     hierarquia: ['Administração', 'Células, liderança e quem responde por cada célula'],
+    mural: ['Mural de Avisos QG', 'Avisos rápidos do Pastor e da Administração para a liderança'],
+    esbocos: ['Palavras do Culto', 'Repositório de esboços em PDF — a mesma palavra do culto e da célula'],
+    encontro: ['Encontro com Deus', 'Palavras e materiais de cada edição, organizados por edição'],
   };
 
   function pageHeaderHtml(vals) {
     var key = vals.isNovo ? (vals.isEditingMembro ? 'editar' : 'novo')
       : vals.isFreq ? 'freq' : vals.isIa ? 'ia'
       : vals.isTrilho ? 'trilho'
+      : vals.isMural ? 'mural' : vals.isEsbocos ? 'esbocos' : vals.isEncontro ? 'encontro'
       : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
     var h = PAGE_HEADERS[key];
     return '<section class="home-hero page-hero">' +
@@ -5608,6 +5942,188 @@
 
     // Mesma ficha da aba Cadastro, pra abrir/editar quem está fora da contagem.
     if (vals.selected) html += detailDrawerHtml(vals);
+
+    html += '</div>';
+    return html;
+  }
+
+  function muralHtml(vals) {
+    var html = '<div class="home">';
+
+    if (vals.souPastorOuAdmin) {
+      html += '<div class="home-card" style="display:flex;gap:14px">' +
+        '<div style="flex:0 0 auto;width:42px;height:42px;border-radius:12px;background:' + vals.muralComposeAvatarBg + ';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px">' + escHtml(vals.muralComposeIniciais) + '</div>' +
+        '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">' +
+        '<label for="mural-texto" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Novo aviso para os líderes · Pastor e Admin podem publicar</label>' +
+        '<textarea id="mural-texto" rows="3" maxlength="280" placeholder="Escreva um aviso para os líderes..." ' + cb(vals.onMuralTexto, 'input') + ' style="width:100%;box-sizing:border-box;border:1px solid #d4deea;border-radius:14px;padding:12px 14px;font:inherit;font-size:14px;color:#14243a;resize:vertical">' + escHtml(vals.muralTexto) + '</textarea>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span style="font-size:11.5px;color:#9aa8bc">' + (vals.muralTexto || '').length + '/280 · visível para todos os líderes</span>' +
+        '<button type="button" ' + cb(vals.publicarMural) + (vals.muralSaving || !(vals.muralTexto || '').trim() ? ' disabled' : '') +
+        ' style="border:none;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font:inherit;font-size:13px;font-weight:700;padding:11px 22px;border-radius:999px;cursor:pointer;opacity:' + (vals.muralSaving ? '.6' : '1') + '">' +
+        (vals.muralSaving ? 'Publicando…' : 'Publicar') + '</button>' +
+        '</div></div></div>';
+    }
+
+    html += '<div style="display:flex;flex-direction:column;gap:14px;margin-top:16px">';
+    if (!vals.muralRows.length) {
+      html += '<div class="home-card home-empty"><div class="home-card-title">' +
+        (vals.muralStatus === 'loading' ? 'Carregando…' : 'Nenhum aviso ainda') + '</div>' +
+        '<div class="home-card-sub" style="margin-top:6px">Quando o Pastor ou a Administração publicarem um aviso, ele aparece aqui.</div></div>';
+    } else {
+      html += vals.muralRows.map(function (p) {
+        return '<div class="home-card" style="display:flex;gap:14px">' +
+          '<div style="flex:0 0 auto;width:42px;height:42px;border-radius:12px;background:' + p.avatarBg + ';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px">' + escHtml(p.iniciais) + '</div>' +
+          '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<span style="font-weight:700;font-size:14px;color:#14243a">' + escHtml(p.nome) + '</span>' +
+          '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:' + p.badgeBg + ';color:' + p.badgeColor + '">' + escHtml(p.cargo) + '</span>' +
+          '<span style="font-size:12px;color:#9aa8bc">· ' + escHtml(p.tempoLabel) + '</span></div>' +
+          '<p style="margin:0;font-size:14px;line-height:1.5;color:#2a3650;white-space:pre-wrap">' + escHtml(p.texto) + '</p>' +
+          '<div style="display:flex;align-items:center;gap:16px;margin-top:2px">' +
+          '<button type="button" ' + cb(p.onCurtir) + ' style="border:none;background:none;color:#7b8aa0;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 0">' +
+          p.curtidas + (p.curtidas === 1 ? ' líder curtiu' : ' líderes curtiram') + '</button>' +
+          (vals.souPastorOuAdmin ? '<button type="button" ' + cb(p.onExcluir) + ' style="border:none;background:none;color:#B0281E;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:4px 0">Excluir</button>' : '') +
+          '</div></div></div>';
+      }).join('');
+    }
+    html += '</div></div>';
+    return html;
+  }
+
+  function esbocosHtml(vals) {
+    var html = '<div class="home">';
+
+    html += '<div class="home-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+      '<label for="esboco-busca" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Buscar esboço por título</label>' +
+      '<input id="esboco-busca" type="search" value="' + escHtml(vals.esbocoBusca) + '" ' + cb(vals.onEsbocoBusca, 'input') + ' placeholder="Buscar esboço por título..." style="flex:1 1 220px;min-width:0;border:1px solid #d4deea;border-radius:11px;padding:9px 12px;font:inherit;font-size:13.5px">' +
+      '<span style="font-size:12px;font-weight:700;color:#9aa8bc;white-space:nowrap">' + vals.esbocoRows.length + (vals.esbocoRows.length === 1 ? ' arquivo' : ' arquivos') + '</span>' +
+      (vals.souAdminSistema
+        ? '<button type="button" ' + cb(vals.esbocoFormAberto ? vals.fecharFormEsboco : vals.abrirFormEsboco) +
+          ' style="border:none;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font:inherit;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px;cursor:pointer;white-space:nowrap">' +
+          (vals.esbocoFormAberto ? 'Fechar formulário' : '+ Novo esboço') + '</button>'
+        : '') +
+      '</div>';
+
+    if (vals.esbocoFormAberto) {
+      html += '<div class="home-card" style="margin-top:14px;display:flex;flex-direction:column;gap:14px">' +
+        '<div class="home-card-title">Novo esboço</div>' +
+        (vals.esbocoErro ? '<div style="font-size:12.5px;color:#B0281E;font-weight:600">' + escHtml(vals.esbocoErro) + '</div>' : '') +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+        '<div style="flex:1 1 260px;display:flex;flex-direction:column;gap:6px">' +
+        '<label for="esb-titulo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Título da palavra</label>' +
+        '<input id="esb-titulo" type="text" value="' + escHtml(vals.esbocoForm.titulo) + '" ' + cb(vals.onEsbocoForm('titulo'), 'input') + ' placeholder="Ex.: Vencendo pelo Espírito" style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px"></div>' +
+        '<div style="flex:0 1 200px;display:flex;flex-direction:column;gap:6px">' +
+        '<label for="esb-data" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Data do culto</label>' +
+        '<input id="esb-data" type="date" value="' + escHtml(vals.esbocoForm.data) + '" ' + cb(vals.onEsbocoForm('data'), 'input') + ' style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px"></div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px">' +
+        '<label for="esb-arquivo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Arquivo (PDF)</label>' +
+        '<input id="esb-arquivo" type="file" accept=".pdf" style="font:inherit;font-size:13px"></div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:10px">' +
+        '<button type="button" ' + cb(vals.fecharFormEsboco) + ' style="border:1px solid #d4deea;background:#fff;color:#1B2344;font:inherit;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px;cursor:pointer">Cancelar</button>' +
+        '<button type="button" ' + cb(vals.publicarEsboco) + (vals.esbocoSaving ? ' disabled' : '') +
+        ' style="border:none;background:#149C88;color:#fff;font:inherit;font-size:13px;font-weight:700;padding:10px 22px;border-radius:999px;cursor:pointer;opacity:' + (vals.esbocoSaving ? '.6' : '1') + '">' +
+        (vals.esbocoSaving ? 'Publicando…' : 'Publicar esboço') + '</button>' +
+        '</div></div>';
+    }
+
+    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">';
+    if (!vals.esbocoRows.length) {
+      html += '<div class="home-card home-empty"><div class="home-card-title">' +
+        (vals.esbocosStatus === 'loading' ? 'Carregando…' : 'Nenhum esboço encontrado') + '</div></div>';
+    } else {
+      html += vals.esbocoRows.map(function (e) {
+        return '<div class="home-card" style="display:flex;align-items:center;gap:16px">' +
+          '<div style="flex:0 0 auto;width:42px;height:42px;border-radius:12px;background:#e0f4ef;color:#0E7A68;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px">PDF</div>' +
+          '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:#14243a">' + escHtml(e.titulo) + '</div>' +
+          '<div style="font-size:12.5px;color:#9aa8bc;margin-top:3px">' + escHtml(e.dataLabel) + ' · publicado por ' + escHtml(e.autor) + '</div></div>' +
+          '<div style="flex:0 0 auto;display:flex;gap:8px">' +
+          (vals.souAdminSistema ? '<button type="button" ' + cb(e.onExcluir) + ' style="border:none;background:none;color:#B0281E;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:10px 6px">Excluir</button>' : '') +
+          '<button type="button" ' + cb(e.onAbrir) + ' style="border:1px solid #d4deea;background:#fff;color:#1B2344;font:inherit;font-size:12.5px;font-weight:700;padding:10px 16px;border-radius:999px;cursor:pointer;white-space:nowrap">Abrir PDF</button>' +
+          '</div></div>';
+      }).join('');
+    }
+    html += '</div></div>';
+    return html;
+  }
+
+  function encontroHtml(vals) {
+    var html = '<div class="home">';
+    var f = vals.encontroForm;
+
+    html += '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">' +
+      (vals.souAdminSistema
+        ? '<button type="button" ' + cb(vals.encontroFormAberto ? vals.fecharFormEncontro : vals.abrirFormEncontro) +
+          ' style="border:none;background:linear-gradient(135deg,#1B2344,#2a4290);color:#fff;font:inherit;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px;cursor:pointer">' +
+          (vals.encontroFormAberto ? 'Fechar formulário' : '+ Nova palavra') + '</button>'
+        : '') + '</div>';
+
+    if (vals.encontroFormAberto) {
+      html += '<div class="home-card" style="margin-bottom:18px;display:flex;flex-direction:column;gap:14px">' +
+        '<div class="home-card-title">Nova palavra</div>' +
+        (vals.encontroErro ? '<div style="font-size:12.5px;color:#B0281E;font-weight:600">' + escHtml(vals.encontroErro) + '</div>' : '') +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+        '<div style="flex:1 1 240px;display:flex;flex-direction:column;gap:6px">' +
+        '<label for="enc-edicao" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Edição do Encontro</label>' +
+        '<select id="enc-edicao" ' + cb(vals.onEncontroForm('edicaoId'), 'change') + ' style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px">' +
+        opt('', 'Escolha a edição…', f.edicaoId === '') +
+        vals.encontroEdicaoOptions.map(function (o) { return opt(o.v, o.label, f.edicaoId === o.v); }).join('') +
+        opt('__nova__', '+ Criar nova edição', f.edicaoId === '__nova__') +
+        '</select></div>' +
+        '<div style="flex:1 1 240px;display:flex;flex-direction:column;gap:6px">' +
+        '<label for="enc-titulo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Título da palavra</label>' +
+        '<input id="enc-titulo" type="text" value="' + escHtml(f.titulo) + '" ' + cb(vals.onEncontroForm('titulo'), 'input') + ' placeholder="Ex.: Restauração e Propósito" style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px"></div>' +
+        '</div>' +
+        (f.edicaoId === '__nova__'
+          ? '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+            '<div style="flex:1 1 220px;display:flex;flex-direction:column;gap:6px">' +
+            '<label for="enc-nova-edicao-titulo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Nome da nova edição</label>' +
+            '<input id="enc-nova-edicao-titulo" type="text" value="' + escHtml(f.novaEdicaoTitulo) + '" ' + cb(vals.onEncontroForm('novaEdicaoTitulo'), 'input') + ' placeholder="Ex.: Encontro com Deus — Homens" style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px"></div>' +
+            '<div style="flex:0 1 200px;display:flex;flex-direction:column;gap:6px">' +
+            '<label for="enc-nova-edicao-periodo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Período</label>' +
+            '<input id="enc-nova-edicao-periodo" type="text" value="' + escHtml(f.novaEdicaoPeriodo) + '" ' + cb(vals.onEncontroForm('novaEdicaoPeriodo'), 'input') + ' placeholder="Ex.: Setembro/2026" style="border:1px solid #d4deea;border-radius:11px;padding:10px 12px;font:inherit;font-size:13.5px"></div>' +
+            '</div>'
+          : '') +
+        '<div style="display:flex;flex-direction:column;gap:6px">' +
+        '<label for="enc-arquivo" style="font-size:11.5px;font-weight:700;color:#7b8aa0">Arquivo (PDF, Word ou áudio)</label>' +
+        '<input id="enc-arquivo" type="file" accept=".pdf,.doc,.docx,.mp3,.m4a" style="font:inherit;font-size:13px"></div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:10px">' +
+        '<button type="button" ' + cb(vals.fecharFormEncontro) + ' style="border:1px solid #d4deea;background:#fff;color:#1B2344;font:inherit;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px;cursor:pointer">Cancelar</button>' +
+        '<button type="button" ' + cb(vals.publicarPalavraEncontro) + (vals.encontroSaving ? ' disabled' : '') +
+        ' style="border:none;background:#149C88;color:#fff;font:inherit;font-size:13px;font-weight:700;padding:10px 22px;border-radius:999px;cursor:pointer;opacity:' + (vals.encontroSaving ? '.6' : '1') + '">' +
+        (vals.encontroSaving ? 'Publicando…' : 'Publicar palavra') + '</button>' +
+        '</div></div>';
+    }
+
+    if (!vals.encontroRows.length) {
+      html += '<div class="home-card home-empty"><div class="home-card-title">' +
+        (vals.encontroStatus === 'loading' ? 'Carregando…' : 'Nenhuma edição cadastrada ainda') + '</div></div>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:18px">' +
+        vals.encontroRows.map(function (ed) {
+          return '<div style="display:flex;flex-direction:column;gap:10px">' +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            '<span style="width:8px;height:8px;border-radius:50%;background:' + ed.cor + ';flex:0 0 auto"></span>' +
+            '<span style="font-weight:800;font-size:15.5px;color:#1B2344">' + escHtml(ed.titulo) + '</span>' +
+            '<span style="font-size:11.5px;font-weight:700;color:#9aa8bc">' + escHtml(ed.periodo) + ' · ' + ed.total + (ed.total === 1 ? ' palavra' : ' palavras') + '</span>' +
+            '</div>' +
+            '<div style="background:#fff;border:1px solid #e6ecf4;border-radius:18px;box-shadow:0 1px 2px rgba(20,36,58,.04),0 10px 26px -20px rgba(20,36,58,.25);overflow:hidden">' +
+            (ed.palavras.length
+              ? ed.palavras.map(function (p) {
+                return '<div style="display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid #eef2f7">' +
+                  '<div style="flex:0 0 auto;width:38px;height:38px;border-radius:11px;background:#e0f4ef;color:#0E7A68;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">PDF</div>' +
+                  '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;color:#14243a">' + escHtml(p.titulo) + '</div>' +
+                  '<div style="font-size:12.5px;color:#9aa8bc;margin-top:2px">' + escHtml(p.dataLabel) + '</div></div>' +
+                  '<div style="flex:0 0 auto;display:flex;gap:8px">' +
+                  (vals.souAdminSistema ? '<button type="button" ' + cb(p.onExcluir) + ' style="border:none;background:none;color:#B0281E;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:10px 6px">Excluir</button>' : '') +
+                  '<button type="button" ' + cb(p.onAbrir) + ' style="border:1px solid #d4deea;background:#fff;color:#1B2344;font:inherit;font-size:12.5px;font-weight:700;padding:10px 16px;border-radius:999px;cursor:pointer;white-space:nowrap">Abrir arquivo</button>' +
+                  '</div></div>';
+              }).join('')
+              : '<div style="padding:14px 20px;color:#9aa8bc;font-size:12.5px">Nenhuma palavra nesta edição ainda.</div>') +
+            '</div></div>';
+        }).join('') +
+        '</div>';
+    }
 
     html += '</div>';
     return html;
@@ -6314,6 +6830,9 @@
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
         (vals.isHierarquia ? hierarquiaHtml(vals) : '') +
+        (vals.isMural ? muralHtml(vals) : '') +
+        (vals.isEsbocos ? esbocosHtml(vals) : '') +
+        (vals.isEncontro ? encontroHtml(vals) : '') +
         '</main></div>';
     }
     root.innerHTML = html;
