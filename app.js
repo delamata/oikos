@@ -351,6 +351,9 @@
     movLista: 'fora',             // qual lista está aberta: fora da contagem | inativos
     novaNota: '',
 
+    // Administração: buscar e editar o cadastro de qualquer pessoa
+    adminBuscaCadastroQuery: '',
+
     // Apoio ao Líder: Mural de Avisos (QG)
     muralPosts: [],
     muralStatus: 'idle',
@@ -1450,6 +1453,14 @@
 
   function memberById(id) {
     return (state.members || []).filter(function (m) { return m.id === id; })[0] || null;
+  }
+
+  // Administração: busca por nome entre todas as pessoas cadastradas
+  // (não só a própria célula/rede) — abre a ficha já em modo de edição.
+  function setAdminBuscaCadastroQuery(v) { setState({ adminBuscaCadastroQuery: v }); }
+  function editarCadastroDaAdministracao(p) {
+    startEditMembro(p);
+    setState({ adminBuscaCadastroQuery: '' });
   }
 
   function pickConjuge(m) {
@@ -2745,6 +2756,17 @@
     var adminLiderCelulaInfo = (state.celulaHierarquia || []).filter(function (h) { return h.celula === alf.celula; })[0] || null;
     var adminLiderSemDiscipulador = alf.posicao === 'Líder' && !!alf.celula && (!adminLiderCelulaInfo || !adminLiderCelulaInfo.discipulador_id);
 
+    // ---- Administração: buscar e editar o cadastro de qualquer pessoa ----
+    var abcQuery = (state.adminBuscaCadastroQuery || '').trim().toLowerCase();
+    var adminBuscaCadastroResultados = abcQuery
+      ? allPessoas.filter(function (p) { return p.nome.toLowerCase().indexOf(abcQuery) >= 0; }).slice(0, 20).map(function (p) {
+        return {
+          id: p.id, nome: p.nome, posicao: p.posicao, celula: p.celula,
+          onEditar: function () { editarCadastroDaAdministracao(p); },
+        };
+      })
+      : [];
+
     // ---- Busca de cônjuge no formulário de cadastro (só adultos, e nunca a própria pessoa) ----
     var nf = state.novoForm;
     var conjugeQ = (nf.conjugeQuery || '').trim().toLowerCase();
@@ -3049,6 +3071,9 @@
       adminLiderForm: alf, adminLiderSaving: state.adminLiderSaving,
       adminLiderError: state.adminLiderError, adminLiderSalvo: state.adminLiderSalvo,
       adminLiderBusca: adminLiderBusca, adminLiderSemDiscipulador: adminLiderSemDiscipulador,
+      adminBuscaCadastroQuery: state.adminBuscaCadastroQuery,
+      onAdminBuscaCadastro: function (e) { setAdminBuscaCadastroQuery(e.target.value); },
+      adminBuscaCadastroResultados: adminBuscaCadastroResultados,
       posicoesAdminLideranca: POSICOES_ADMIN_LIDERANCA.map(function (p) { return { v: p, label: p }; }),
       onAdminLider: function (key) { return function (e) { setAdminLiderField(key, e.target.value); }; },
       setAdminLiderModo: function (modo) { return function () { setAdminLiderModo(modo); }; },
@@ -6497,6 +6522,21 @@
     return adminCard('Reset de senha', 'Para quem esqueceu a senha ou precisa de uma nova. Vale só para login com e-mail e senha — quem entra com Google resolve pela própria conta Google.', body);
   }
 
+  function adminBuscaCadastroHtml(vals) {
+    var body = '' +
+      '<div><label for="admin-busca-cadastro" style="font-size:12px;color:#6b7c93;font-weight:600">Nome da pessoa</label>' +
+      '<input type="text" id="admin-busca-cadastro" value="' + escHtml(vals.adminBuscaCadastroQuery) + '" ' + cb(vals.onAdminBuscaCadastro, 'input') + ' placeholder="Digite o nome…" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      (vals.adminBuscaCadastroResultados.length
+        ? '<div style="margin-top:10px;border:1px solid #e2e9f2;border-radius:10px;max-height:260px;overflow:auto">' +
+          vals.adminBuscaCadastroResultados.map(function (m) {
+            return '<button type="button" ' + cb(m.onEditar) + ' style="display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 14px;border:none;border-bottom:1px solid #f0f4f9;background:#fff;font-size:13px;cursor:pointer">' +
+              '<span><b style="color:#14243a">' + escHtml(m.nome) + '</b> <span style="color:#6b7c93">· ' + escHtml(m.posicao) + (m.celula ? ' · ' + escHtml(celulaLabel(m.celula)) : '') + '</span></span>' +
+              '<span style="color:#2E4FC7;font-size:12px;font-weight:700;white-space:nowrap">Editar →</span></button>';
+          }).join('') + '</div>'
+        : (vals.adminBuscaCadastroQuery.trim() ? '<div style="margin-top:10px;font-size:12.5px;color:#6b7c93">Ninguém encontrado.</div>' : ''));
+    return adminCard('Buscar e editar cadastro', 'Encontre qualquer pessoa cadastrada na rede — mesmo fora da sua célula — e abra a ficha para editar.', body);
+  }
+
   function adminNovaCelulaHtml(vals) {
     var f = vals.adminCelulaForm;
     var body = '' +
@@ -6667,6 +6707,7 @@
 
   function hierarquiaHtml(vals) {
     var html = '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">Cadastre novas células e liderança, e defina quem é o discipulador e o obreiro responsável por cada célula. Isso controla o que cada líder vê nos relatórios.</div>';
+    html += adminBuscaCadastroHtml(vals);
     html += adminSolicitacoesHtml(vals);
     html += adminNovaCelulaHtml(vals);
     html += '<div id="admin-nova-lideranca">' + adminNovaLiderancaHtml(vals) + '</div>';
