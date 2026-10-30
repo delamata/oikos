@@ -423,7 +423,11 @@
     return POSICOES_SEM_CELULA.indexOf(posicao) < 0;
   }
   // Posições que a aba Administração pode cadastrar como "nova liderança".
-  var POSICOES_ADMIN_LIDERANCA = ['Líder', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  var POSICOES_ADMIN_LIDERANCA = ['Líder', 'Líder em Treinamento', 'Discipulador', 'Obreiro', 'Pastor de Rede', 'Pastor'];
+  // Líder em Treinamento segue exatamente como Líder: tem célula própria
+  // e o mesmo acesso de quem lidera a célula (a RLS olha pela célula da
+  // pessoa, não pelo nome da função — ver pode_ver_celula() no Supabase).
+  var FUNCOES_LIDER_DE_CELULA = ['Líder', 'Líder em Treinamento'];
   // Quem pode responder por um discipulador na tabela de hierarquia —
   // normalmente um Obreiro, mas também pode ser direto um Pastor de
   // Rede ou Pastor.
@@ -1003,7 +1007,7 @@
     if (f.modo === 'novo' && !f.nome.trim()) { setState({ adminLiderError: 'Digite o nome da pessoa.' }); return; }
     if (f.modo === 'existente' && !f.memberId) { setState({ adminLiderError: 'Selecione a pessoa já cadastrada.' }); return; }
     if (precisaCelula && !f.celula) { setState({ adminLiderError: 'Selecione a célula.' }); return; }
-    if (f.posicao === 'Líder' && f.celula) {
+    if (FUNCOES_LIDER_DE_CELULA.indexOf(f.posicao) >= 0 && f.celula) {
       var h = (state.celulaHierarquia || []).filter(function (x) { return x.celula === f.celula; })[0];
       if (!h || !h.discipulador_id) {
         setState({ adminLiderError: 'Essa célula ainda não tem discipulador responsável. Defina um em "Nova Célula" (ou na tabela abaixo) antes de cadastrar o líder.' });
@@ -1155,6 +1159,7 @@
   // ---------------------------------------------------------------------
   var FUNCOES_SOLICITACAO = [
     { v: 'Líder', label: 'Líder de célula' },
+    { v: 'Líder em Treinamento', label: 'Líder em Treinamento' },
     { v: 'Discipulador', label: 'Discipulador' },
     { v: 'Obreiro', label: 'Obreiro / Pastor de Rede' },
     { v: 'Pastor', label: 'Pastor' },
@@ -1223,7 +1228,7 @@
     var email = emailValido(f.email);
     if (!email) { setState({ lidErro: 'Digite um e-mail válido — é com ele que o seu acesso será criado.' }); return; }
 
-    if (f.funcao !== 'Líder') { setLidEtapa('lista'); return; }
+    if (FUNCOES_LIDER_DE_CELULA.indexOf(f.funcao) < 0) { setLidEtapa('lista'); return; }
 
     if (!f.celula) { setState({ lidErro: 'Escolha a célula que você lidera.' }); return; }
     // Confere o nome no cadastro pela function lider_ja_cadastrado(), que
@@ -1233,12 +1238,13 @@
       if (res.error) console.warn('Não deu para conferir o nome:', res.error.message);
       var achado = (Array.isArray(res.data) ? res.data[0] : res.data) || null;
       setState({ lidSaving: false });
+      var rotulo = (FUNCOES_SOLICITACAO.filter(function (o) { return o.v === f.funcao; })[0] || {}).label || f.funcao;
       enviarSolicitacao({
-        nome: achado ? achado.nome : nome, funcao: 'Líder', celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
+        nome: achado ? achado.nome : nome, funcao: f.funcao, celula: f.celula, telefone: (f.tel || '').trim() || null, email: email,
         member_id: achado ? achado.id : null, ja_cadastrado: !!achado,
       }, achado
         ? { titulo: 'Você já está cadastrado(a)', texto: 'Encontramos o seu nome no Oikos' + (achado.celula ? ' (célula ' + celulaLabel(achado.celula) + ')' : '') + '. Procure o administrador do sistema para liberar o seu acesso — o seu pedido já foi enviado para ele.' }
-        : { titulo: 'Pedido enviado', texto: 'Recebemos seus dados como líder da célula ' + celulaLabel(f.celula) + '. Procure o administrador do sistema para liberar o seu acesso.' });
+        : { titulo: 'Pedido enviado', texto: 'Recebemos seus dados como ' + rotulo.toLowerCase() + ' da célula ' + celulaLabel(f.celula) + '. Procure o administrador do sistema para liberar o seu acesso.' });
     });
   }
 
@@ -1300,7 +1306,7 @@
         nome: membro ? (membro.nomeOriginal || membro.nome) : s.nome,
         query: membro ? membro.nome : '',
         posicao: s.funcao,
-        celula: s.funcao === 'Líder' ? (s.celula || (membro && membro.celula) || '') : '',
+        celula: FUNCOES_LIDER_DE_CELULA.indexOf(s.funcao) >= 0 ? (s.celula || (membro && membro.celula) || '') : '',
       }),
       adminLiderError: null, adminLiderSalvo: false,
     });
@@ -2754,7 +2760,7 @@
       ? allPessoas.filter(function (p) { return p.nome.toLowerCase().indexOf(alf.query.trim().toLowerCase()) >= 0; }).slice(0, 20)
       : [];
     var adminLiderCelulaInfo = (state.celulaHierarquia || []).filter(function (h) { return h.celula === alf.celula; })[0] || null;
-    var adminLiderSemDiscipulador = alf.posicao === 'Líder' && !!alf.celula && (!adminLiderCelulaInfo || !adminLiderCelulaInfo.discipulador_id);
+    var adminLiderSemDiscipulador = FUNCOES_LIDER_DE_CELULA.indexOf(alf.posicao) >= 0 && !!alf.celula && (!adminLiderCelulaInfo || !adminLiderCelulaInfo.discipulador_id);
 
     // ---- Administração: buscar e editar o cadastro de qualquer pessoa ----
     var abcQuery = (state.adminBuscaCadastroQuery || '').trim().toLowerCase();
@@ -6244,14 +6250,14 @@
         '<input type="text" id="lid-nome" value="' + escHtml(f.nome) + '" ' + cb(v.onLid('nome'), 'input') + ' placeholder="Seu nome" style="' + campo + '"></div>' +
         selectField('Sua função', cb(v.onLid('funcao'), 'change'), FUNCOES_SOLICITACAO, f.funcao) +
         campoEmail +
-        (f.funcao === 'Líder'
+        (FUNCOES_LIDER_DE_CELULA.indexOf(f.funcao) >= 0
           ? '<div class="grid-form2">' +
             selectField('Célula que você lidera', cb(v.onLid('celula'), 'change'), celulaOpts, f.celula, 'Selecionar') +
             '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone (opcional)</label>' +
             '<input type="text" id="lid-tel" value="' + escHtml(f.tel) + '" ' + cb(v.onLid('tel'), 'input') + ' placeholder="(00) 00000-0000" style="' + campo + '"></div>' +
             '</div>'
           : '') +
-        botao(f.funcao === 'Líder' ? 'Enviar' : 'Continuar') +
+        botao(FUNCOES_LIDER_DE_CELULA.indexOf(f.funcao) >= 0 ? 'Enviar' : 'Continuar') +
         '</form>';
     }
 
@@ -6695,7 +6701,7 @@
           '</div></div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:12px;padding-top:12px;border-top:1px dashed #dde5ef">' +
           dado('Função', rotulo(s.funcao)) +
-          (s.funcao === 'Líder' ? dado('Célula que lidera', s.celula ? celulaLabel(s.celula) : '') : '') +
+          (FUNCOES_LIDER_DE_CELULA.indexOf(s.funcao) >= 0 ? dado('Célula que lidera', s.celula ? celulaLabel(s.celula) : '') : '') +
           dado('E-mail', s.email, true) +
           dado('Telefone', s.telefone) +
           dado('Enviado em', quando) +
