@@ -173,6 +173,7 @@
     filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '', rede: null },
     sort: { key: 'idade', dir: 1 },
     selected: null,
+    excluindoMembroId: null,
     tab: 'home',
     sidebarOpen: false,
     // Menu colapsado (vira trilho de ícones) — lembrado entre sessões.
@@ -1461,6 +1462,26 @@
     return (state.members || []).filter(function (m) { return m.id === id; })[0] || null;
   }
 
+  // Exclusão definitiva de cadastro — só Admin do sistema (botão fica
+  // escondido pra quem não é; a RLS também já exige acesso total pra
+  // apagar fora da própria célula). Usado pra tirar cadastros duplicados
+  // ou feitos por engano; o histórico de movimentações dessa pessoa
+  // some junto (on delete cascade).
+  function excluirMembro(p) {
+    if (!sb) return;
+    if (!window.confirm('Excluir definitivamente o cadastro de ' + p.nome + '? Essa ação não pode ser desfeita.')) return;
+    setState({ excluindoMembroId: p.id });
+    sb.from('members').delete().eq('id', p.id).then(function (res) {
+      if (res.error) {
+        window.alert('Não foi possível excluir: ' + res.error.message);
+        setState({ excluindoMembroId: null });
+        return;
+      }
+      setState({ excluindoMembroId: null, selected: null });
+      loadMembers();
+    });
+  }
+
   // Administração: busca por nome entre todas as pessoas cadastradas
   // (não só a própria célula/rede) — abre a ficha já em modo de edição.
   function setAdminBuscaCadastroQuery(v) { setState({ adminBuscaCadastroQuery: v }); }
@@ -2693,6 +2714,8 @@
           { label: 'E-mail', value: s.email || '—' },
         ],
         onEdit: function () { startEditMembro(s); },
+        onExcluir: function () { excluirMembro(s); },
+        excluindo: state.excluindoMembroId === s.id,
         historico: historico,
         novaNota: state.novaNota,
         onNota: function (e) { setNota(e.target.value); },
@@ -5622,7 +5645,12 @@
       '</div>' +
       '<h2 style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;margin:16px 0 3px;line-height:1.2">' + escHtml(sel.nome) + '</h2>' +
       '<div style="font-size:13px;color:#6b7c93;margin-bottom:14px">' + escHtml(sel.posicao) + ' · ' + escHtml(sel.tipo) + '</div>' +
-      '<button ' + cb(sel.onEdit) + ' style="margin-bottom:16px;padding:9px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">Editar cadastro</button>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
+      '<button ' + cb(sel.onEdit) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">Editar cadastro</button>' +
+      (vals.souAdminSistema
+        ? '<button ' + cb(sel.onExcluir) + (sel.excluindo ? ' disabled' : '') + ' style="padding:9px 14px;border:1px solid #f3c6c6;border-radius:9px;background:#fff;font-size:12.5px;color:#B0281E;font-weight:600;cursor:pointer">' + (sel.excluindo ? 'Excluindo…' : 'Excluir') + '</button>'
+        : '') +
+      '</div>' +
       '<div style="display:flex;flex-direction:column;gap:1px;background:#eef2f7;border-radius:12px;overflow:hidden">' +
       sel.fields.map(function (f) {
         return '<div style="display:flex;justify-content:space-between;gap:12px;padding:12px 15px;background:#fff">' +
