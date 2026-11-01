@@ -542,6 +542,16 @@ o quê: chave não configurada, function não encontrada, acesso não
 autorizado, ou serviço de IA indisponível (código 502 costuma ser chave
 inválida ou conta sem crédito).
 
+**Atualizar depois de uma mudança no código.** O arquivo em
+`supabase/functions/oikos-ia/index.ts` só vale alguma coisa depois de
+publicado — mudar esse arquivo aqui no repositório não muda sozinho o
+que está rodando no Supabase. Repita o passo 3 (cole o conteúdo
+atualizado e publique de novo) toda vez que o arquivo mudar. Hoje o
+painel já soma os cadastros por **tipo** (Adultos/Jovens/Kids e
+Juvenis) e por **rede** (todas as células de um mesmo discipulador
+juntas), então dá pra perguntar algo como "quantos cadastros por tipo
+tem a rede do André?".
+
 **Custo e modelo.** Cada pergunta envia o painel de indicadores (poucos
 KB) e recebe uma resposta curta — a ordem de grandeza é de centavos por
 pergunta; acompanhe em **Usage** no console da Anthropic e defina um

@@ -2196,6 +2196,7 @@
     'Crescimento de membros',
     'Pessoas sem frequência recente',
     'Células que ainda não lançaram presença',
+    'Cadastros por tipo em cada rede',
   ];
 
   function setIaPergunta(v) { setState({ iaPergunta: v }); }

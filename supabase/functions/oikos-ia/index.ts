@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
     const [encRes, membrosRes, hierRes, movRes, presRes, planilhaRes] = await Promise.all([
       sb.from('frequencia_encontros').select('*').gte('data', d180).order('data', { ascending: false }),
-      sb.from('members').select('id, nome, celula, posicao, status_pessoa, funcao, active, primeira_visita, created_at'),
+      sb.from('members').select('id, nome, celula, tipo, posicao, status_pessoa, funcao, active, primeira_visita, created_at'),
       sb.from('celula_hierarquia').select('*'),
       sb.from('movimentacoes').select('member_id, campo, valor_anterior, valor_novo, data').gte('data', d180),
       sb.from('presencas_celula').select('member_id, presente, celula_encontros(data, celula)').limit(5000),
@@ -182,11 +182,19 @@ Deno.serve(async (req) => {
       .map((m: any) => ({ pessoa: nomePorId[m.member_id] || 'desconhecido', de: m.valor_anterior, para: m.valor_novo, data: String(m.data).slice(0, 10) }))
       .slice(0, 80);
 
+    const contagemPor = (lista: any[], campo: (m: any) => string | null) =>
+      lista.reduce((acc: Record<string, number>, m: any) => {
+        const v = campo(m) || 'Não informado';
+        acc[v] = (acc[v] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
     const composicao = {
       total_ativos: ativos.length,
       membros: ativos.filter((m: any) => statusDe(m) === 'Membro').length,
       frequentadores_assiduos: ativos.filter((m: any) => statusDe(m) === 'Frequentador Assíduo').length,
       visitantes: visitantes.length,
+      por_tipo: contagemPor(ativos, (m) => m.tipo),
       por_funcao: ativos.reduce((acc: Record<string, number>, m: any) => {
         const f = m.funcao || (['Visitante', 'Frequentador Assíduo', 'Membro'].includes(m.posicao) ? null : m.posicao);
         if (f) acc[f] = (acc[f] || 0) + 1;
@@ -194,12 +202,43 @@ Deno.serve(async (req) => {
       }, {}),
     };
 
-    const redes = hierarquia.map((h: any) => ({
-      celula: h.celula,
-      discipulador: nomePorId[h.discipulador_id] || null,
-      obreiro_ou_pastor_de_rede: nomePorId[h.obreiro_id] || null,
-      pessoas_ativas: ativos.filter((m: any) => m.celula === h.celula).length,
-    }));
+    // "Rede" = o conjunto de células do mesmo discipulador (ou, quando
+    // não há discipulador, do obreiro/pastor de rede direto). Mapeia
+    // célula → rede pra poder somar cadastros nesse nível, não só por
+    // célula isolada.
+    const nomeDaRede = (h: any) => nomePorId[h.discipulador_id] || nomePorId[h.obreiro_id] || 'Sem discipulador definido';
+    const celulaParaRede: Record<string, string> = {};
+    for (const h of hierarquia) celulaParaRede[h.celula] = nomeDaRede(h);
+
+    const redes = hierarquia.map((h: any) => {
+      const pessoas = ativos.filter((m: any) => m.celula === h.celula);
+      return {
+        celula: h.celula,
+        rede: nomeDaRede(h),
+        discipulador: nomePorId[h.discipulador_id] || null,
+        obreiro_ou_pastor_de_rede: nomePorId[h.obreiro_id] || null,
+        pessoas_ativas: pessoas.length,
+        por_tipo: contagemPor(pessoas, (m) => m.tipo),
+        por_status: contagemPor(pessoas, (m) => statusDe(m)),
+      };
+    });
+
+    // Mesma soma de cima, mas agrupada pela rede inteira (todas as
+    // células do discipulador juntas) — é o nível que "avaliar cadastros
+    // por rede" pede, em vez de célula por célula.
+    const cadastrosPorRede: Record<string, any> = {};
+    for (const m of ativos) {
+      const rede = celulaParaRede[m.celula] || 'Sem célula / liderança sênior';
+      const r = (cadastrosPorRede[rede] ||= { rede, total_ativos: 0, por_tipo: {}, por_status: {}, por_funcao: {} });
+      r.total_ativos++;
+      const tipo = m.tipo || 'Não informado';
+      r.por_tipo[tipo] = (r.por_tipo[tipo] || 0) + 1;
+      const status = statusDe(m);
+      r.por_status[status] = (r.por_status[status] || 0) + 1;
+      const funcao = m.funcao || (['Visitante', 'Frequentador Assíduo', 'Membro'].includes(m.posicao) ? null : m.posicao);
+      if (funcao) r.por_funcao[funcao] = (r.por_funcao[funcao] || 0) + 1;
+    }
+    const cadastrosPorRedeLista = Object.values(cadastrosPorRede);
 
     // Planilha antiga, resumida por célula (e o período que ela cobre).
     const planilha = (planilhaRes.data || []) as any[];
@@ -218,7 +257,7 @@ Deno.serve(async (req) => {
     const painel = {
       hoje,
       escopo_do_usuario: perfil.is_full ? 'acesso total (todas as células que a permissão dele alcança)' : 'escopo restrito',
-      observacao: 'Todos os números já estão filtrados pela permissão de quem perguntou. Períodos: "semana" = últimos 7 dias; "mês" = últimos 30 dias.',
+      observacao: 'Todos os números já estão filtrados pela permissão de quem perguntou. Períodos: "semana" = últimos 7 dias; "mês" = últimos 30 dias. "Rede" = o conjunto de células de um mesmo discipulador (ou do obreiro/pastor de rede direto, quando não há discipulador). "Tipo de cadastro" é Adultos, Jovens ou Kids e Juvenis — diferente de status (Visitante/Frequentador Assíduo/Membro) e de função (Líder, Anfitrião, etc.).',
       frequencia_ultima_semana: somar(ultimaSemana),
       frequencia_ultimas_4_semanas: somar(ultimas4),
       frequencia_4_semanas_anteriores: somar(quatroAnteriores),
@@ -226,6 +265,7 @@ Deno.serve(async (req) => {
       tendencia_por_celula: tendencia,
       celulas_sem_lancamento_nesta_semana: semLancamento,
       composicao_da_rede: composicao,
+      cadastros_por_rede: cadastrosPorRedeLista,
       visitantes_ultimos_30_dias: visitantesDoMes.map((m: any) => ({ nome: m.nome, celula: m.celula, primeira_visita: m.primeira_visita })).slice(0, 60),
       visitantes_com_mais_de_duas_presencas: visitantesRecorrentes,
       pessoas_sem_presenca_ha_mais_de_4_semanas: semPresencaRecente,
