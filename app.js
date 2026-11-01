@@ -234,6 +234,7 @@
     adminCelulaEditSaving: false,
     adminCelulaEditError: null,
     adminCelulaEditSalvo: null,
+    adminCelulaExcluindo: false,
     adminLinkSaving: false,
     adminLinkCopiado: false,
 
@@ -752,6 +753,28 @@
 
   function cancelarEdicaoCelula() {
     setState({ adminCelulaEdit: null, adminCelulaEditError: null });
+  }
+
+  // Excluir célula (supabase/add_excluir_celula.sql): só deixa apagar
+  // célula vazia e sem histórico de encontros — o próprio banco recusa
+  // caso contrário, pra nunca sumir gente ou frequência por engano.
+  function excluirCelulaAtual() {
+    var e = state.adminCelulaEdit;
+    if (!sb || !e) return;
+    if (!window.confirm('Excluir definitivamente a célula "' + e.original + '"? Essa ação não pode ser desfeita.')) return;
+    setState({ adminCelulaExcluindo: true, adminCelulaEditError: null });
+    sb.rpc('excluir_celula', { p_celula: e.original }).then(function (res) {
+      if (res.error) {
+        var msg = res.error.message || 'Não foi possível excluir.';
+        if (res.error.code === 'PGRST202' || /could not find the function/i.test(msg)) {
+          msg = 'Falta rodar supabase/add_excluir_celula.sql no SQL Editor do Supabase.';
+        }
+        setState({ adminCelulaExcluindo: false, adminCelulaEditError: msg });
+        return;
+      }
+      setState({ adminCelulaExcluindo: false, adminCelulaEdit: null, adminCelulaEditSalvo: 'Célula "' + e.original + '" excluída.' });
+      loadCelulaHierarquia();
+    });
   }
 
   // ---- Link de frequência da célula (sem login) ----
@@ -3071,6 +3094,8 @@
       adminCelulaEdit: state.adminCelulaEdit, adminCelulaEditSaving: state.adminCelulaEditSaving,
       adminCelulaEditError: state.adminCelulaEditError, adminCelulaEditSalvo: state.adminCelulaEditSalvo,
       adminCelulaEditPessoas: state.adminCelulaEdit ? all.filter(function (p) { return p.celula === state.adminCelulaEdit.original; }).length : 0,
+      adminCelulaExcluindo: state.adminCelulaExcluindo,
+      excluirCelulaAtual: function () { excluirCelulaAtual(); },
       adminLinkSaving: state.adminLinkSaving, adminLinkCopiado: state.adminLinkCopiado,
       adminLinkToken: state.adminCelulaEdit
         ? ((state.celulaHierarquia || []).filter(function (h) { return h.celula === state.adminCelulaEdit.original; })[0] || {}).token_frequencia || ''
@@ -6677,7 +6702,10 @@
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<button type="submit"' + (vals.adminCelulaEditSaving ? ' disabled' : '') + ' style="padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.adminCelulaEditSaving ? 'Salvando…' : 'Salvar alterações') + '</button>' +
       '<button type="button" ' + cb(vals.cancelarEdicaoCelula) + ' style="padding:10px 16px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Cancelar</button>' +
-      '</div></form>';
+      '<button type="button" ' + cb(vals.excluirCelulaAtual) + (vals.adminCelulaExcluindo ? ' disabled' : '') + ' style="margin-left:auto;padding:10px 16px;border:1px solid #f3c6c6;border-radius:9px;background:#fff;font-size:13px;color:#B0281E;font-weight:600;cursor:pointer">' + (vals.adminCelulaExcluindo ? 'Excluindo…' : 'Excluir célula') + '</button>' +
+      '</div>' +
+      (vals.adminCelulaEditPessoas > 0 ? '<div style="font-size:11.5px;color:#8a99ab;margin-top:8px">Só é possível excluir uma célula sem ninguém cadastrado nela — hoje tem ' + vals.adminCelulaEditPessoas + ' pessoa(s). Transfira-as antes.</div>' : '') +
+      '</form>';
     // Link que o líder usa para lançar a frequência sem login.
     var token = vals.adminLinkToken;
     body += '<div style="margin-top:18px;padding-top:16px;border-top:1px dashed #e6ecf4">' +
