@@ -56,6 +56,9 @@ declare
   v_nome text := btrim(coalesce(p_novo_nome, ''));
   v_dia text := nullif(btrim(coalesce(p_dia_semana, '')), '');
   v_horario time := nullif(btrim(coalesce(p_horario, '')), '')::time;
+  v_disc uuid;
+  v_obr uuid;
+  v_token text;
 begin
   if not pode_editar_celula(p_celula) then
     raise exception 'Você não tem acesso para editar esta célula.';
@@ -87,9 +90,16 @@ begin
     raise exception 'Já existe uma célula chamada "%".', v_nome;
   end if;
 
-  insert into celula_hierarquia (celula, discipulador_id, obreiro_id, dia_semana, horario, token_frequencia)
-    select v_nome, discipulador_id, obreiro_id, v_dia, v_horario, token_frequencia
+  select discipulador_id, obreiro_id, token_frequencia into v_disc, v_obr, v_token
     from celula_hierarquia where celula = p_celula;
+
+  -- token_frequencia é unique: libera da linha antiga antes de criar a
+  -- nova com ele, senão as duas coexistem por um instante e o banco
+  -- recusa ("duplicate key value violates unique constraint").
+  update celula_hierarquia set token_frequencia = null where celula = p_celula;
+
+  insert into celula_hierarquia (celula, discipulador_id, obreiro_id, dia_semana, horario, token_frequencia)
+    values (v_nome, v_disc, v_obr, v_dia, v_horario, v_token);
   update members set celula = v_nome where celula = p_celula;
   update celula_encontros set celula = v_nome where celula = p_celula;
   delete from celula_hierarquia where celula = p_celula;
@@ -114,6 +124,9 @@ create or replace function editar_celula(
 language plpgsql security definer as $$
 declare
   v_nome text := btrim(coalesce(p_novo_nome, ''));
+  v_dia text;
+  v_horario time;
+  v_token text;
 begin
   if not coalesce((select is_full from meu_perfil()), false) then
     raise exception 'Só Pastor ou administrador pode editar células.';
@@ -139,9 +152,16 @@ begin
     raise exception 'Já existe uma célula chamada "%".', v_nome;
   end if;
 
-  insert into celula_hierarquia (celula, discipulador_id, obreiro_id, dia_semana, horario, token_frequencia)
-    select v_nome, p_discipulador_id, p_obreiro_id, dia_semana, horario, token_frequencia
+  select dia_semana, horario, token_frequencia into v_dia, v_horario, v_token
     from celula_hierarquia where celula = p_celula;
+
+  -- token_frequencia é unique: libera da linha antiga antes de criar a
+  -- nova com ele, senão as duas coexistem por um instante e o banco
+  -- recusa ("duplicate key value violates unique constraint").
+  update celula_hierarquia set token_frequencia = null where celula = p_celula;
+
+  insert into celula_hierarquia (celula, discipulador_id, obreiro_id, dia_semana, horario, token_frequencia)
+    values (v_nome, p_discipulador_id, p_obreiro_id, v_dia, v_horario, v_token);
   update members set celula = v_nome where celula = p_celula;
   update celula_encontros set celula = v_nome where celula = p_celula;
   delete from celula_hierarquia where celula = p_celula;
