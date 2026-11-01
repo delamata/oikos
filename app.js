@@ -180,6 +180,10 @@
     sidebarCollapsed: (function () {
       try { return localStorage.getItem('oikos-menu-colapsado') === '1'; } catch (e) { return false; }
     })(),
+    // Quais temas do menu (ex: "Apoio ao Líder") estão fechados — lembrado entre sessões.
+    sidebarGruposFechados: (function () {
+      try { return JSON.parse(localStorage.getItem('oikos-menu-grupos-fechados') || '{}'); } catch (e) { return {}; }
+    })(),
     // Subtítulo do sidebar (tabela configuracoes) — valor inicial até carregar do banco.
     subtitulo: 'Videira Igreja em Células',
     editandoSubtitulo: false,
@@ -1223,6 +1227,15 @@
       var colapsado = !s.sidebarCollapsed;
       try { localStorage.setItem('oikos-menu-colapsado', colapsado ? '1' : '0'); } catch (e) {}
       return { sidebarCollapsed: colapsado };
+    });
+  }
+
+  function toggleGrupoMenu(label) {
+    setState(function (s) {
+      var g = Object.assign({}, s.sidebarGruposFechados);
+      g[label] = !g[label];
+      try { localStorage.setItem('oikos-menu-grupos-fechados', JSON.stringify(g)); } catch (e) {}
+      return { sidebarGruposFechados: g };
     });
   }
 
@@ -3179,6 +3192,8 @@
       closeSidebar: function () { setState({ sidebarOpen: false }); },
       sidebarCollapsed: state.sidebarCollapsed,
       toggleSidebarCollapsed: toggleSidebarCollapsed,
+      sidebarGruposFechados: state.sidebarGruposFechados,
+      toggleGrupoMenu: toggleGrupoMenu,
       subtitulo: state.subtitulo,
       editandoSubtitulo: state.editandoSubtitulo,
       subtituloSalvando: state.subtituloSalvando,
@@ -3365,6 +3380,7 @@
   var sendIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>';
   var chatIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
   var collapseIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>';
+  var navChevronIcon = '<svg class="nav-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>';
   var pencilIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
 
   // badge: número de pendências (ex: pedidos de acesso) — aparece como
@@ -3410,7 +3426,10 @@
     var nav = grupos.map(function (g) {
       var itens = g.items.filter(function (it) { return it.show; });
       if (!itens.length) return '';
-      return '<div class="nav-group"><div class="nav-label">' + escHtml(g.label) + '</div>' +
+      var fechado = !!vals.sidebarGruposFechados[g.label];
+      return '<div class="nav-group' + (fechado ? ' fechado' : '') + '">' +
+        '<button type="button" class="nav-label" ' + cb(function () { vals.toggleGrupoMenu(g.label); }) + ' aria-expanded="' + (fechado ? 'false' : 'true') + '" title="' + (fechado ? 'Mostrar' : 'Esconder') + ' ' + escHtml(g.label) + '">' +
+        navChevronIcon + '<span>' + escHtml(g.label) + '</span></button>' +
         itens.map(function (it) { return sideNavItem(it.icon, it.label, it.active, it.onClick, it.locked, it.badge, it.badgeTitle); }).join('') +
         '</div>';
     }).join('');
