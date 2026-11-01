@@ -240,6 +240,22 @@ Deno.serve(async (req) => {
     }
     const cadastrosPorRedeLista = Object.values(cadastrosPorRede);
 
+    // Lista nominal (não só contagem) de quem tem uma função — Líder,
+    // Líder em Treinamento, Anfitrião, Discipulador, Obreiro, Anjo da
+    // Guarda, etc. — com célula e rede, pra responder "quem são" e não
+    // só "quantos são" por rede/célula/função.
+    const funcaoDe = (m: any) => m.funcao || (['Visitante', 'Frequentador Assíduo', 'Membro'].includes(m.posicao) ? null : m.posicao);
+    const liderancaPorRede = ativos
+      .filter((m: any) => funcaoDe(m))
+      .map((m: any) => ({
+        nome: m.nome,
+        funcao: funcaoDe(m),
+        celula: m.celula,
+        rede: m.celula ? (celulaParaRede[m.celula] || 'Sem discipulador definido') : 'Liderança sênior (sem célula)',
+      }))
+      .sort((a: any, b: any) => (a.rede + a.funcao).localeCompare(b.rede + b.funcao))
+      .slice(0, 300);
+
     // Planilha antiga, resumida por célula (e o período que ela cobre).
     const planilha = (planilhaRes.data || []) as any[];
     const planilhaPorCelula: Record<string, { celula: string; registros: number; pessoas: number; primeiro: string; ultimo: string }> = {};
@@ -257,7 +273,7 @@ Deno.serve(async (req) => {
     const painel = {
       hoje,
       escopo_do_usuario: perfil.is_full ? 'acesso total (todas as células que a permissão dele alcança)' : 'escopo restrito',
-      observacao: 'Todos os números já estão filtrados pela permissão de quem perguntou. Períodos: "semana" = últimos 7 dias; "mês" = últimos 30 dias. "Rede" = o conjunto de células de um mesmo discipulador (ou do obreiro/pastor de rede direto, quando não há discipulador). "Tipo de cadastro" é Adultos, Jovens ou Kids e Juvenis — diferente de status (Visitante/Frequentador Assíduo/Membro) e de função (Líder, Anfitrião, etc.).',
+      observacao: 'Todos os números já estão filtrados pela permissão de quem perguntou. Períodos: "semana" = últimos 7 dias; "mês" = últimos 30 dias. "Rede" = o conjunto de células de um mesmo discipulador (ou do obreiro/pastor de rede direto, quando não há discipulador). "Tipo de cadastro" é Adultos, Jovens ou Kids e Juvenis — diferente de status (Visitante/Frequentador Assíduo/Membro) e de função (Líder, Anfitrião, etc.). lideranca_por_rede já traz nome + função + célula + rede de cada pessoa com função — use essa lista para responder "quem são" os líderes/anfitriões/etc. de uma rede, não só a contagem.',
       frequencia_ultima_semana: somar(ultimaSemana),
       frequencia_ultimas_4_semanas: somar(ultimas4),
       frequencia_4_semanas_anteriores: somar(quatroAnteriores),
@@ -266,6 +282,7 @@ Deno.serve(async (req) => {
       celulas_sem_lancamento_nesta_semana: semLancamento,
       composicao_da_rede: composicao,
       cadastros_por_rede: cadastrosPorRedeLista,
+      lideranca_por_rede: liderancaPorRede,
       visitantes_ultimos_30_dias: visitantesDoMes.map((m: any) => ({ nome: m.nome, celula: m.celula, primeira_visita: m.primeira_visita })).slice(0, 60),
       visitantes_com_mais_de_duas_presencas: visitantesRecorrentes,
       pessoas_sem_presenca_ha_mais_de_4_semanas: semPresencaRecente,
@@ -284,7 +301,7 @@ Deno.serve(async (req) => {
       'Use EXCLUSIVAMENTE os dados do painel JSON fornecido. Nunca invente números, nomes ou tendências.',
       'Se o painel não tiver o dado necessário, responda exatamente: "Não existem informações suficientes no Oikos para responder essa pergunta." e diga, em uma linha, o que precisaria ser lançado no sistema para que a resposta exista.',
       'Sempre que possível mostre os números usados (valores absolutos e percentuais) e compare com o período anterior.',
-      'Se a resposta ficar melhor como tabela, use tabela em markdown simples. Listas longas: no máximo 15 itens, dizendo quantos ficaram de fora.',
+      'Se a resposta ficar melhor como tabela, use tabela em markdown simples. Listas longas e genéricas: no máximo 15 itens, dizendo quantos ficaram de fora. Mas se a pergunta pedir uma lista específica (ex: "quem são os líderes da rede X", "anfitriões da célula Y"), mostre todos os nomes dessa lista, sem cortar.',
       'Não peça desculpas nem explique como você funciona. Não mencione JSON, banco de dados, RLS ou permissões.',
       'Os dados já vêm filtrados pela permissão de quem perguntou — trate-os como o universo completo disponível para essa pessoa.',
     ].join(' ');

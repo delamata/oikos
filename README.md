@@ -549,8 +549,10 @@ que está rodando no Supabase. Repita o passo 3 (cole o conteúdo
 atualizado e publique de novo) toda vez que o arquivo mudar. Hoje o
 painel já soma os cadastros por **tipo** (Adultos/Jovens/Kids e
 Juvenis) e por **rede** (todas as células de um mesmo discipulador
-juntas), então dá pra perguntar algo como "quantos cadastros por tipo
-tem a rede do André?".
+juntas) — e também traz a **lista com nome** de quem tem uma função
+(Líder, Líder em Treinamento, Anfitrião, etc.), não só a contagem.
+Dá pra perguntar algo como "quantos cadastros por tipo tem a rede do
+André?" ou "quem são os líderes da rede do André?".
 
 **Custo e modelo.** Cada pergunta envia o painel de indicadores (poucos
 KB) e recebe uma resposta curta — a ordem de grandeza é de centavos por
