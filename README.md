@@ -352,6 +352,26 @@ Como cada login descobre quem é: no primeiro acesso, aparece uma tela
 "Qual desses é você?" — o próprio líder busca e seleciona seu nome no
 cadastro, uma vez só.
 
+## Dados da Célula (nome, dia e horário)
+
+Aba **Dados da Célula**, visível no menu para Líder, Líder em Treinamento
+e Discipulador (acesso total também vê, pela própria Administração):
+
+- **Líder/Líder em Treinamento** edita só a própria célula.
+- **Discipulador** edita todas as células da sua rede de discipulado.
+- Os três campos são **nome**, **dia da célula** (um dia da semana fixo)
+  e **horário**. Reatribuir discipulador/obreiro continua só em
+  Administração.
+- Renomear por aqui leva junto as pessoas, os encontros e o link de
+  frequência da célula, igual ao "Editar célula" da Administração — é a
+  mesma lógica, numa function separada (`editar_dados_celula()`) que só
+  mexe nesses três campos.
+
+Por dentro: `supabase/add_dados_celula.sql` adiciona as colunas
+`celula_hierarquia.dia_semana`/`.horario`, a function `pode_editar_celula()`
+(quem pode editar o quê) e `editar_dados_celula()`. Rode uma vez no SQL
+Editor, depois do `add_frequencia.sql`.
+
 ## Administração: novas células e liderança
 
 Na aba **Administração** (só acesso total):
@@ -549,6 +569,7 @@ sistema.
    - Rode [`supabase/add_rede_conjuge.sql`](supabase/add_rede_conjuge.sql) uma vez, depois do `add_conjuge.sql` — faz o cônjuge de um discipulador/obreiro enxergar a mesma rede de discipulado.
    - Rode [`supabase/add_editar_celula.sql`](supabase/add_editar_celula.sql) uma vez, depois do `add_admin_area.sql` — permite editar (inclusive renomear) células existentes em Administração.
    - Rode [`supabase/add_excluir_celula.sql`](supabase/add_excluir_celula.sql) uma vez, depois do `add_frequencia.sql` — adiciona o botão **Excluir célula** em Administração (só funciona em célula vazia, sem histórico).
+   - Rode [`supabase/add_dados_celula.sql`](supabase/add_dados_celula.sql) uma vez, depois do `add_frequencia.sql` — adiciona a aba **Dados da Célula** (nome/dia/horário editável por Líder e Discipulador, veja "Dados da Célula" acima).
    - Rode [`supabase/add_hierarquia_status.sql`](supabase/add_hierarquia_status.sql) uma vez, depois do `add_admin_area.sql` — separa status (Visitante/FA/Membro) de função ministerial, cria o supervisor, o catálogo de funções e a tabela de auditoria. Não apaga nem sobrescreve nada: as colunas novas são preenchidas a partir da posição atual de cada pessoa.
    - Rode [`supabase/add_reorganizar_rede.sql`](supabase/add_reorganizar_rede.sql) uma vez, depois do `add_hierarquia_status.sql` — quando um Discipulador ou um Obreiro/Pastor de Rede deixa de estar Ativo, reatribui automaticamente as células e as pessoas que reportavam a ele para quem já respondia um nível acima, até alguém cadastrar um substituto em Administração (veja "Acesso por nível" acima).
    - Rode [`supabase/add_transferencia_celula.sql`](supabase/add_transferencia_celula.sql) uma vez — quem já tem acesso à célula atual de alguém passa a poder transferi-la para qualquer célula cadastrada, mesmo fora da própria rede (antes, editar a célula de uma pessoa exigia acesso também ao destino, e travava com "new row violates row-level security policy" numa transferência legítima entre redes diferentes).

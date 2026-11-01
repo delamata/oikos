@@ -224,6 +224,13 @@
     hierarquiaStatus: 'idle',
     hierarquiaSaving: false,
 
+    // Dados da Célula: nome/dia/horário, editável por Líder (a própria)
+    // e Discipulador (toda a rede) — não só Pastor/Admin.
+    celulaDadosEdit: null,   // { original, nome, dia, horario }
+    celulaDadosSaving: false,
+    celulaDadosError: null,
+    celulaDadosSalvo: null,
+
     // aba Administração: criar célula / criar liderança + login
     adminCelulaForm: { nome: '', discipuladorId: '', obreiroId: '' },
     adminCelulaSaving: false,
@@ -434,6 +441,8 @@
   // normalmente um Obreiro, mas também pode ser direto um Pastor de
   // Rede ou Pastor.
   var POSICOES_OBREIRO_OU_ACIMA = ['Obreiro', 'Pastor de Rede', 'Pastor'];
+  // Dias aceitos em celula_hierarquia.dia_semana (add_dados_celula.sql).
+  var DIAS_SEMANA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 
   // members_nome_nasc_unique (supabase/add_unique_nome_nasc.sql) barra
   // cadastro duplicado (mesmo nome + mesma data de nascimento) direto
@@ -774,6 +783,65 @@
       }
       setState({ adminCelulaExcluindo: false, adminCelulaEdit: null, adminCelulaEditSalvo: 'Célula "' + e.original + '" excluída.' });
       loadCelulaHierarquia();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Dados da Célula (supabase/add_dados_celula.sql): nome/dia/horário,
+  // aberto a Líder (a própria célula) e Discipulador (toda a rede) — não
+  // só Pastor/Admin. Quem pode ver o quê é decidido no próprio Supabase
+  // (pode_editar_celula()); aqui é só a tela.
+  // ---------------------------------------------------------------------
+  function abrirEdicaoDadosCelula(h) {
+    setState({
+      celulaDadosEdit: { original: h.celula, nome: h.celula, dia: h.dia_semana || '', horario: (h.horario || '').slice(0, 5) },
+      celulaDadosError: null, celulaDadosSalvo: null,
+    });
+    var el = document.getElementById('celuladados-edit-nome');
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+  }
+
+  function setCelulaDadosEdit(key, val) {
+    setState(function (s) {
+      var e = Object.assign({}, s.celulaDadosEdit);
+      e[key] = val;
+      return { celulaDadosEdit: e, celulaDadosError: null };
+    });
+  }
+
+  function cancelarEdicaoDadosCelula() {
+    setState({ celulaDadosEdit: null, celulaDadosError: null });
+  }
+
+  function salvarDadosCelula() {
+    var e = state.celulaDadosEdit;
+    if (!sb || !e) return;
+    var nome = (e.nome || '').trim();
+    if (!nome) { setState({ celulaDadosError: 'Digite o nome da célula.' }); return; }
+    var horarioEl = document.getElementById('celuladados-edit-horario');
+    var horario = (horarioEl && horarioEl.value) || '';
+    setState({ celulaDadosSaving: true, celulaDadosError: null });
+    sb.rpc('editar_dados_celula', {
+      p_celula: e.original, p_novo_nome: nome,
+      p_dia_semana: e.dia || null, p_horario: horario || null,
+    }).then(function (res) {
+      if (res.error) {
+        var msg = res.error.message || 'Não foi possível salvar.';
+        if (res.error.code === 'PGRST202' || /could not find the function/i.test(msg)) {
+          msg = 'Falta rodar supabase/add_dados_celula.sql no SQL Editor do Supabase.';
+        }
+        setState({ celulaDadosSaving: false, celulaDadosError: msg });
+        return;
+      }
+      var renomeou = nome !== e.original;
+      setState(function (s) {
+        var patch = { celulaDadosSaving: false, celulaDadosEdit: null, celulaDadosSalvo: 'Célula "' + nome + '" atualizada.' };
+        if (renomeou && s.filters.celula === e.original) patch.filters = Object.assign({}, s.filters, { celula: nome });
+        if (renomeou && s.novoForm.celula === e.original) patch.novoForm = Object.assign({}, s.novoForm, { celula: nome });
+        return patch;
+      });
+      loadCelulaHierarquia();
+      if (renomeou) { loadMembers(); loadMovimentacoes(); }
     });
   }
 
@@ -2766,6 +2834,7 @@
     var isMural = state.tab === 'mural';
     var isEsbocos = state.tab === 'esbocos';
     var isEncontro = state.tab === 'encontro';
+    var isMinhaCelula = state.tab === 'minhacelula';
 
     // ---- Acesso total (Pastor/admin) — só reflete a UI; quem garante de
     // verdade é a RLS no Supabase. Pastor de Rede vê só as redes que
@@ -2797,6 +2866,27 @@
         token: row.token_frequencia || '',
         editando: !!(state.adminCelulaEdit && state.adminCelulaEdit.original === c),
         onEditar: function () { abrirEdicaoCelula({ celula: c, discipulador_id: row.discipulador_id, obreiro_id: row.obreiro_id }); },
+      };
+    });
+
+    // ---- Dados da Célula: nome/dia/horário — Líder edita a própria,
+    // Discipulador edita toda a rede, acesso total edita qualquer uma.
+    // Mesmo recorte do pode_editar_celula() no Supabase. ----
+    var souDiscipulador = !!(meuMembro && meuMembro.posicao === 'Discipulador');
+    var souLiderDeCelula = !!(meuMembro && FUNCOES_LIDER_DE_CELULA.indexOf(meuMembro.posicao) >= 0);
+    var podeEditarDadosCelula = souFull || souDiscipulador || souLiderDeCelula;
+    var celulasQueEdito = souFull
+      ? currentCelulaList()
+      : souDiscipulador
+        ? (state.celulaHierarquia || []).filter(function (h) { return h.discipulador_id === meuMembro.id; }).map(function (h) { return h.celula; })
+        : (souLiderDeCelula && meuMembro.celula) ? [meuMembro.celula] : [];
+    var celulaDadosRows = celulasQueEdito.map(function (c) {
+      var row = (state.celulaHierarquia || []).filter(function (h) { return h.celula === c; })[0] || {};
+      return {
+        celula: c, celulaLabelText: celulaLabel(c),
+        dia: row.dia_semana || '', horario: (row.horario || '').slice(0, 5),
+        editando: !!(state.celulaDadosEdit && state.celulaDadosEdit.original === c),
+        onEditar: function () { abrirEdicaoDadosCelula(Object.assign({ celula: c }, row)); },
       };
     });
 
@@ -3042,6 +3132,18 @@
       isRel: isRel,
       goRel: function () { abrirRelatorios(souFull); },
       goHierarquia: function () { setState({ tab: 'hierarquia', sidebarOpen: false }); },
+      isMinhaCelula: isMinhaCelula,
+      goMinhaCelula: function () { setState({ tab: 'minhacelula', sidebarOpen: false }); },
+      podeEditarDadosCelula: podeEditarDadosCelula, souDiscipulador: souDiscipulador,
+      tabMinhaCelulaColor: isMinhaCelula ? '#1B2344' : '#8a99ab',
+      tabMinhaCelulaBorder: isMinhaCelula ? '#1B2344' : 'transparent',
+      celulaDadosRows: celulaDadosRows,
+      celulaDadosEdit: state.celulaDadosEdit, celulaDadosSaving: state.celulaDadosSaving,
+      celulaDadosError: state.celulaDadosError, celulaDadosSalvo: state.celulaDadosSalvo,
+      onCelulaDadosEdit: function (key) { return function (e) { setCelulaDadosEdit(key, e.target.value); }; },
+      salvarDadosCelula: function (e) { if (e && e.preventDefault) e.preventDefault(); salvarDadosCelula(); },
+      cancelarEdicaoDadosCelula: function () { cancelarEdicaoDadosCelula(); },
+      diasSemana: DIAS_SEMANA,
 
       // ---- Apoio ao Líder ----
       isMural: isMural, isEsbocos: isEsbocos, isEncontro: isEncontro,
@@ -3244,6 +3346,7 @@
     mural: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
     culto: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path>',
     encontro: '<path d="M12 7c-1.7-1.6-4.3-2-7-1.5v12.5c2.7-.5 5.3-.1 7 1.5 1.7-1.6 4.3-2 7-1.5V5.5c-2.7-.5-5.3-.1-7 1.5Z"></path><path d="M12 7v12"></path>',
+    celula: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path>',
   };
 
   function navIcon(key) {
@@ -3277,6 +3380,7 @@
         { icon: 'freq', label: 'Frequência', active: vals.isFreq, onClick: vals.goFreq, show: true },
         { icon: 'rel', label: 'Relatórios', active: vals.isRel, onClick: vals.goRel, show: true },
         { icon: 'mov', label: 'Movimentações', active: vals.isMov, onClick: vals.goMov, show: true },
+        { icon: 'celula', label: 'Dados da Célula', active: vals.isMinhaCelula, onClick: vals.goMinhaCelula, show: vals.podeEditarDadosCelula },
       ] },
       { label: 'Apoio ao Líder', items: [
         { icon: 'culto', label: 'Palavras do Culto', active: vals.isEsbocos, onClick: vals.goEsbocos, show: true },
@@ -5632,6 +5736,7 @@
     mural: ['Mural de Avisos QG', 'Avisos rápidos do Pastor e da Administração para a liderança'],
     esbocos: ['Palavras do Culto', 'Repositório de esboços em PDF — a mesma palavra do culto e da célula'],
     encontro: ['Encontro com Deus', 'Palavras e materiais de cada edição, organizados por edição'],
+    minhacelula: ['Dados da Célula', 'Nome, dia e horário — da sua célula, ou de toda a sua rede de discipulado'],
   };
 
   function pageHeaderHtml(vals) {
@@ -5639,7 +5744,7 @@
       : vals.isFreq ? 'freq' : vals.isIa ? 'ia'
       : vals.isTrilho ? 'trilho'
       : vals.isMural ? 'mural' : vals.isEsbocos ? 'esbocos' : vals.isEncontro ? 'encontro'
-      : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : 'cadastro';
+      : vals.isMov ? 'mov' : vals.isHierarquia ? 'hierarquia' : vals.isMinhaCelula ? 'minhacelula' : 'cadastro';
     var h = PAGE_HEADERS[key];
     return '<section class="home-hero page-hero">' +
       '<div class="home-brand">Sistema OIKOS</div>' +
@@ -6803,6 +6908,69 @@
     return html;
   }
 
+  // Dados da Célula: mesma lógica visual de "Editar célula" da
+  // Administração, só que sem discipulador/obreiro (isso continua só em
+  // Administração) — quem chega aqui é Líder (própria célula) ou
+  // Discipulador (rede), decidido em pode_editar_celula() no Supabase.
+  function celulaDadosEditHtml(vals) {
+    var e = vals.celulaDadosEdit;
+    var diaOptions = '<option value="">Não definido</option>' + vals.diasSemana.map(function (d) {
+      return '<option value="' + escHtml(d) + '"' + (e.dia === d ? ' selected' : '') + '>' + escHtml(d) + '</option>';
+    }).join('');
+    var body = '' +
+      (vals.celulaDadosError ? adminBanner('error', vals.celulaDadosError) : '') +
+      '<form ' + cb(vals.salvarDadosCelula, 'submit') + ' style="display:flex;flex-direction:column;gap:14px">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Nome da célula</label>' +
+      '<input type="text" id="celuladados-edit-nome" value="' + escHtml(e.nome) + '" ' + cb(vals.onCelulaDadosEdit('nome'), 'input') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '<div class="grid-form2">' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Dia da célula</label>' +
+      '<select ' + cb(vals.onCelulaDadosEdit('dia'), 'change') + ' style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box;background:#fff">' + diaOptions + '</select></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Horário</label>' +
+      '<input type="time" id="celuladados-edit-horario" value="' + escHtml(e.horario) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button type="submit"' + (vals.celulaDadosSaving ? ' disabled' : '') + ' style="padding:10px 18px;border:none;border-radius:9px;background:#1B2344;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">' + (vals.celulaDadosSaving ? 'Salvando…' : 'Salvar alterações') + '</button>' +
+      '<button type="button" ' + cb(vals.cancelarEdicaoDadosCelula) + ' style="padding:10px 16px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:13px;color:#6b7c93;font-weight:600;cursor:pointer">Cancelar</button>' +
+      '</div></form>';
+    return adminCard('Editar célula · ' + celulaLabel(e.original), 'Mudar o nome move as pessoas e o histórico de frequência junto, automaticamente.', body);
+  }
+
+  function minhaCelulaHtml(vals) {
+    var html = '<div style="margin:18px 0 20px;font-size:12.5px;color:#6b7c93">' +
+      (vals.souFull ? 'Edite o nome, o dia e o horário de qualquer célula.'
+        : vals.souDiscipulador ? 'Edite o nome, o dia e o horário de qualquer célula da sua rede de discipulado.'
+        : 'Edite o nome, o dia e o horário da sua célula.') +
+      '</div>';
+    if (vals.celulaDadosSalvo) html += adminBanner('ok', vals.celulaDadosSalvo);
+    if (vals.celulaDadosEdit) html += celulaDadosEditHtml(vals);
+    if (!vals.celulaDadosRows.length) {
+      html += '<div style="font-size:13px;color:#6b7c93">Nenhuma célula encontrada para editar.</div>';
+      return html;
+    }
+    var th = function (label, align, pad) {
+      return '<th style="text-align:' + align + ';padding:10px ' + pad + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
+    };
+    var naoDefinido = '<span style="color:#b08a2e;font-weight:600">Não definido</span>';
+    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
+      '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
+      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
+      th('Célula', 'left', '22px') + th('Dia', 'left', '12px') + th('Horário', 'left', '12px') + th('', 'right', '22px') +
+      '</tr></thead><tbody>' +
+      vals.celulaDadosRows.map(function (r) {
+        return '<tr style="border-bottom:1px solid #f0f4f9' + (r.editando ? ';background:#eef3ff' : '') + '">' +
+          '<td style="padding:12px 22px;font-weight:700;color:#14243a">' + escHtml(r.celulaLabelText) + '</td>' +
+          '<td style="padding:12px;color:#14243a">' + (r.dia ? escHtml(r.dia) : naoDefinido) + '</td>' +
+          '<td style="padding:12px;color:#14243a">' + (r.horario ? escHtml(r.horario) : naoDefinido) + '</td>' +
+          '<td style="padding:8px 22px;text-align:right">' +
+          (r.editando
+            ? '<span style="font-size:12px;color:#2E4FC7;font-weight:700">Editando…</span>'
+            : '<button type="button" ' + cb(r.onEditar) + ' style="padding:7px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:700;cursor:pointer">Editar</button>') +
+          '</td></tr>';
+      }).join('') +
+      '</tbody></table></div></div>';
+    return html;
+  }
+
   function naoConfiguradoHtml() {
     return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center">' +
       '<div style="max-width:420px">' +
@@ -6820,7 +6988,7 @@
   // zero e apaga o que a pessoa tinha digitado neles (ex: Data de
   // nascimento). Por isso preservamos o valor atual antes de trocar o
   // HTML e devolvemos ele depois.
-  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'nova-senha', 'nova-senha2', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha', 'adminreset-email', 'adminreset-senha'];
+  var UNCONTROLLED_FIELD_IDS = ['login-email', 'login-senha', 'nova-senha', 'nova-senha2', 'novo-nasc', 'pub-nasc', 'social-nasc', 'adminlider-email', 'adminlider-senha', 'adminreset-email', 'adminreset-senha', 'celuladados-edit-horario'];
 
   function render() {
     var root = document.getElementById('app');
@@ -6933,6 +7101,10 @@
         (vals.isMov ? movimentacoesHtml(vals) : '') +
         (vals.isNovo ? novoHtml(vals) : '') +
         (vals.isHierarquia ? hierarquiaHtml(vals) : '') +
+        (vals.isMinhaCelula ? (vals.podeEditarDadosCelula ? minhaCelulaHtml(vals)
+          : '<div class="home-card home-empty">' +
+            '<div class="home-card-title">Sem células para editar</div>' +
+            '<div class="home-card-sub" style="margin-top:6px">Disponível para quem lidera uma célula ou é Discipulador.</div></div>') : '') +
         (vals.isMural ? muralHtml(vals) : '') +
         (vals.isEsbocos ? esbocosHtml(vals) : '') +
         (vals.isEncontro ? encontroHtml(vals) : '') +
