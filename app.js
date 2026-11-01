@@ -1659,9 +1659,17 @@
       setState({ novoError: 'O e-mail digitado não parece válido. Corrija ou deixe o campo em branco.' });
       return;
     }
-    setState({ novoSaving: true, novoError: null });
     var nascEl = document.getElementById('novo-nasc');
-    var row = novoFormToRow(Object.assign({}, f, { nasc: nascEl ? nascEl.value : f.nasc }));
+    var nascDigitada = nascEl ? nascEl.value : f.nasc;
+    // Data de nascimento só é obrigatória ao CRIAR (editar não trava, pra
+    // não bloquear atualização de cadastros antigos sem nascimento
+    // preenchido) — sem ela members_nome_nasc_unique não pega duplicado.
+    if (!state.novoEditId && !nascDigitada) {
+      setState({ novoError: 'Digite a data de nascimento — ela evita cadastrar a mesma pessoa duas vezes.' });
+      return;
+    }
+    setState({ novoSaving: true, novoError: null });
+    var row = novoFormToRow(Object.assign({}, f, { nasc: nascDigitada }));
 
     if (state.novoEditId) {
       var original = state.novoEditOriginal;
@@ -5899,8 +5907,10 @@
       (f.civil === 'Casado (a)' ? conjugeField(vals, f) : '') +
 
       '<div class="grid-form2">' +
-      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento</label>' +
-      '<input type="date" id="novo-nasc" value="' + escHtml(f.nasc) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
+      '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Data de nascimento' + (editing ? '' : ' *') + '</label>' +
+      '<input type="date" id="novo-nasc"' + (editing ? '' : ' required') + ' value="' + escHtml(f.nasc) + '" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" />' +
+      (editing ? '' : '<div style="font-size:11px;color:#8a99ab;margin-top:4px">Obrigatória para evitar cadastro duplicado.</div>') +
+      '</div>' +
       '<div><label style="font-size:12px;color:#6b7c93;font-weight:600">Telefone de contato</label>' +
       '<input type="text" id="novo-tel" value="' + escHtml(f.tel) + '" ' + cb(vals.onNF('tel'), 'input') + ' placeholder="(00) 00000-0000" style="width:100%;margin-top:5px;padding:10px 12px;border:1px solid #d4deea;border-radius:9px;font-size:14px;box-sizing:border-box" /></div>' +
       '</div>' +
