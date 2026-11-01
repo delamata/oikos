@@ -40,7 +40,7 @@ select
   array_agg(tel order by numero) as telefones,
   array_agg(id order by numero) as ids
 from members
-group by lower(btrim(nome))
+group by lower(btrim(nome)), nome
 having count(*) > 1
 order by nome;
 
