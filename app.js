@@ -6977,27 +6977,26 @@
       html += '<div style="font-size:13px;color:#6b7c93">Nenhuma célula encontrada para editar.</div>';
       return html;
     }
-    var th = function (label, align, pad) {
-      return '<th style="text-align:' + align + ';padding:10px ' + pad + ';font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">' + label + '</th>';
-    };
+    // Cards em vez de tabela: numa célula só (caso comum do Líder) ou
+    // numa rede com várias, o botão Editar fica sempre visível — numa
+    // tabela larga ele ficava fora da tela no celular, escondido atrás
+    // de uma rolagem lateral que não é óbvia.
     var naoDefinido = '<span style="color:#b08a2e;font-weight:600">Não definido</span>';
-    html += '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;box-shadow:0 1px 2px rgba(20,36,58,.04);overflow:hidden">' +
-      '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
-      '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
-      th('Célula', 'left', '22px') + th('Dia', 'left', '12px') + th('Horário', 'left', '12px') + th('', 'right', '22px') +
-      '</tr></thead><tbody>' +
+    html += '<div style="display:flex;flex-direction:column;gap:12px">' +
       vals.celulaDadosRows.map(function (r) {
-        return '<tr style="border-bottom:1px solid #f0f4f9' + (r.editando ? ';background:#eef3ff' : '') + '">' +
-          '<td style="padding:12px 22px;font-weight:700;color:#14243a">' + escHtml(r.celulaLabelText) + '</td>' +
-          '<td style="padding:12px;color:#14243a">' + (r.dia ? escHtml(r.dia) : naoDefinido) + '</td>' +
-          '<td style="padding:12px;color:#14243a">' + (r.horario ? escHtml(r.horario) : naoDefinido) + '</td>' +
-          '<td style="padding:8px 22px;text-align:right">' +
+        return '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,36,58,.04)' + (r.editando ? ';background:#f5f8ff' : '') + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<div style="font-weight:700;font-size:14.5px;color:#14243a">' + escHtml(r.celulaLabelText) + '</div>' +
           (r.editando
             ? '<span style="font-size:12px;color:#2E4FC7;font-weight:700">Editando…</span>'
             : '<button type="button" ' + cb(r.onEditar) + ' style="padding:7px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:700;cursor:pointer">Editar</button>') +
-          '</td></tr>';
+          '</div>' +
+          '<div style="display:flex;gap:24px;margin-top:10px;flex-wrap:wrap">' +
+          '<div><div style="font-size:11px;color:#8a99ab;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Dia</div><div style="font-size:13.5px;color:#14243a">' + (r.dia ? escHtml(r.dia) : naoDefinido) + '</div></div>' +
+          '<div><div style="font-size:11px;color:#8a99ab;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Horário</div><div style="font-size:13.5px;color:#14243a">' + (r.horario ? escHtml(r.horario) : naoDefinido) + '</div></div>' +
+          '</div></div>';
       }).join('') +
-      '</tbody></table></div></div>';
+      '</div>';
     return html;
   }
 
