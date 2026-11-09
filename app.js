@@ -2602,8 +2602,14 @@
     var q = state.q.trim().toLowerCase();
 
     var filtered = all.filter(function (p) {
-      // Recorte de rede herdado do Início (ver abrirCadastroDoGrupo).
-      if (f.rede && f.rede.celulas.indexOf(p.celula) < 0) return false;
+      // Recorte de rede herdado do Início (ver abrirCadastroDoGrupo). O
+      // discipulador/obreiro escolhido lá em cima não tem célula própria,
+      // por isso entra também por pessoaIds (ver homeVals).
+      if (f.rede) {
+        var naCelula = f.rede.celulas.indexOf(p.celula) >= 0;
+        var naLista = f.rede.pessoaIds && f.rede.pessoaIds.indexOf(p.id) >= 0;
+        if (!naCelula && !naLista) return false;
+      }
       if (f.tipo && p.tipo !== f.tipo) return false;
       if (f.celula && p.celula !== f.celula) return false;
       if (f.posicao && p.posicao !== f.posicao) return false;
@@ -3724,7 +3730,7 @@
   }
 
   function redeValida(rede) {
-    return rede && rede.celulas && rede.celulas.length ? rede : null;
+    return rede && ((rede.celulas && rede.celulas.length) || (rede.pessoaIds && rede.pessoaIds.length)) ? rede : null;
   }
 
   function abrirCadastroDaCelula(celula, rede) {
@@ -3775,6 +3781,10 @@
 
     // Recorte: null = toda a rede; lista = só essas células.
     var celulas = null;
+    // Discipulador/obreiro escolhido no filtro não têm célula própria —
+    // sem isso, o Cadastro de Membros abriria sem mostrar quem foi
+    // selecionado lá em cima.
+    var pessoaIdsRecorte = null;
     var escopoTitulo = 'Toda a rede', escopoSub = 'Visão geral de todas as células';
     if (vals.souFull) {
       if (hf.obreiro || hf.discipulador) {
@@ -3785,6 +3795,12 @@
         }).map(function (h) { return h.celula; });
         escopoTitulo = 'Rede de ' + nomeCasal(hf.discipulador || hf.obreiro);
         escopoSub = hf.discipulador && hf.obreiro ? 'Discipulador sob ' + nomeDe(hf.obreiro) : (hf.discipulador ? 'Células discipuladas' : 'Células sob esse obreiro');
+        pessoaIdsRecorte = [hf.discipulador, hf.obreiro].filter(Boolean).reduce(function (ids, id) {
+          var m = memberById(id);
+          ids.push(id);
+          if (m && m.conjuge_id) ids.push(m.conjuge_id);
+          return ids;
+        }, []);
       }
     } else if (meu) {
       // Mesma regra do pode_ver_celula(): a célula é da minha rede se eu
@@ -3914,7 +3930,7 @@
       ? vals.obreiros.filter(function (o) { return hier.some(function (h) { return mesmoCasal(h.discipulador_id, hf.discipulador) && mesmoCasal(h.obreiro_id, o.v); }); })
       : vals.obreiros;
     // Recorte atual, para as telas abertas a partir daqui continuarem nele.
-    var recorte = celulas ? { label: escopoTitulo, celulas: celulas.slice() } : null;
+    var recorte = celulas ? { label: escopoTitulo, celulas: celulas.slice(), pessoaIds: pessoaIdsRecorte } : null;
 
     var dataLabel = hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     return {
