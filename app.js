@@ -2759,7 +2759,7 @@
     var people = sorted.map(function (p) {
       var bb = badge(p.batizado, 'bat'), eb = badge(p.encontro, 'enc');
       return {
-        nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', celulaLabel: celulaLabel(p.celula), posicao: p.posicao,
+        nome: p.nome, numeroLabel: p.numero != null ? String(p.numero) : '—', celulaLabel: p.celula ? celulaLabel(p.celula) : p.posicao, posicao: p.posicao,
         batizado: p.batizado, encontro: p.encontro,
         idadeLabel: p.idade != null ? String(p.idade) : '—',
         nascLabel: nascLabel(p.nasc),
@@ -2811,9 +2811,9 @@
         return { data: new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }), campoLabel: campoLabel, desc: desc };
       });
       sel = {
-        id: s.id, nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, fields: [
+        id: s.id, nome: s.nome, posicao: s.posicao, tipo: s.tipo, initials: initials, temCelula: !!s.celula, fields: [
           { label: 'Nº de matrícula', value: s.numero != null ? String(s.numero) : '—' },
-          { label: 'Célula', value: celulaLabel(s.celula) },
+          { label: 'Célula', value: s.celula ? celulaLabel(s.celula) : s.posicao },
           { label: 'Status', value: statusDeMembro(s) },
           { label: 'Função ministerial', value: funcaoDeMembro(s) || '—' },
           { label: 'Supervisor', value: (s.supervisor_id && memberById(s.supervisor_id) ? memberById(s.supervisor_id).nome : '—') },
@@ -2863,6 +2863,10 @@
     // acompanha, como o Obreiro (add_relatorios_acesso.sql). ----
     var meuMembro = (state.profile && allPessoas.filter(function (p) { return p.id === state.profile.member_id; })[0]) || null;
     var souFull = !!(state.profile && (state.profile.is_admin || (state.meuPerfil && state.meuPerfil.is_full) || (meuMembro && meuMembro.posicao === 'Pastor')));
+    // Discipulador/Obreiro/Pastor de Rede sem célula: só acesso total
+    // pode editar ou excluir esses cadastros (RLS também bloqueia o
+    // resto — isto só evita abrir um fluxo de edição que vai falhar).
+    if (sel) sel.podeEditar = souFull || sel.temCelula;
 
     // ---- Apoio ao Líder: permissões específicas (diferentes de souFull —
     // Mural aceita Pastor OU Admin; upload de documentos é só Admin). ----
@@ -5804,7 +5808,9 @@
       '<h2 style="font-family:\'Spectral\',serif;font-weight:700;font-size:21px;margin:16px 0 3px;line-height:1.2">' + escHtml(sel.nome) + '</h2>' +
       '<div style="font-size:13px;color:#6b7c93;margin-bottom:14px">' + escHtml(sel.posicao) + ' · ' + escHtml(sel.tipo) + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
-      '<button ' + cb(sel.onEdit) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">Editar cadastro</button>' +
+      (sel.podeEditar
+        ? '<button ' + cb(sel.onEdit) + ' style="padding:9px 14px;border:1px solid #d4deea;border-radius:9px;background:#fff;font-size:12.5px;color:#1B2344;font-weight:600;cursor:pointer">Editar cadastro</button>'
+        : '') +
       (vals.souAdminSistema
         ? '<button ' + cb(sel.onExcluir) + (sel.excluindo ? ' disabled' : '') + ' style="padding:9px 14px;border:1px solid #f3c6c6;border-radius:9px;background:#fff;font-size:12.5px;color:#B0281E;font-weight:600;cursor:pointer">' + (sel.excluindo ? 'Excluindo…' : 'Excluir') + '</button>'
         : '') +
