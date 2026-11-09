@@ -49,3 +49,39 @@ create policy "members_select_scope" on members
   for select using (
     case when celula is null then pode_ver_pessoa_sem_celula(id) else pode_ver_celula(celula) end
   );
+
+-- O mesmo problema existe em movimentacoes e presencas_culto: as duas
+-- consultam pode_ver_celula(celula da pessoa), e celula = null sempre
+-- dá false. Sem isso, quem passou a VER um Discipulador/Obreiro/Pastor
+-- de Rede/Pastor em Cadastro de Membros continuava sem ver o histórico
+-- ("Sem registros ainda.", mesmo quando existem) e a presença de culto
+-- dessa pessoa. pode_ver_pessoa() reúne as duas regras num só lugar.
+create or replace function pode_ver_pessoa(p_member_id uuid) returns boolean
+language plpgsql security definer stable as $$
+declare
+  v_celula text;
+begin
+  select celula into v_celula from members where id = p_member_id;
+  if v_celula is not null then
+    return pode_ver_celula(v_celula);
+  end if;
+  return pode_ver_pessoa_sem_celula(p_member_id);
+end;
+$$;
+
+grant execute on function pode_ver_pessoa(uuid) to authenticated;
+
+drop policy if exists "mov_select_scope" on movimentacoes;
+create policy "mov_select_scope" on movimentacoes
+  for select using (pode_ver_pessoa(movimentacoes.member_id));
+
+drop policy if exists "mov_insert_scope" on movimentacoes;
+create policy "mov_insert_scope" on movimentacoes
+  for insert to authenticated
+  with check (pode_ver_pessoa(movimentacoes.member_id));
+
+drop policy if exists "presencas_culto_scope" on presencas_culto;
+create policy "presencas_culto_scope" on presencas_culto
+  for all to authenticated
+  using (pode_ver_pessoa(member_id))
+  with check (pode_ver_pessoa(member_id));

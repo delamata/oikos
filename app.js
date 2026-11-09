@@ -2651,7 +2651,7 @@
       lideranca: lideranca, potenciais: potenciais, membrosRede: membrosRede,
       membrosRedeLabel: tipoResumo(pessoasRede),
       adultosMembros: contaTipo(pessoasRede, 'Adultos'),
-      principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), kids, faFiltrados.length),
+      principal: totalPrincipal(filtered, contaTipo(pessoasRede, 'Adultos'), kids, faFiltrados.length),
       faltamBat: filtered.filter(function (p) { return p.batizado === 'Não'; }).length,
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
     };
@@ -3950,7 +3950,7 @@
       kpis: {
         membrosRede: membrosRede, membrosRedeSub: tipoResumo(pessoasRede),
         adultosMembros: contaTipo(pessoasRede, 'Adultos'),
-        principal: totalPrincipal(contaTipo(pessoasRede, 'Adultos'), kids, fa.length),
+        principal: totalPrincipal(pessoas, contaTipo(pessoasRede, 'Adultos'), kids, fa.length),
         fa: fa.length, faSub: tipoResumo(fa),
         visit: visit.length, visitSub: tipoResumo(visit),
         kids: kids, jovens: jovens, naoVisit: naoVisit.length,
@@ -4017,8 +4017,14 @@
 
   // Primeiro quadro: soma de Adultos (só membros) + Kids e Juvenis + FAs,
   // com a conta aberta embaixo.
-  function totalPrincipal(adultos, kids, fas) {
-    return { valor: adultos + kids + fas, sub: adultos + ' adultos · ' + kids + ' kids/juvenis · ' + fas + ' FAs' };
+  // "adultos" (tipo Adultos), "kids" (tipo Kids e Juvenis) e "fas"
+  // (posição Frequentador Assíduo) não são mutuamente exclusivos — um
+  // Kids e Juvenis também pode estar marcado como Frequentador Assíduo.
+  // Somar os três conta essa pessoa duas vezes; o valor do quadro usa o
+  // mesmo teste do clique (GRUPOS_KPI.principal), que conta cada um uma
+  // vez só. O detalhamento abaixo do número continua mostrando os três.
+  function totalPrincipal(pessoas, adultos, kids, fas) {
+    return { valor: filtraGrupo(pessoas, 'principal').length, sub: adultos + ' adultos · ' + kids + ' kids/juvenis · ' + fas + ' FAs' };
   }
 
   function homeRing(pctv, color, label, sub) {
