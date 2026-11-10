@@ -172,6 +172,8 @@
     q: '',
     filters: { tipo: '', celula: '', posicao: '', batizado: '', encontro: '', grupo: '', rede: null },
     sort: { key: 'idade', dir: 1 },
+    sortVisitantes: { key: 'idade', dir: 1 },
+    sortKids: { key: 'idade', dir: -1 },
     selected: null,
     excluindoMembroId: null,
     tab: 'home',
@@ -2778,9 +2780,13 @@
     });
 
     // Visitantes
+    var sortVis = state.sortVisitantes;
     var visitantes = filtered
       .filter(function (p) { return p.posicao === 'Visitante'; })
-      .sort(function (a, b) { return (a.idade == null ? 999 : a.idade) - (b.idade == null ? 999 : b.idade); })
+      .sort(function (a, b) {
+        if (sortVis.key === 'nome') return a.nome.localeCompare(b.nome, 'pt') * sortVis.dir;
+        return ((a.idade == null ? 999 : a.idade) - (b.idade == null ? 999 : b.idade)) * sortVis.dir;
+      })
       .map(function (p) {
         var bb = badge(p.batizado, 'bat'), eb = badge(p.encontro, 'enc');
         return {
@@ -2794,9 +2800,13 @@
       });
 
     // Crianças 3-12 anos
+    var sortKids = state.sortKids;
     var kids3a12 = filtered
       .filter(function (p) { return p.idade != null && p.idade >= 3 && p.idade <= 12; })
-      .sort(function (a, b) { return b.idade - a.idade; })
+      .sort(function (a, b) {
+        if (sortKids.key === 'nome') return a.nome.localeCompare(b.nome, 'pt') * sortKids.dir;
+        return (a.idade - b.idade) * sortKids.dir;
+      })
       .map(function (p) {
         var eb = badge(p.encontro, 'enc'), bb = badge(p.batizado, 'bat');
         return {
@@ -3332,6 +3342,10 @@
       selected: !!s, sel: sel,
       sortNomeArrow: sort.key === 'nome' ? (sort.dir === 1 ? '↑' : '↓') : '',
       sortIdadeArrow: sort.key === 'idade' ? (sort.dir === 1 ? '↑' : '↓') : '',
+      sortVisitantesNomeArrow: sortVis.key === 'nome' ? (sortVis.dir === 1 ? '↑' : '↓') : '',
+      sortVisitantesNome: function () { setState(function (st) { return { sortVisitantes: { key: 'nome', dir: st.sortVisitantes.key === 'nome' ? -st.sortVisitantes.dir : 1 } }; }); },
+      sortKidsNomeArrow: sortKids.key === 'nome' ? (sortKids.dir === 1 ? '↑' : '↓') : '',
+      sortKidsNome: function () { setState(function (st) { return { sortKids: { key: 'nome', dir: st.sortKids.key === 'nome' ? -st.sortKids.dir : 1 } }; }); },
       onSearch: function (e) { setState({ q: e.target.value }); },
       onTipo: function (e) { setF('tipo', e.target.value); },
       onCelula: function (e) { setF('celula', e.target.value); },
@@ -3662,7 +3676,7 @@
       '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nº</th>' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
+      '<th ' + cb(vals.sortVisitantesNome) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Nome ' + vals.sortVisitantesNomeArrow + '</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Posição</th>' +
       '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Batismo</th>' +
@@ -3683,7 +3697,7 @@
       '<div class="table-scroll" style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>' +
       '<tr style="position:sticky;top:0;background:#f5f8fc;z-index:1">' +
       '<th style="text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nº</th>' +
-      '<th style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Nome</th>' +
+      '<th ' + cb(vals.sortKidsNome) + ' style="text-align:left;padding:10px 22px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e9f2">Nome ' + vals.sortKidsNomeArrow + '</th>' +
       '<th style="text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Célula</th>' +
       '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Batismo</th>' +
       '<th style="text-align:center;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#6b7c93;font-weight:600;border-bottom:1px solid #e2e9f2">Encontro</th>' +
