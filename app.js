@@ -2654,6 +2654,9 @@
       principal: totalPrincipal(filtered, contaTipo(pessoasRede, 'Adultos'), kids, faFiltrados.length),
       faltamBat: filtered.filter(function (p) { return p.batizado === 'Não'; }).length,
       faltamEnc: filtered.filter(function (p) { return p.encontro === 'Não'; }).length,
+      batAtivo: f.batizado === 'Não', encAtivo: f.encontro === 'Não',
+      onBatismo: function () { setF('batizado', f.batizado === 'Não' ? '' : 'Não'); },
+      onEncontro: function () { setF('encontro', f.encontro === 'Não' ? '' : 'Não'); },
     };
 
     // Quadro clicado: os quadros continuam mostrando o total de cada grupo
@@ -3559,8 +3562,8 @@
       '<div style="font-family:\'Spectral\',serif;font-weight:600;font-size:16px;margin-bottom:4px">Jornada espiritual</div>' +
       '<div style="font-size:12.5px;color:#6b7c93;margin-bottom:20px">Batismo e Encontro com Deus na seleção atual</div>' +
       '<div class="home-rings">' +
-      homeRing(vals.k.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + vals.k.faltamBat + '</b> ainda não batizados') +
-      homeRing(vals.k.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + vals.k.faltamEnc + '</b> ainda não fizeram') +
+      homeRing(vals.k.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + vals.k.faltamBat + '</b> ainda não batizados', { onClick: vals.k.onBatismo, ativo: vals.k.batAtivo }) +
+      homeRing(vals.k.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + vals.k.faltamEnc + '</b> ainda não fizeram', { onClick: vals.k.onEncontro, ativo: vals.k.encAtivo }) +
       '</div></div>' +
 
       '<div style="background:#fff;border:1px solid #e2e9f2;border-radius:14px;padding:20px 22px;box-shadow:0 1px 2px rgba(20,36,58,.04)">' +
@@ -3744,6 +3747,15 @@
     setState({
       tab: 'cadastro', q: '', selected: null, sidebarOpen: false,
       filters: filtrosZerados({ grupo: grupo, rede: redeValida(rede) }),
+    });
+  }
+
+  // Abre o Cadastro de Membros com um filtro qualquer já aplicado (ex:
+  // { encontro: 'Não' }, vindo do anel "Jornada espiritual" do Início).
+  function abrirCadastroComFiltro(extra, rede) {
+    setState({
+      tab: 'cadastro', q: '', selected: null, sidebarOpen: false,
+      filters: filtrosZerados(Object.assign({ rede: redeValida(rede) }, extra)),
     });
   }
 
@@ -3944,6 +3956,8 @@
       onDiscipulador: function (e) { setHomeFiltro('discipulador', e.target.value); },
       limparFiltros: function () { setState({ homeFilters: { obreiro: '', discipulador: '' } }); },
       abrirGrupo: function (g) { return function () { abrirCadastroDoGrupo(g, recorte); }; },
+      abrirPorBatismo: function () { abrirCadastroComFiltro({ batizado: 'Não' }, recorte); },
+      abrirPorEncontro: function () { abrirCadastroComFiltro({ encontro: 'Não' }, recorte); },
       carregando: !todos.length && state.membersStatus !== 'ok' && state.membersStatus !== 'error',
       semRede: !!celulas && !celulas.length,
       total: total, nCelulas: listaCelulas.length, lideres: lideres,
@@ -4027,10 +4041,13 @@
     return { valor: filtraGrupo(pessoas, 'principal').length, sub: adultos + ' adultos · ' + kids + ' kids/juvenis · ' + fas + ' FAs' };
   }
 
-  function homeRing(pctv, color, label, sub) {
+  // `opts.onClick` transforma o anel num botão que filtra quem falta
+  // (ex: só quem ainda não fez o Encontro); `opts.ativo` marca o anel
+  // que está filtrando agora.
+  function homeRing(pctv, color, label, sub, opts) {
+    opts = opts || {};
     var r = 42, circ = 2 * Math.PI * r;
-    return '<div class="home-ring">' +
-      '<div style="position:relative;width:112px;height:112px">' +
+    var miolo = '<div style="position:relative;width:112px;height:112px">' +
       '<svg width="112" height="112" viewBox="0 0 108 108" style="transform:rotate(-90deg)">' +
       '<circle cx="54" cy="54" r="' + r + '" fill="none" stroke="#edf1f7" stroke-width="11"></circle>' +
       (pctv > 0 ? '<circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + (circ * (1 - pctv / 100)).toFixed(1) + '"></circle>' : '') +
@@ -4038,7 +4055,13 @@
       '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">' +
       '<div class="home-ring-value">' + pctv + '%</div>' +
       '<div class="home-ring-label">' + escHtml(label) + '</div></div></div>' +
-      '<div class="home-card-sub" style="text-align:center">' + sub + '</div></div>';
+      '<div class="home-card-sub" style="text-align:center">' + sub + '</div>';
+    if (!opts.onClick) return '<div class="home-ring">' + miolo + '</div>';
+    return '<button type="button" ' + cb(opts.onClick) +
+      ' class="home-ring home-ring-click' + (opts.ativo ? ' home-ring-ativo' : '') + '"' +
+      ' aria-pressed="' + (opts.ativo ? 'true' : 'false') + '"' +
+      ' title="' + relAttr(opts.ativo ? 'Mostrando só quem falta — clique para ver todos' : 'Clique pra ver quem ainda falta') + '">' +
+      miolo + '</button>';
   }
 
   function homeHtml(v) {
@@ -4105,8 +4128,8 @@
       '<div class="home-card-title">Jornada espiritual</div>' +
       '<div class="home-card-sub">Batismo e Encontro com Deus</div>' +
       '<div class="home-rings">' +
-      homeRing(v.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + v.faltamBat + '</b> ainda não batizados') +
-      homeRing(v.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + v.faltamEnc + '</b> ainda não fizeram') +
+      homeRing(v.batPct, '#149C88', 'Batizados', '<b style="color:#6B3FA0">' + v.faltamBat + '</b> ainda não batizados', { onClick: v.abrirPorBatismo }) +
+      homeRing(v.encPct, '#3B5FDD', 'Encontro', '<b style="color:#6B3FA0">' + v.faltamEnc + '</b> ainda não fizeram', { onClick: v.abrirPorEncontro }) +
       '</div></div>' +
 
       '<div class="home-card">' +
